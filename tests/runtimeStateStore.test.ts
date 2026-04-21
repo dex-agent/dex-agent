@@ -11,7 +11,7 @@ test("runtime state store saves and loads MCP and skill state", async () => {
   const store = new RuntimeStateStore({
     config: {
       app: {
-        name: "CodexClaw",
+        name: "dex-agent",
         stateFile: file
       }
     }
@@ -35,7 +35,11 @@ test("runtime state store saves and loads MCP and skill state", async () => {
               lastMode: null,
               lastExitCode: null,
               lastExitSignal: null,
-              lastWorkflowPhase: null
+              lastWorkflowPhase: null,
+              lastPromptText: null,
+              lastPromptAt: null,
+              lastFinalResponseText: null,
+              lastFinalizedAt: null
             }
           }
         }
@@ -69,7 +73,11 @@ test("runtime state store saves and loads MCP and skill state", async () => {
             lastMode: null,
             lastExitCode: null,
             lastExitSignal: null,
-            lastWorkflowPhase: null
+            lastWorkflowPhase: null,
+            lastPromptText: null,
+            lastPromptAt: null,
+            lastFinalResponseText: null,
+            lastFinalizedAt: null
           }
         }
       }

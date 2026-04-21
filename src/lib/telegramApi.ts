@@ -25,6 +25,16 @@ export function buildTelegramApiUrl(
   return `${normalized}/bot${token}/${method}`;
 }
 
+export function buildTelegramFileUrl(
+  apiBase: string,
+  token: string,
+  filePath: string
+): string {
+  const normalized = normalizeTelegramApiBase(apiBase);
+  const sanitizedPath = String(filePath || "").replace(/^\/+/, "");
+  return `${normalized}/file/bot${token}/${sanitizedPath}`;
+}
+
 export function createTelegramApiAgent(
   proxyUrl?: string
 ): HttpAgent | undefined {

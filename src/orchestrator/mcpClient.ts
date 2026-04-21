@@ -166,7 +166,7 @@ export class McpClient {
 
     const client = new Client(
       {
-        name: "CodexClaw",
+        name: "dex-agent",
         version: "0.1.0"
       },
       {

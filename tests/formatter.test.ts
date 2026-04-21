@@ -5,6 +5,7 @@ import {
   extractCodexExecResponse,
   extractReasoning,
   formatPtyOutput,
+  sanitizeTelegramFacingCodexText,
   splitTelegramMessage
 } from "../src/bot/formatter.js";
 
@@ -89,6 +90,87 @@ test("formatPtyOutput uses cleaned codex exec content when session mode is exec"
   });
 
   assert.equal(rendered, "I am Codex\\.");
+});
+
+test("formatPtyOutput removes transient runner noise from streamed output", () => {
+  const raw = [
+    "[error] in-process app-server event stream lagged; dropped 1 events",
+    "Planejando o proximo sprint.",
+    "Reconnecting... 1/5 (unexpected status 401 Unauthorized: Missing Authentication header, url: https://openrouter.ai/api/v1/responses, cf-ray: abc-GRU)"
+  ].join("\n");
+
+  const rendered = formatPtyOutput(raw, {
+    mode: "spoiler",
+    sessionMode: "sdk"
+  });
+
+  assert.equal(rendered, "Planejando o proximo sprint\\.");
+});
+
+test("formatPtyOutput removes unstable feature warnings from streamed output", () => {
+  const raw = [
+    "[error] Under-development features enabled: codex_hooks, memories. Under-development features are incomplete and may behave unpredictably.",
+    "To suppress this warning, set `suppress_unstable_features_warning = true` in C:\\Users\\crsan\\.codex\\config.toml.",
+    "",
+    "Entendido. O desvio foi no sender automatico."
+  ].join("\n");
+
+  const rendered = formatPtyOutput(raw, {
+    mode: "spoiler",
+    sessionMode: "sdk"
+  });
+
+  assert.equal(rendered, "Entendido\\. O desvio foi no sender automatico\\.");
+});
+
+test("sanitizeTelegramFacingCodexText removes internal report sections and keeps useful findings", () => {
+  const raw = [
+    "Resumo principal do fechamento.",
+    "",
+    "File paths created/modified",
+    "- Nenhum.",
+    "",
+    "Knowledge base source labels",
+    "- AGENTS check",
+    "- MEMORY check",
+    "",
+    "Key findings",
+    "- O item saiu da memoria persistida.",
+    "- Nesta sessao ainda depende de nova janela."
+  ].join("\n");
+
+  const sanitized = sanitizeTelegramFacingCodexText(raw);
+
+  assert.doesNotMatch(sanitized, /File paths created\/modified/i);
+  assert.doesNotMatch(sanitized, /Knowledge base source labels/i);
+  assert.match(sanitized, /Resumo principal do fechamento/i);
+  assert.match(sanitized, /Achados principais/i);
+  assert.match(sanitized, /O item saiu da memoria persistida/i);
+});
+
+test("formatPtyOutput hides internal report sections from sdk output", () => {
+  const raw = [
+    "Resumo principal do fechamento.",
+    "",
+    "File paths created/modified",
+    "- Nenhum.",
+    "",
+    "Knowledge base source labels",
+    "- AGENTS check",
+    "",
+    "Key findings",
+    "- O item saiu da memoria persistida."
+  ].join("\n");
+
+  const rendered = formatPtyOutput(raw, {
+    mode: "spoiler",
+    sessionMode: "sdk"
+  });
+
+  assert.doesNotMatch(rendered, /File paths created\/modified/i);
+  assert.doesNotMatch(rendered, /Knowledge base source labels/i);
+  assert.match(rendered, /Achados principais/i);
+  assert.match(rendered, /Resumo principal do fechamento/i);
 });
 
 test("splitTelegramMessage preserves content and avoids trailing escape characters in chunks", () => {

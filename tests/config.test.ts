@@ -16,6 +16,8 @@ const ENV_KEYS = [
   "CODEX_COMMAND",
   "CODEX_ARGS",
   "CODEX_WORKDIR",
+  "CODEX_API_KEY",
+  "CODEX_BASE_URL",
   "CODEX_SDK_CONFIG",
   "CODEX_SDK_SKIP_GIT_REPO_CHECK",
   "CODEX_SDK_SANDBOX_MODE",
@@ -40,7 +42,24 @@ const ENV_KEYS = [
   "GITHUB_TOKEN",
   "GITHUB_DEFAULT_WORKDIR",
   "GITHUB_DEFAULT_BRANCH",
-  "E2E_TEST_COMMAND"
+  "E2E_TEST_COMMAND",
+  "OPENAI_API_KEY",
+  "OPENAI_BASE_URL",
+  "OPENROUTER_API_KEY",
+  "TTS_ENABLED",
+  "TTS_PROVIDER",
+  "TTS_EDGE_VOICE",
+  "TTS_EDGE_RATE",
+  "TTS_EDGE_PITCH",
+  "TTS_PYTHON_COMMAND",
+  "TTS_FFMPEG_COMMAND",
+  "TTS_OFFER_MIN_CHARS",
+  "TTS_SUMMARY_MAX_CHARS",
+  "TTS_SUMMARY_CACHE_TTL_MS",
+  "AUDIO_TRANSCRIPTION_MODEL",
+  "AUDIO_TRANSCRIPTION_LANGUAGE",
+  "AUDIO_TRANSCRIPTION_PROMPT",
+  "AUDIO_TRANSCRIPTION_MAX_FILE_MB"
 ] as const;
 
 type EnvKey = (typeof ENV_KEYS)[number];
@@ -106,6 +125,8 @@ test("loadConfig parses env values into runtime config", () => {
       CODEX_COMMAND: "codex",
       CODEX_ARGS: '--approval-mode auto "--model gpt-5"',
       CODEX_WORKDIR: ".",
+      CODEX_API_KEY: "sk-codex-test",
+      CODEX_BASE_URL: "https://openrouter.ai/api/v1/",
       CODEX_SDK_CONFIG:
         '{"show_raw_agent_reasoning":true,"sandbox_workspace_write":{"network_access":true}}',
       CODEX_SDK_SKIP_GIT_REPO_CHECK: "false",
@@ -132,7 +153,14 @@ test("loadConfig parses env values into runtime config", () => {
       GITHUB_TOKEN: "ghp_test",
       GITHUB_DEFAULT_WORKDIR: ".",
       GITHUB_DEFAULT_BRANCH: "develop",
-      E2E_TEST_COMMAND: "npm test"
+      E2E_TEST_COMMAND: "npm test",
+      OPENAI_API_KEY: "sk-test",
+      OPENAI_BASE_URL: "https://api.openai.com/v1/",
+      OPENROUTER_API_KEY: "sk-or-test",
+      AUDIO_TRANSCRIPTION_MODEL: "gpt-4o-transcribe",
+      AUDIO_TRANSCRIPTION_LANGUAGE: "pt-BR",
+      AUDIO_TRANSCRIPTION_PROMPT: "Transcreva em portugues brasileiro",
+      AUDIO_TRANSCRIPTION_MAX_FILE_MB: "12.5"
     },
     () => loadConfig()
   );
@@ -145,6 +173,8 @@ test("loadConfig parses env values into runtime config", () => {
   assert.deepEqual(config.telegram.proactiveUserIds, ["2"]);
   assert.equal(config.runner.backend, "sdk");
   assert.equal(config.runner.command, "codex");
+  assert.equal(config.runner.apiKey, "sk-codex-test");
+  assert.equal(config.runner.baseUrl, "https://openrouter.ai/api/v1");
   assert.equal(config.workspace.root, process.cwd());
   assert.equal(config.shell.enabled, true);
   assert.equal(config.shell.readOnly, false);
@@ -187,6 +217,74 @@ test("loadConfig parses env values into runtime config", () => {
   assert.equal(config.github.token, "ghp_test");
   assert.equal(config.github.defaultBranch, "develop");
   assert.equal(config.github.e2eCommand, "npm test");
+  assert.equal(config.audio.transcription.apiKey, "sk-test");
+  assert.equal(config.audio.transcription.baseUrl, "https://api.openai.com/v1");
+  assert.equal(config.audio.transcription.model, "gpt-4o-transcribe");
+  assert.equal(config.audio.transcription.language, "pt-BR");
+  assert.equal(
+    config.audio.transcription.prompt,
+    "Transcreva em portugues brasileiro"
+  );
+  assert.equal(config.audio.transcription.maxFileBytes, 13107200);
+  assert.equal(config.audio.transcription.enabled, true);
+  assert.equal(config.audio.tts.enabled, false);
+  assert.equal(config.audio.tts.provider, "edge");
+  assert.equal(config.audio.tts.voice, "pt-BR-FranciscaNeural");
+  assert.equal(config.audio.tts.rate, "+0%");
+  assert.equal(config.audio.tts.pitch, "+0Hz");
+  assert.equal(config.audio.tts.pythonCommand, "python");
+  assert.equal(config.audio.tts.ffmpegCommand, "ffmpeg");
+  assert.equal(config.audio.tts.offerMinChars, 900);
+  assert.equal(config.audio.tts.summaryMaxChars, 650);
+  assert.equal(config.audio.tts.cacheTtlMs, 1800000);
+});
+
+test("loadConfig keeps Codex auth isolated from audio transcription credentials", () => {
+  const config = withEnv(
+    {
+      BOT_TOKEN: "telegram-token",
+      ALLOWED_USER_IDS: "1",
+      OPENROUTER_API_KEY: "sk-or-fallback",
+      OPENAI_BASE_URL: "https://openrouter.ai/api/v1/"
+    },
+    () => loadConfig()
+  );
+
+  assert.equal(config.runner.apiKey, "");
+  assert.equal(config.runner.baseUrl, "");
+  assert.equal(config.audio.transcription.apiKey, "sk-or-fallback");
+  assert.equal(config.audio.transcription.baseUrl, "https://openrouter.ai/api/v1");
+});
+
+test("loadConfig parses edge TTS settings separately from transcription", () => {
+  const config = withEnv(
+    {
+      BOT_TOKEN: "telegram-token",
+      ALLOWED_USER_IDS: "1",
+      TTS_ENABLED: "true",
+      TTS_PROVIDER: "edge",
+      TTS_EDGE_VOICE: "pt-BR-FranciscaNeural",
+      TTS_EDGE_RATE: "+12%",
+      TTS_EDGE_PITCH: "+4Hz",
+      TTS_PYTHON_COMMAND: "python3",
+      TTS_FFMPEG_COMMAND: "ffmpeg-custom",
+      TTS_OFFER_MIN_CHARS: "700",
+      TTS_SUMMARY_MAX_CHARS: "420",
+      TTS_SUMMARY_CACHE_TTL_MS: "12345"
+    },
+    () => loadConfig()
+  );
+
+  assert.equal(config.audio.tts.enabled, true);
+  assert.equal(config.audio.tts.provider, "edge");
+  assert.equal(config.audio.tts.voice, "pt-BR-FranciscaNeural");
+  assert.equal(config.audio.tts.rate, "+12%");
+  assert.equal(config.audio.tts.pitch, "+4Hz");
+  assert.equal(config.audio.tts.pythonCommand, "python3");
+  assert.equal(config.audio.tts.ffmpegCommand, "ffmpeg-custom");
+  assert.equal(config.audio.tts.offerMinChars, 700);
+  assert.equal(config.audio.tts.summaryMaxChars, 420);
+  assert.equal(config.audio.tts.cacheTtlMs, 12345);
 });
 
 test("loadConfig requires at least one allowed user", () => {

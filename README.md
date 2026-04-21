@@ -1,4 +1,4 @@
-# CodexClaw
+# Dex Agent
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js 20+](https://img.shields.io/badge/node-20%2B-green.svg)](https://nodejs.org/en/download/current)
@@ -18,8 +18,8 @@ It is strictly inspired by `RichardAtCT/claude-code-telegram`, but this project 
 ### Install
 
 ```bash
-git clone https://github.com/MackDing/CodexClaw.git
-cd CodexClaw
+git clone https://github.com/crsantosxx/dex-agent.git
+cd dex-agent
 npm install
 cp .env.example .env
 ```
@@ -30,8 +30,8 @@ cp .env.example .env
 BOT_TOKEN=123456789:telegram-token
 ALLOWED_USER_IDS=123456789
 STATE_FILE=.codex-telegram-claws-state.json
-WORKSPACE_ROOT=.
-CODEX_WORKDIR=.
+WORKSPACE_ROOT=C:/CodexProjetos
+CODEX_WORKDIR=C:/CodexProjetos/dex-agent
 CODEX_BACKEND=sdk
 ```
 
@@ -51,7 +51,7 @@ npm run start
 /gh create repo my-new-app
 ```
 
-For agent-oriented setup, see [SKILL.md](/Users/ding/Documents/Code/Github/CodexClaw/SKILL.md).
+For agent-oriented setup, see [SKILL.md](./SKILL.md).
 
 ## What Is This?
 
@@ -81,8 +81,8 @@ Key design goals:
 ### Install
 
 ```bash
-git clone https://github.com/MackDing/CodexClaw.git
-cd CodexClaw
+git clone https://github.com/crsantosxx/dex-agent.git
+cd dex-agent
 npm install
 ```
 
@@ -98,8 +98,8 @@ Minimum required:
 BOT_TOKEN=123456789:telegram-token
 ALLOWED_USER_IDS=123456789
 STATE_FILE=.codex-telegram-claws-state.json
-WORKSPACE_ROOT=.
-CODEX_WORKDIR=.
+WORKSPACE_ROOT=C:/CodexProjetos
+CODEX_WORKDIR=C:/CodexProjetos/dex-agent
 CODEX_BACKEND=sdk
 ```
 
@@ -160,11 +160,11 @@ For live checks, configure your own local `.env` values after startup and keep t
 ## Architecture
 
 ```text
-Telegram Message
+Telegram text/audio/image
   -> src/bot/handlers.ts
-  -> src/orchestrator/router.ts
-     -> src/runner/ptyManager.ts        (coding tasks -> Codex SDK or Codex CLI)
-     -> src/orchestrator/skills/*.ts    (general tasks -> MCP/GitHub subagents)
+     -> explicit command handlers (/project, /repo, /queue, /memory, /inbox, ...)
+     -> src/runner/ptyManager.ts        (free-text execution -> Codex SDK or Codex CLI)
+     -> src/orchestrator/skills/*.ts    (explicit bot-side capabilities)
   -> src/bot/formatter.ts
   -> Telegram sendMessage/editMessageText
 ```
@@ -173,57 +173,58 @@ Core modules:
 
 - `src/index.ts`: bootstrap and lifecycle
 - `src/config.ts`: env parsing and validation
-- `src/bot/`: auth middleware, formatting, command handlers
-- `src/orchestrator/`: routing + MCP client + skills
-- `src/runner/ptyManager.ts`: Codex runner abstraction for SDK threads, CLI/PTy sessions, and CLI exec fallback
+- `src/bot/`: auth middleware, formatting, command handlers, deterministic menu/catalog
+- `src/orchestrator/`: memory, project understanding, MCP client, explicit skills
+- `src/runner/ptyManager.ts`: Codex runner abstraction for SDK threads, CLI/PTy sessions, queueing, and resume state
 - `src/cron/scheduler.ts`: proactive scheduled push
 
-Enterprise target architecture: [docs/enterprise-architecture.md](/Users/ding/Documents/Code/Github/CodexClaw/docs/enterprise-architecture.md)
-Enterprise Phase 1 roadmap: [docs/phase-1-roadmap.md](/Users/ding/Documents/Code/Github/CodexClaw/docs/phase-1-roadmap.md)
+Enterprise target architecture: [docs/enterprise-architecture.md](docs/enterprise-architecture.md)
+Enterprise Phase 1 roadmap: [docs/phase-1-roadmap.md](docs/phase-1-roadmap.md)
+Project memory system v1: [docs/memory-system/README.md](docs/memory-system/README.md)
 
-## Routing and MCP Boundary
+## Deterministic Control Plane
 
-To avoid duplicated context fetch:
+The bot now follows a deterministic split:
 
-- **Coding requests** are sent directly to Codex (SDK or CLI backend; Codex can use its own MCP stack)
-- **Bot-side MCP** is only used by explicit `/mcp ...` commands
+- free text, transcribed audio, and images go directly to Codex
+- structured actions happen only through commands, menu buttons, or inline callbacks
+- bot-side MCP and GitHub actions are explicit only
+
+That means:
+
+- `/gh ...` goes to the GitHub skill
+- `/mcp ...` goes to the MCP skill
+- `/memory ...` and `/inbox ...` go to the project memory control plane
+- normal messages stay a Codex conversation turn
 
 This prevents:
 
-- duplicate queries against the same MCP server
-- extra latency/token/tool cost
-- context drift from two independent MCP execution surfaces
+- accidental intent capture from heuristic routing
+- duplicate MCP work across bot and Codex
+- control-plane actions being mixed with free-text execution
 
-## Subagents
+## Learning By Reuse
 
-In this repository, "subagent" means a dedicated skill executor behind the router, not a second free-form Codex session.
+The bot now has a file-based reuse loop on top of project memory:
 
-Current subagents:
+- finalized Codex responses can become durable memory candidates
+- repeated or explicit reusable flows can become `skill_candidate`
+- strong and clear cases can auto-promote into a reusable skill
+- global skills born from this repo are mirrored back into `skills/`
 
-- `github` skill - local git actions, repo creation through GitHub API, and test job tracking
-- `mcp` skill - explicit MCP server inspection, enable/disable, tool listing, and tool calls
+What changes in practice:
 
-How they are triggered:
-
-- Explicit commands always go straight to the matching subagent:
-  - `/gh ...` -> GitHub skill
-  - `/mcp ...` -> MCP skill
-- Plain text may also route to a subagent when the router sees a supported GitHub-style request such as `git push`, `commit`, or `run test`
-- Everything else falls back to Codex
-
-Where this happens:
-
-- Router decision order: [router.ts](/Users/ding/Documents/Code/Github/CodexClaw/src/orchestrator/router.ts)
-- Skill toggles per chat: [skillRegistry.ts](/Users/ding/Documents/Code/Github/CodexClaw/src/orchestrator/skillRegistry.ts)
-- Telegram command entrypoints: [handlers.ts](/Users/ding/Documents/Code/Github/CodexClaw/src/bot/handlers.ts)
-
-Operationally, subagents are the bot's control plane. Codex remains the coding execution plane.
+- the main UX stays in chat; the bot can tell you it learned a reusable flow
+- `/inbox` remains the review surface for candidates and proposals
+- `/memory` remains the technical inspection surface
+- `/project` now exposes a `Reuso Rapido` block with recent promoted skills and pending skill candidates
 
 ## Commands
 
 General:
 
 - `/start` - bootstrap message
+- `/menu` - deterministic dashboard with clickable shortcuts
 - `/help` - command summary
 - `/status` - show current chat status, active runner mode, workdir, model override, MCP servers, and the internal superpowers workflow phase
 - `/pwd` - show the current project directory for this chat
@@ -233,6 +234,12 @@ General:
 - `/repo <typo>` - suggests the closest project name when there is no direct match
 - `/repo recent` - show recent projects for the current chat
 - `/repo -` - switch back to the previous project
+- `/project` - show the current project card with deterministic action buttons
+- `/project [default|executive|next|sources|steps|commands|prompts|queue]` - open a specific project card variant; the default card now includes `Reuso Rapido`
+- `/inbox` - show the durable memory inbox for the current project, including `skill_candidate`
+- `/inbox [candidates|proposals|promote|discard|why|confirm|cancel|help]` - review and promote durable memory or reusable-skill candidates
+- `/memory` - inspect project memory usage, operational memory state, and why something stayed memory vs reusable skill
+- `/memory [show|help|candidates|promote|discard|why|remember <text>]` - technical memory surface backed by the same inbox
 - `/new` - clear the saved Codex conversation for the current project and start fresh on the next message
 - `/exec <task>` - force a one-off Codex run without saving project context
 - `/auto <task>` - force a one-off fully automatic Codex run without saving project context
@@ -280,6 +287,8 @@ GitHub skill:
 Telegram adaptation notes:
 
 - Plain text messages behave like a normal Codex conversation turn
+- Audio and image inputs also go directly to Codex after bot-side preprocessing
+- Structured bot actions are deterministic: command, menu, or button only
 - `/exec` runs a one-off Codex task and does not overwrite the saved project conversation slot
 - `/auto` runs a one-off Codex task with `approvalPolicy=never` on the SDK backend, or `codex exec --full-auto` on the CLI backend
 - `/new` is implemented by the bot and resets the current chat session
@@ -289,13 +298,14 @@ Telegram adaptation notes:
 - `/repo` is implemented by the bot and switches the per-chat working directory inside `WORKSPACE_ROOT`
 - `/skill` is implemented by the bot and keeps per-chat skill switches in runtime state
 - `/skill` only lists toggleable bot skills; `superpowers` is shown as an internal workflow, not a toggleable skill
+- reusable-flow learning is file-based and auditable; there is no hidden state, embeddings, or vector DB behind it
 - `/dev` is implemented by the bot and manages one frontend server per repo workdir, shared across chats
 - `/dev start` prefers `package.json` script `dev` and falls back to `start`
 - `/sh` is implemented by the bot, never invokes a shell interpreter, and only accepts configured command prefixes
 - `/sh` is read-only by default; dangerous prefixes can be configured and require `--confirm` when writable mode is enabled
 - `/plan` translates to a planning-only prompt instead of passing a raw `/plan` slash command to Codex
 - If another chat already has an active Codex run in the same workdir, the bot blocks the new request and requires `/continue` for a one-shot override
-- The default system language is English; use `/language zh` or `/language zh-HK` for localized bot responses
+- The default bot language is `pt-BR`; use `/language` to switch the chat locale
 - `/verbose off` keeps Telegram output quiet by hiding fallback, startup, and session-exit notices for the current chat
 
 ## Streaming and Reasoning Visualization
@@ -311,7 +321,7 @@ Codex output is streamed with throttled `editMessageText` updates.
 - On `CODEX_BACKEND=sdk`, Telegram streams structured Codex SDK events and persists thread IDs per project
 - On `CODEX_BACKEND=cli`, the bot prefers PTY sessions; if `node-pty` cannot spawn on the current host, it falls back to `codex exec`
 - In CLI exec fallback mode, Telegram output is cleaned to hide the Codex banner, raw tool trace, `mcp startup`, and duplicate `tokens used` footer
-- On macOS, startup auto-repairs `node-pty` helper execute permissions before the first PTY session
+- On Unix-like hosts, startup auto-repairs `node-pty` helper execute permissions before the first PTY session; on Windows, the preflight validates the native `node-pty` artifact instead
 
 ## Project-Scoped Conversation State
 
@@ -399,8 +409,8 @@ Required:
 BOT_TOKEN=...
 ALLOWED_USER_IDS=123456789,987654321
 STATE_FILE=.codex-telegram-claws-state.json
-WORKSPACE_ROOT=.
-CODEX_WORKDIR=.
+WORKSPACE_ROOT=C:/CodexProjetos
+CODEX_WORKDIR=C:/CodexProjetos/dex-agent
 ```
 
 Common options:
@@ -419,8 +429,8 @@ CODEX_SDK_REASONING_EFFORT=
 CODEX_SDK_NETWORK_ACCESS_ENABLED=
 CODEX_SDK_WEB_SEARCH_MODE=
 CODEX_SDK_ADDITIONAL_DIRECTORIES=[]
-WORKSPACE_ROOT=/Users/yourname/projects
-STATE_FILE=/path/to/codex-telegram-claws-state.json
+WORKSPACE_ROOT=C:/CodexProjetos
+STATE_FILE=.codex-telegram-claws-state.json
 SHELL_ENABLED=false
 SHELL_READ_ONLY=true
 SHELL_ALLOWED_COMMANDS=["pwd","ls","git status","git diff --stat","npm test","npm run check"]
@@ -432,7 +442,7 @@ STREAM_BUFFER_CHARS=120000
 REASONING_RENDER_MODE=spoiler
 
 CRON_DAILY_SUMMARY=0 9 * * *
-CRON_TIMEZONE=Asia/Shanghai
+CRON_TIMEZONE=America/Sao_Paulo
 PROACTIVE_USER_IDS=123456789
 ```
 
@@ -446,10 +456,21 @@ GitHub:
 
 ```bash
 GITHUB_TOKEN=ghp_xxx
-GITHUB_DEFAULT_WORKDIR=.
+GITHUB_DEFAULT_WORKDIR=C:/CodexProjetos/dex-agent
 GITHUB_DEFAULT_BRANCH=main
 E2E_TEST_COMMAND=npx playwright test --reporter=line
 ```
+
+Recommended local Windows baseline for this repository:
+
+```bash
+STATE_FILE=.codex-telegram-claws-state.json
+WORKSPACE_ROOT=C:/CodexProjetos
+CODEX_WORKDIR=C:/CodexProjetos/dex-agent
+GITHUB_DEFAULT_WORKDIR=C:/CodexProjetos/dex-agent
+```
+
+Use `npm run env:check` to verify the active `.env` against this baseline before startup.
 
 ## CI And Release Automation
 
@@ -475,13 +496,13 @@ npm run healthcheck:live
 npm run telegram:smoke
 ```
 
-`v1.0.0` should only be tagged after the full release gate, Telegram smoke checks, and repository metadata sync are complete. The detailed checklist and topic sync command live in [release.md](/Users/ding/Documents/Code/Github/CodexClaw/docs/release.md).
+`v1.0.0` should only be tagged after the full release gate, Telegram smoke checks, and repository metadata sync are complete. The detailed checklist and topic sync command live in [release.md](./docs/release.md).
 
 Release references:
 
-- [operations.md](/Users/ding/Documents/Code/Github/CodexClaw/docs/operations.md)
-- [release.md](/Users/ding/Documents/Code/Github/CodexClaw/docs/release.md)
-- [ecosystem.config.cjs](/Users/ding/Documents/Code/Github/CodexClaw/ecosystem.config.cjs) - PM2 compatibility shim
+- [operations.md](./docs/operations.md)
+- [release.md](./docs/release.md)
+- [ecosystem.config.cjs](./ecosystem.config.cjs) - PM2 compatibility shim
 
 ## Security Baseline
 
@@ -498,20 +519,53 @@ Release references:
 
 ## Operations
 
-The recommended production supervisor is PM2.
+Current local Windows baseline on this machine:
 
-`ecosystem.config.ts` is the canonical config file. Start PM2 with `ecosystem.config.cjs`, which only bridges PM2 into the TypeScript source.
+- autostart via the current user's Windows Startup folder
+- hidden restart via `restart-dex-agent-hidden.vbs -> restart-dex-agent-hidden.ps1`
+- one polling process per bot token
 
-Basic flow:
+PM2 remains a supported supervisor for server-style or always-on hosts, but it is not the only valid deployment path.
+
+`ecosystem.config.ts` is the canonical PM2 config file. Start PM2 with `ecosystem.config.cjs`, which only bridges PM2 into the TypeScript source.
+
+PM2 flow when that is your target environment:
 
 ```bash
 pm2 start ecosystem.config.cjs
-pm2 status CodexClaw
-pm2 logs CodexClaw
-pm2 restart CodexClaw
+pm2 status dex-agent
+pm2 logs dex-agent
+pm2 restart dex-agent
 ```
 
 Run exactly one polling process per bot token.
+
+Windows autostart for the current user:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\register-dex-agent-autostart.ps1
+Get-Content "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\start-dex-agent.cmd"
+```
+
+Remove the autostart entry:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\unregister-dex-agent-autostart.ps1
+```
+
+The registered autostart uses the current user's Windows Startup folder and creates `start-dex-agent.cmd`, which calls `scripts/boot-dex-agent-autostart.ps1`. That boot script waits 45 seconds after logon and then retries up to 6 times with progressive backoff if the network is not ready yet.
+
+## Publication Hygiene
+
+Keep these local-only artifacts out of the initial publish baseline:
+
+- `.env`
+- `.codex-telegram-claws-state.json`
+- `.runtime/`
+- `.agents/`
+- `.codex/`
+
+The local continuity layer and runtime logs are useful for operating this machine, but they are not part of the public product contract.
 
 ## Should You Enable `/sh`?
 
@@ -545,7 +599,8 @@ Telegram can manage runtime usage of Bot-side MCP and skills, but not install ar
 - **MCP failures**: run `/mcp tools <server>` first to validate server availability
 - **GitHub API failures**: verify `GITHUB_TOKEN` scope (`repo`) and account permissions
 - **Duplicate MCP suspicion**: ensure coding tasks are routed directly to Codex, and bot MCP is used only for `/mcp`
-- **`posix_spawnp failed`**: this usually means the `node-pty` helper lost execute permissions; startup now auto-repairs it, and `npm run healthcheck` reports the result
+- **`posix_spawnp failed` on macOS/Linux**: this usually means the `node-pty` helper lost execute permissions; startup now auto-repairs it, and `npm run healthcheck` reports the result
+- **CLI/PTy warnings on Windows**: verify `npm run healthcheck`; the Windows preflight checks the native `node-pty` artifact instead of the Unix `spawn-helper`
 
 ## Reference
 

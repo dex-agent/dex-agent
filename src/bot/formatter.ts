@@ -2,6 +2,65 @@ const THINK_BLOCK_REGEX = /<think>([\s\S]*?)<\/think>/gi;
 const TELEGRAM_SPECIAL_REGEX = /[_*[\]()~`>#+\-=|{}.!\\]/g;
 const CODEX_DIVIDER = "\n--------\n";
 const CODEX_TRANSCRIPT_HEADER_REGEX = /^OpenAI Codex v[^\n]*\n/;
+const TRANSIENT_RUNNER_NOISE_PATTERNS: RegExp[] = [
+  /(?:\[error\]\s*)?in-process app-server event stream lagged; dropped \d+ events?/gi,
+  /Reconnecting\.\.\.\s*\d+\/\d+\s*\(unexpected status \d+[^)]*\)/gi,
+  /unexpected status \d+\s+Unauthorized:[^.!?\n]*/gi,
+  /cf-ray:\s*[A-Za-z0-9-]+/gi,
+  /(?:\[error\]\s*)?Under-development features enabled:[\s\S]*?config\.toml\.?/gi
+];
+const HIDDEN_TELEGRAM_SECTION_HEADERS = [
+  "File paths created/modified",
+  "Knowledge base source labels"
+] as const;
+
+function stripNamedSections(raw = "", sectionHeaders: readonly string[]): string {
+  const lines = String(raw || "").replace(/\r/g, "").split("\n");
+  const output: string[] = [];
+  let skipSection = false;
+
+  const isHeader = (line: string): boolean => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      return false;
+    }
+
+    return (
+      sectionHeaders.some((header) => trimmed === header) ||
+      /^(?:#{1,6}\s+)?[A-Z][A-Za-z ]+:?$/.test(trimmed)
+    );
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (sectionHeaders.some((header) => trimmed === header)) {
+      skipSection = true;
+      continue;
+    }
+
+    if (skipSection && isHeader(line)) {
+      skipSection = false;
+    }
+
+    if (!skipSection) {
+      output.push(line);
+    }
+  }
+
+  return output.join("\n");
+}
+
+export function sanitizeTelegramFacingCodexText(raw = ""): string {
+  const withoutHiddenSections = stripNamedSections(
+    String(raw || ""),
+    HIDDEN_TELEGRAM_SECTION_HEADERS
+  );
+
+  return withoutHiddenSections
+    .replace(/\bKey findings\b/gi, "Achados principais")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 
 export interface ReasoningExtraction {
   cleanText: string;
@@ -49,8 +108,24 @@ function removeCodexBanner(raw = ""): string {
   return source.slice(secondDividerIndex + CODEX_DIVIDER.length);
 }
 
+function stripTransientRunnerNoise(raw = ""): string {
+  let cleaned = String(raw || "");
+
+  for (const pattern of TRANSIENT_RUNNER_NOISE_PATTERNS) {
+    cleaned = cleaned.replace(pattern, " ");
+  }
+
+  return cleaned
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
 export function extractCodexExecResponse(raw = ""): string {
-  const source = removeCodexBanner(raw);
+  const source = sanitizeTelegramFacingCodexText(
+    stripTransientRunnerNoise(removeCodexBanner(raw))
+  );
   if (!source) return "";
 
   const blocks: string[] = [];
@@ -157,7 +232,11 @@ export function formatPtyOutput(
 ): string {
   const { mode = "spoiler", sessionMode = "pty" } = options;
   const normalizedRaw =
-    sessionMode === "exec" ? extractCodexExecResponse(raw) : String(raw || "");
+    sessionMode === "exec"
+      ? extractCodexExecResponse(raw)
+      : sanitizeTelegramFacingCodexText(
+          stripTransientRunnerNoise(String(raw || ""))
+        );
   const { cleanText, reasoningBlocks } = extractReasoning(normalizedRaw);
   const sections = [];
 

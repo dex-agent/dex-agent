@@ -4,3 +4,6 @@ node_modules/
 npm-debug.log*
 .codex-telegram-claws-state.json
 bot.log
+.runtime/
+.agents/
+.codex/

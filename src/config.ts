@@ -28,6 +28,7 @@ export type CodexReasoningEffort =
   | "high"
   | "xhigh";
 export type CodexWebSearchMode = "disabled" | "cached" | "live";
+export type AudioTtsProvider = "edge";
 export type CodexConfigValue =
   | string
   | number
@@ -48,6 +49,29 @@ export interface AppConfig {
     name: string;
     stateFile: string;
   };
+  audio: {
+    transcription: {
+      apiKey: string;
+      baseUrl: string;
+      model: string;
+      language: string;
+      prompt: string;
+      maxFileBytes: number;
+      enabled: boolean;
+    };
+    tts: {
+      enabled: boolean;
+      provider: AudioTtsProvider;
+      voice: string;
+      rate: string;
+      pitch: string;
+      pythonCommand: string;
+      ffmpegCommand: string;
+      offerMinChars: number;
+      summaryMaxChars: number;
+      cacheTtlMs: number;
+    };
+  };
   workspace: {
     root: string;
   };
@@ -63,6 +87,8 @@ export interface AppConfig {
     command: string;
     args: string[];
     cwd: string;
+    apiKey: string;
+    baseUrl: string;
     throttleMs: number;
     maxBufferChars: number;
     telegramChunkSize: number;
@@ -124,6 +150,18 @@ function parseNumber(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function parseSizeInMb(
+  value: string | undefined,
+  fallbackMb: number
+): number {
+  const parsed = Number.parseFloat(value ?? "");
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallbackMb * 1024 * 1024;
+  }
+
+  return Math.round(parsed * 1024 * 1024);
+}
+
 function parseBoolean(value: string | undefined, fallback = false): boolean {
   if (value === undefined) return fallback;
   const normalized = String(value).trim().toLowerCase();
@@ -163,6 +201,11 @@ function parseEnum<T extends string>(
   const normalized = String(value || "").trim();
   if (!normalized) return undefined;
   return supported.includes(normalized as T) ? (normalized as T) : undefined;
+}
+
+function parseText(value: string | undefined, fallback: string): string {
+  const normalized = String(value || "").trim();
+  return normalized || fallback;
 }
 
 function resolveDirectory(
@@ -302,6 +345,26 @@ export function loadConfig(): AppConfig {
     process.env.GITHUB_DEFAULT_WORKDIR,
     "GITHUB_DEFAULT_WORKDIR"
   );
+  const runnerApiKey = String(
+    process.env.CODEX_API_KEY || ""
+  ).trim();
+  const runnerBaseUrl = String(
+    process.env.CODEX_BASE_URL || ""
+  )
+    .trim()
+    .replace(/\/+$/, "");
+  const audioTranscriptionApiKey = String(
+    process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY || ""
+  ).trim();
+  const audioTranscriptionBaseUrl = String(
+    process.env.OPENAI_BASE_URL ||
+      process.env.CODEX_BASE_URL ||
+      "https://api.openai.com/v1"
+  )
+    .trim()
+    .replace(/\/+$/, "");
+  const audioTtsProvider =
+    parseEnum<AudioTtsProvider>(process.env.TTS_PROVIDER, ["edge"]) || "edge";
   const rawShellAllowedCommands = parseJson<unknown[]>(
     process.env.SHELL_ALLOWED_COMMANDS,
     []
@@ -372,11 +435,48 @@ export function loadConfig(): AppConfig {
 
   return {
     app: {
-      name: "CodexClaw",
+      name: "dex-agent",
       stateFile: resolveFile(
         process.env.STATE_FILE,
         path.join(process.cwd(), ".codex-telegram-claws-state.json")
       )
+    },
+    audio: {
+      transcription: {
+        apiKey: audioTranscriptionApiKey,
+        baseUrl: audioTranscriptionBaseUrl,
+        model:
+          String(process.env.AUDIO_TRANSCRIPTION_MODEL || "").trim() ||
+          "gpt-4o-mini-transcribe",
+        language:
+          String(process.env.AUDIO_TRANSCRIPTION_LANGUAGE || "").trim() || "pt",
+        prompt:
+          String(process.env.AUDIO_TRANSCRIPTION_PROMPT || "").trim() ||
+          "Transcribe Brazilian Portuguese faithfully. Return only the spoken transcript text, with no commentary or preface. Expect coding, software, MCP, Codex, GitHub, Vercel, Telegram, and Windows terms.",
+        maxFileBytes: parseSizeInMb(
+          process.env.AUDIO_TRANSCRIPTION_MAX_FILE_MB,
+          20
+        ),
+        enabled: Boolean(audioTranscriptionApiKey)
+      },
+      tts: {
+        enabled: parseBoolean(process.env.TTS_ENABLED, false),
+        provider: audioTtsProvider,
+        voice: parseText(
+          process.env.TTS_EDGE_VOICE,
+          "pt-BR-FranciscaNeural"
+        ),
+        rate: parseText(process.env.TTS_EDGE_RATE, "+0%"),
+        pitch: parseText(process.env.TTS_EDGE_PITCH, "+0Hz"),
+        pythonCommand: parseText(process.env.TTS_PYTHON_COMMAND, "python"),
+        ffmpegCommand: parseText(process.env.TTS_FFMPEG_COMMAND, "ffmpeg"),
+        offerMinChars: parseNumber(process.env.TTS_OFFER_MIN_CHARS, 900),
+        summaryMaxChars: parseNumber(process.env.TTS_SUMMARY_MAX_CHARS, 650),
+        cacheTtlMs: parseNumber(
+          process.env.TTS_SUMMARY_CACHE_TTL_MS,
+          30 * 60 * 1000
+        )
+      }
     },
     workspace: {
       root: workspaceRoot
@@ -393,6 +493,8 @@ export function loadConfig(): AppConfig {
       command: process.env.CODEX_COMMAND?.trim() || "codex",
       args: parseArgs(process.env.CODEX_ARGS || ""),
       cwd: runnerCwd,
+      apiKey: runnerApiKey,
+      baseUrl: runnerBaseUrl,
       throttleMs: parseNumber(process.env.STREAM_THROTTLE_MS, 1200),
       maxBufferChars: parseNumber(process.env.STREAM_BUFFER_CHARS, 120000),
       telegramChunkSize: 3900,
@@ -412,7 +514,7 @@ export function loadConfig(): AppConfig {
     },
     cron: {
       dailySummary: process.env.CRON_DAILY_SUMMARY?.trim() || "0 9 * * *",
-      timezone: process.env.CRON_TIMEZONE?.trim() || "Asia/Shanghai"
+      timezone: process.env.CRON_TIMEZONE?.trim() || "America/Sao_Paulo"
     },
     mcp: {
       servers: mcpServers

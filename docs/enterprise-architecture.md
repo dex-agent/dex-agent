@@ -2,7 +2,18 @@
 
 ## Purpose
 
-This document defines the target architecture when `CodexClaw` is deployed as a financial enterprise engineering assistant for multiple subsidiary CTO teams. The current repository is a strong single-host beta. The enterprise target is a controlled multi-host platform.
+This document defines the target architecture when `Dex Agent` is deployed as a financial enterprise engineering assistant for multiple subsidiary CTO teams. The current repository is a strong single-host beta. The enterprise target is a controlled multi-host platform.
+
+## Current Baseline Versus Target
+
+Today this repository is still the single-host beta baseline:
+
+- one Telegram bot runtime
+- one local state file
+- one local reuse core in `src/orchestrator/reuseEngine.ts`
+- local Windows autostart already validated through Startup folder on this machine
+
+This document describes the target state after the single-host baseline is already stable and publishable. It should not be read as the current runtime contract of this repository.
 
 ## Target Operating Model
 
@@ -82,7 +93,7 @@ Subagents should be triggered only after:
 
 ## Recommended Deployment Phases
 
-Implementation roadmap: [phase-1-roadmap.md](/Users/ding/Documents/Code/Github/CodexClaw/docs/phase-1-roadmap.md)
+Implementation roadmap: [phase-1-roadmap.md](./phase-1-roadmap.md)
 
 ### Phase 1: Harden Current Single-Host Beta
 
@@ -132,7 +143,8 @@ npm run healthcheck:strict
 npm run telegram:smoke
 ```
 
-- Deploy with PM2 or another formal supervisor, not an ad hoc terminal session.
+- On Windows operator workstations, Startup folder autostart is the current validated local path.
+- On server-style or enterprise hosts, deploy with PM2 or another formal supervisor, not an ad hoc terminal session.
 
 ## Current Gap Summary
 

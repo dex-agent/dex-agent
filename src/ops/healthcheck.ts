@@ -37,6 +37,7 @@ type CodexLiveCheckResult = CliCodexLiveCheckResult | SdkCodexLiveCheckResult;
 interface HealthcheckOptions {
   strict?: boolean;
   env?: NodeJS.ProcessEnv;
+  canonicalRoot?: string;
   telegramLiveCheck?: boolean;
   codexLiveCheck?: boolean;
   codexLiveRunner?: (config: AppConfig) => Promise<CodexLiveCheckResult>;
@@ -50,6 +51,14 @@ interface TelegramGetMeResponse {
   };
   description?: string;
 }
+
+const LEGACY_PATH_MARKERS = [
+  "configuracoeswindows",
+  "codexclaw",
+  `${path.sep}dexagent${path.sep}`,
+  "/dexagent/",
+  "\\dexagent\\"
+] as const;
 
 function makeCheck(
   name: string,
@@ -75,16 +84,43 @@ export function resolveCommandPath(
   const raw = String(command || "").trim();
   if (!raw) return "";
 
+  const pathExt = process.platform === "win32"
+    ? String(env.PATHEXT || ".COM;.EXE;.BAT;.CMD")
+        .split(";")
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+    : [""];
+
+  const candidatesFor = (basePath: string): string[] => {
+    if (process.platform !== "win32") {
+      return [basePath];
+    }
+
+    const lower = basePath.toLowerCase();
+    if (pathExt.some((ext) => lower.endsWith(ext.toLowerCase()))) {
+      return [basePath];
+    }
+
+    return [basePath, ...pathExt.map((ext) => `${basePath}${ext}`)];
+  };
+
   if (raw.includes(path.sep)) {
     const candidate = path.resolve(raw);
-    return isPathExecutable(candidate) ? candidate : "";
+    for (const variant of candidatesFor(candidate)) {
+      if (isPathExecutable(variant)) {
+        return variant;
+      }
+    }
+    return "";
   }
 
   const pathValue = String(env.PATH || "");
   for (const segment of pathValue.split(path.delimiter).filter(Boolean)) {
     const candidate = path.join(segment, raw);
-    if (isPathExecutable(candidate)) {
-      return candidate;
+    for (const variant of candidatesFor(candidate)) {
+      if (isPathExecutable(variant)) {
+        return variant;
+      }
     }
   }
 
@@ -128,6 +164,56 @@ function checkWritableDirectory(
       `Directory is not writable: ${resolvedPath} (${toErrorMessage(error)})`
     );
   }
+}
+
+function checkLegacyPathDrift(
+  name: string,
+  targetPath: string | undefined,
+  strict: boolean
+): HealthcheckCheck | null {
+  const normalized = String(targetPath || "").trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  const matchedMarker = LEGACY_PATH_MARKERS.find((marker) =>
+    normalized.includes(marker)
+  );
+
+  if (!matchedMarker) {
+    return null;
+  }
+
+  return makeCheck(
+    `${name} legacy drift`,
+    strict ? "fail" : "warn",
+    `Legacy path marker detected in active config: ${targetPath}`
+  );
+}
+
+function checkCanonicalRepoDrift(
+  name: string,
+  targetPath: string | undefined,
+  expectedRoot: string,
+  strict: boolean
+): HealthcheckCheck | null {
+  const normalizedTarget = String(targetPath || "").trim();
+  if (!normalizedTarget) {
+    return null;
+  }
+
+  const resolvedTarget = path.resolve(normalizedTarget);
+  const resolvedExpected = path.resolve(expectedRoot);
+
+  if (resolvedTarget === resolvedExpected) {
+    return null;
+  }
+
+  return makeCheck(
+    `${name} canonical drift`,
+    strict ? "fail" : "warn",
+    `Expected ${resolvedExpected} but active config points to ${resolvedTarget}`
+  );
 }
 
 function runCliCodexLiveCheck(
@@ -184,8 +270,32 @@ async function runSdkCodexLiveCheck(
   config: AppConfig
 ): Promise<SdkCodexLiveCheckResult> {
   const { Codex } = await import("@openai/codex-sdk");
+  const childEnv = Object.fromEntries(
+    Object.entries(process.env).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined
+    )
+  );
+  delete childEnv.CODEX_API_KEY;
+  delete childEnv.OPENAI_API_KEY;
+  delete childEnv.OPENAI_BASE_URL;
+  delete childEnv.OPENROUTER_API_KEY;
+  delete childEnv.OPENROUTER_APP_TITLE;
+
+  if (config.runner.apiKey) {
+    childEnv.CODEX_API_KEY = config.runner.apiKey;
+    childEnv.OPENAI_API_KEY = config.runner.apiKey;
+    childEnv.OPENROUTER_API_KEY = config.runner.apiKey;
+  }
+
+  if (config.runner.baseUrl) {
+    childEnv.OPENAI_BASE_URL = config.runner.baseUrl;
+  }
+
   const codex = new Codex({
-    config: config.runner.sdkConfig
+    config: config.runner.sdkConfig,
+    env: childEnv,
+    ...(config.runner.baseUrl ? { baseUrl: config.runner.baseUrl } : {}),
+    ...(config.runner.apiKey ? { apiKey: config.runner.apiKey } : {})
   });
   const thread = codex.startThread({
     workingDirectory: config.runner.cwd,
@@ -234,6 +344,7 @@ export async function runHealthcheck(
   const strict = Boolean(options.strict);
   const env = options.env || process.env;
   const checks: HealthcheckCheck[] = [];
+  const repoRoot = options.canonicalRoot || process.cwd();
 
   checks.push(checkDirectory("workspace root", config.workspace.root));
   checks.push(checkDirectory("runner workdir", config.runner.cwd));
@@ -244,6 +355,41 @@ export async function runHealthcheck(
       path.dirname(config.app.stateFile)
     )
   );
+
+  for (const legacyCheck of [
+    checkLegacyPathDrift("workspace root", config.workspace.root, strict),
+    checkLegacyPathDrift("runner workdir", config.runner.cwd, strict),
+    checkLegacyPathDrift(
+      "github workdir",
+      config.github.defaultWorkdir,
+      strict
+    ),
+    checkLegacyPathDrift("state file", config.app.stateFile, strict)
+  ]) {
+    if (legacyCheck) {
+      checks.push(legacyCheck);
+    }
+  }
+
+  for (const canonicalCheck of [
+    checkCanonicalRepoDrift("runner workdir", config.runner.cwd, repoRoot, strict),
+    checkCanonicalRepoDrift(
+      "github workdir",
+      config.github.defaultWorkdir,
+      repoRoot,
+      strict
+    ),
+    checkCanonicalRepoDrift(
+      "state file",
+      path.dirname(config.app.stateFile),
+      repoRoot,
+      strict
+    )
+  ]) {
+    if (canonicalCheck) {
+      checks.push(canonicalCheck);
+    }
+  }
 
   const resolvedCommand = resolveCommandPath(config.runner.command, env);
   checks.push(

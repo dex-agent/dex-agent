@@ -9,8 +9,31 @@ import { resolveCommandPath, runHealthcheck } from "../src/ops/healthcheck.js";
 function createConfig(root: string): AppConfig {
   return {
     app: {
-      name: "CodexClaw",
+      name: "dex-agent",
       stateFile: path.join(root, ".codex-telegram-claws-state.json")
+    },
+    audio: {
+      transcription: {
+        apiKey: "",
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-4o-mini-transcribe",
+        language: "pt",
+        prompt: "",
+        maxFileBytes: 20 * 1024 * 1024,
+        enabled: false
+      },
+      tts: {
+        enabled: false,
+        provider: "edge",
+        voice: "pt-BR-FranciscaNeural",
+        rate: "+0%",
+        pitch: "+0Hz",
+        pythonCommand: "python",
+        ffmpegCommand: "ffmpeg",
+        offerMinChars: 900,
+        summaryMaxChars: 650,
+        cacheTtlMs: 1800000
+      }
     },
     workspace: {
       root
@@ -27,6 +50,8 @@ function createConfig(root: string): AppConfig {
       command: "node",
       args: [],
       cwd: root,
+      apiKey: "",
+      baseUrl: "",
       sdkConfig: {},
       throttleMs: 10,
       maxBufferChars: 1000,
@@ -67,7 +92,7 @@ test("resolveCommandPath finds a binary from PATH", () => {
   const resolved = resolveCommandPath("node", process.env);
 
   assert.ok(resolved);
-  assert.match(resolved, /node$/);
+  assert.match(resolved, /node(?:\.exe)?$/i);
 });
 
 test("runHealthcheck passes for a valid local config", async () => {
@@ -75,7 +100,8 @@ test("runHealthcheck passes for a valid local config", async () => {
   const config = createConfig(root);
 
   const result = await runHealthcheck(config, {
-    env: process.env
+    env: process.env,
+    canonicalRoot: root
   });
 
   assert.equal(result.ok, true);
@@ -101,12 +127,51 @@ test("runHealthcheck warns when the configured command is missing in non-strict 
   config.runner.command = "definitely-not-a-real-command";
 
   const result = await runHealthcheck(config, {
-    env: process.env
+    env: process.env,
+    canonicalRoot: root
   });
 
   assert.equal(result.ok, true);
   assert.equal(
     result.checks.some((check) => check.status === "warn"),
+    true
+  );
+});
+
+test("runHealthcheck warns on legacy path drift in non-strict mode", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "claws-health-"));
+  const config = createConfig(root);
+  config.runner.cwd = "C:/CodexProjetos/ConfiguracoesWindows/DexAgent";
+  config.github.defaultWorkdir = "C:/CodexProjetos/ConfiguracoesWindows/DexAgent";
+  config.app.stateFile =
+    "C:/CodexProjetos/ConfiguracoesWindows/DexAgent/.codex-telegram-claws-state.json";
+
+  const result = await runHealthcheck(config, {
+    env: process.env,
+    canonicalRoot: root
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(
+    result.checks.some(
+      (check) =>
+        check.name === "runner workdir legacy drift" && check.status === "warn"
+    ),
+    true
+  );
+  assert.equal(
+    result.checks.some(
+      (check) =>
+        check.name === "state file legacy drift" && check.status === "warn"
+    ),
+    true
+  );
+  assert.equal(
+    result.checks.some(
+      (check) =>
+        check.name === "runner workdir canonical drift" &&
+        check.status === "warn"
+    ),
     true
   );
 });
@@ -118,12 +183,42 @@ test("runHealthcheck fails when the configured command is missing in strict mode
 
   const result = await runHealthcheck(config, {
     env: process.env,
-    strict: true
+    strict: true,
+    canonicalRoot: root
   });
 
   assert.equal(result.ok, false);
   assert.equal(
     result.checks.some((check) => check.status === "fail"),
+    true
+  );
+});
+
+test("runHealthcheck fails on legacy path drift in strict mode", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "claws-health-"));
+  const config = createConfig(root);
+  config.runner.cwd = "C:/CodexProjetos/ConfiguracoesWindows/DexAgent";
+
+  const result = await runHealthcheck(config, {
+    env: process.env,
+    strict: true,
+    canonicalRoot: root
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(
+    result.checks.some(
+      (check) =>
+        check.name === "runner workdir legacy drift" && check.status === "fail"
+    ),
+    true
+  );
+  assert.equal(
+    result.checks.some(
+      (check) =>
+        check.name === "runner workdir canonical drift" &&
+        check.status === "fail"
+    ),
     true
   );
 });
@@ -135,6 +230,7 @@ test("runHealthcheck skips node-pty helper failures in strict mode when backend 
   const result = await runHealthcheck(config, {
     env: process.env,
     strict: true,
+    canonicalRoot: root,
     ptyHelperCheck: () => ({
       path: "",
       changed: false,
@@ -158,6 +254,7 @@ test("runHealthcheck reports a passing live Codex probe when the backend respond
 
   const result = await runHealthcheck(config, {
     env: process.env,
+    canonicalRoot: root,
     codexLiveCheck: true,
     codexLiveRunner: async () => ({
       backend: "sdk",
@@ -184,6 +281,7 @@ test("runHealthcheck reports a failing live Codex probe when the backend check f
 
   const result = await runHealthcheck(config, {
     env: process.env,
+    canonicalRoot: root,
     codexLiveCheck: true,
     codexLiveRunner: async () => {
       throw new Error("simulated codex failure");

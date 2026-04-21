@@ -3,9 +3,16 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ensureExecutablePermissions } from "../src/runner/ptyPreflight.js";
+import {
+  ensureExecutablePermissions,
+  resolveNodePtyWindowsArtifactPath
+} from "../src/runner/ptyPreflight.js";
 
 test("ensureExecutablePermissions adds execute bits when missing", () => {
+  if (process.platform === "win32") {
+    return;
+  }
+
   const tempDir = fs.mkdtempSync(
     path.join(os.tmpdir(), "claws-pty-preflight-")
   );
@@ -21,6 +28,10 @@ test("ensureExecutablePermissions adds execute bits when missing", () => {
 });
 
 test("ensureExecutablePermissions keeps executable files unchanged", () => {
+  if (process.platform === "win32") {
+    return;
+  }
+
   const tempDir = fs.mkdtempSync(
     path.join(os.tmpdir(), "claws-pty-preflight-")
   );
@@ -33,4 +44,10 @@ test("ensureExecutablePermissions keeps executable files unchanged", () => {
   assert.equal(result.changed, false);
   assert.equal(result.executable, true);
   assert.equal(mode, 0o755);
+});
+
+test("resolveNodePtyWindowsArtifactPath targets the native Windows binary", () => {
+  const artifactPath = resolveNodePtyWindowsArtifactPath();
+  assert.match(artifactPath, /node-pty/i);
+  assert.match(artifactPath, /pty\.node$/i);
 });

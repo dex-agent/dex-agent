@@ -42,7 +42,7 @@
 ## Contribution Rules
 
 - Use ES Modules and keep new files under the existing feature-oriented layout.
-- Keep user-facing bot copy in English by default. Localized strings must go through `src/bot/i18n.js`.
+- Keep the runtime bot UX aligned with the default `pt-BR` locale. Public docs can stay in English, and localized bot strings must go through `src/bot/i18n.js`.
 - Prefer focused changes. Do not mix feature work with unrelated refactors.
 - Add or update tests for behavior changes in `tests/`.
 

@@ -1,4 +1,4 @@
-export const SUPPORTED_LANGUAGES = ["en", "zh", "zh-HK"] as const;
+export const SUPPORTED_LANGUAGES = ["pt-BR", "en", "zh", "zh-HK"] as const;
 export type Locale = (typeof SUPPORTED_LANGUAGES)[number];
 
 type TranslationParams = Record<string, any>;
@@ -11,20 +11,29 @@ type TranslateFn = {
   (locale: string, key: string, params?: TranslationParams): string;
 };
 
-const DEFAULT_LANGUAGE: Locale = "en";
+const DEFAULT_LANGUAGE: Locale = "pt-BR";
 
 const LANGUAGE_LABELS: Record<Locale, Record<Locale, string>> = {
+  "pt-BR": {
+    "pt-BR": "Português (Brasil)",
+    en: "Inglês",
+    zh: "Chinês simplificado",
+    "zh-HK": "Chinês tradicional (Hong Kong)"
+  },
   en: {
+    "pt-BR": "Portuguese (Brazil)",
     en: "English",
     zh: "Simplified Chinese",
     "zh-HK": "Traditional Chinese (Hong Kong)"
   },
   zh: {
+    "pt-BR": "葡萄牙语（巴西）",
     en: "英文",
     zh: "简体中文",
     "zh-HK": "繁体中文（香港）"
   },
   "zh-HK": {
+    "pt-BR": "葡萄牙語（巴西）",
     en: "英文",
     zh: "簡體中文",
     "zh-HK": "繁體中文（香港）"
@@ -35,13 +44,13 @@ function joinLines(lines: readonly string[] = []): string {
   return lines.join("\n");
 }
 
-const MESSAGES: Record<Locale, TranslationCatalog> = {
+const MESSAGES: Record<string, TranslationCatalog> = {
   en: {
     buttonRefreshTestStatus: "Refresh test status",
     emptyResponse: "(empty response)",
     startLines: () => [
-      "CodexClaw ready.",
-      "Plain messages and coding tasks route to Codex.",
+      "Dex Agent ready.",
+      "Plain messages, voice notes, and coding tasks route to Codex.",
       "Bot-side MCP only runs through explicit /mcp commands.",
       "Try: /status, /repo, /pwd, /exec, /auto, /plan, /model, /language, /verbose, /skill, /new, /sh",
       'GitHub example: /gh commit "feat: init"'
@@ -61,6 +70,8 @@ const MESSAGES: Record<Locale, TranslationCatalog> = {
       "/auto <task> - Force a one-off fully automatic Codex run",
       "/plan <task> - Generate a plan only, without direct file modification intent",
       "/continue - Replay the last blocked same-workdir request once",
+      "/queue [list|add|remove|clear|run] - Manage queued Codex requests for this chat",
+      "/fila [listar|adicionar|remover|limpar|executar] - Alias for /queue",
       "/model [name|reset] - Show or set the model for this chat",
       "/language [en|zh|zh-HK] - Show or set the system language for this chat",
       "/verbose [on|off] - Show or hide system notices for this chat",
@@ -76,7 +87,8 @@ const MESSAGES: Record<Locale, TranslationCatalog> = {
       "/stop - Terminate the active Codex run",
       "/cron_now - Trigger the daily summary immediately",
       "/gh ... - GitHub skill",
-      "/mcp ... - MCP control and explicit tool calls"
+      "/mcp ... - MCP control and explicit tool calls",
+      "Voice notes and audio files - transcribed to text before routing to Codex"
     ],
     statusLines: ({
       status,
@@ -156,8 +168,14 @@ const MESSAGES: Record<Locale, TranslationCatalog> = {
       ]),
     repoSwitched: ({ relativePath, workdir }) =>
       joinLines([
-        "Project switched.",
-        `current project: ${relativePath}`,
+        "Project switched successfully.",
+        `active project: ${relativePath}`,
+        `workdir: ${workdir}`
+      ]),
+    repoAlreadyCurrent: ({ relativePath, workdir }) =>
+      joinLines([
+        "The requested project is already active.",
+        `active project: ${relativePath}`,
         `workdir: ${workdir}`
       ]),
     repoSwitchFailed: ({ error }) => `Project switch failed: ${error}`,
@@ -231,10 +249,23 @@ const MESSAGES: Record<Locale, TranslationCatalog> = {
     restartUnavailable:
       "Bot restart control is not enabled in this environment.",
     restarting: "Restarting the bot process...",
+    startupReady: ({ relativeWorkdir }) =>
+      joinLines([
+        "Dex Agent started and is ready.",
+        `current project: ${relativeWorkdir}`
+      ]),
+    restartReady: ({ relativeWorkdir }) =>
+      joinLines([
+        "Bot restart finished.",
+        `current project: ${relativeWorkdir}`,
+        "If you sent a command during the restart window, please send it again now."
+      ]),
     usageExec: "Usage: /exec <task>",
     usageSh: "Usage: /sh <command>",
     usageAuto: "Usage: /auto <task>",
     usagePlan: "Usage: /plan <task>",
+    usageQueue:
+      "Usage: /queue [list|add <task>|add <project> :: <task>|remove <id|index>|clear|run]",
     usageVerbose: "Usage: /verbose [on|off]",
     usageLanguage: "Usage: /language [en|zh|zh-HK]",
     execNotice: "Running one-off Codex task...",
@@ -242,6 +273,51 @@ const MESSAGES: Record<Locale, TranslationCatalog> = {
     planNotice: "Running planning-only Codex task...",
     taskBusy: ({ mode }) =>
       `A ${mode || "unknown"} task is already running. Wait for it to finish or use /interrupt first.`,
+    queueQueued: ({ index, id, queueLength, text }) =>
+      joinLines([
+        "Recebi. Coloquei na fila para executar quando o Codex terminar.",
+        `posicao: ${index}`,
+        `id: ${id}`,
+        `itens na fila: ${queueLength}`,
+        `pedido: ${text}`,
+        "Use /queue para consultar ou /queue remove <id|posicao> para remover."
+      ]),
+    queueAdded: ({ index, id, text }) =>
+      joinLines([
+        "Item adicionado na fila.",
+        `posicao: ${index}`,
+        `id: ${id}`,
+        `pedido: ${text}`
+      ]),
+    queueAddFailed: ({ reason }) =>
+      `Nao consegui adicionar na fila: ${reason}.`,
+    queueEmpty: "A fila deste chat esta vazia.",
+    queueList: ({ queueLines }) =>
+      joinLines(["Fila deste chat:", ...queueLines]),
+    queueRemoved: ({ id, text, count }) =>
+      joinLines([
+        "Item removido da fila.",
+        `id: ${id}`,
+        `pedido: ${text}`,
+        `itens restantes: ${count}`
+      ]),
+    queueRemoveFailed: ({ selector, reason }) =>
+      `Nao encontrei o item ${selector} na fila (${reason}).`,
+    queueCleared: ({ count }) =>
+      `Fila limpa. ${count} item(ns) removido(s).`,
+    queueStartupRecovery: ({ count, relativeWorkdir, text }) =>
+      joinLines([
+        "Encontrei uma fila pendente deste chat apos o restart do bot.",
+        `projeto: ${relativeWorkdir}`,
+        `itens pendentes: ${count}`,
+        `proximo item: ${text}`,
+        "Escolha abaixo se quer rodar agora, revisar a fila ou limpar."
+      ]),
+    buttonQueueRunNow: "▶️ Rodar agora",
+    buttonQueueView: "📋 Ver fila",
+    buttonQueueClear: "🗑️ Limpar fila",
+    operationalStatusHeader: "Estado operacional atual:",
+    interruptWithQueueStatus: "Execucao interrompida. Estado atual da fila:",
     workspaceContention: ({
       relativeWorkdir,
       mode,
@@ -255,6 +331,8 @@ const MESSAGES: Record<Locale, TranslationCatalog> = {
       ]),
     continueStarted: ({ mode }) =>
       `Replaying the blocked request once (${mode}).`,
+    queueRunStarted: ({ mode }) =>
+      `Queued item sent to Codex (${mode}). I will show progress here.`,
     continueNothingPending: "No blocked request is pending for this chat.",
     codexBusyForShell:
       "A Codex task is currently running. Wait for it to finish or use /interrupt or /new first.",
@@ -327,6 +405,21 @@ const MESSAGES: Record<Locale, TranslationCatalog> = {
       "MCP skill is disabled for this chat. Use /skill on mcp to enable it again.",
     mcpFailed: ({ error }) => `MCP skill failed: ${error}`,
     callbackRefreshed: "Status refreshed",
+    buttonAudioSummary: "🔊 Resumo em audio",
+    audioSummaryOffer:
+      "Essa resposta ficou longa. Quer um resumo curto em audio?",
+    finalActionsOffer:
+      "Acoes rapidas para esta conclusao:",
+    buttonQuickPlan: "🧭 Planejar sprint",
+    buttonQuickContinue: "▶️ Aprovar e continuar",
+    buttonQuickMeeting: "🧠 Reuniao",
+    audioSummaryCaption: "Resumo curto em audio",
+    audioSummaryUnavailable: "Audio summaries are not enabled right now.",
+    audioSummaryGenerating: "Gerando resumo em audio...",
+    audioSummaryExpired:
+      "Esse pedido de audio expirou. Me peça de novo e eu regenero.",
+    audioSummaryFailed: ({ error }) =>
+      `Audio summary failed: ${error}`,
     testJobNotFound: ({ jobId }) => `Test job not found: ${jobId}`,
     useRestartCommand:
       "Use /restart instead of sending that as a plain message.",
@@ -337,6 +430,14 @@ const MESSAGES: Record<Locale, TranslationCatalog> = {
       ]),
     skillNotFound: ({ name }) => `Skill not found: ${name}`,
     processingFailed: ({ error }) => `Message handling failed: ${error}`,
+    audioTranscriptionUnavailable:
+      "Audio understanding is not configured yet. Set OPENAI_API_KEY or OPENROUTER_API_KEY in the bot environment to enable voice transcription.",
+    audioTranscriptionStarted:
+      "Received your audio. Transcribing it before sending it to Codex...",
+    audioTranscriptPreview: ({ text }) =>
+      joinLines(["I heard this from your audio:", text]),
+    audioTranscriptionFailed: ({ error }) =>
+      `Audio transcription failed: ${error}`,
     projectNameRequired: "Project name is required.",
     targetOutsideWorkspaceRoot: "Target path is outside WORKSPACE_ROOT.",
     projectDirDoesNotExist: ({ path }) =>
@@ -464,7 +565,7 @@ const MESSAGES: Record<Locale, TranslationCatalog> = {
     githubMissingToken:
       "GITHUB_TOKEN is missing, so the GitHub API cannot create a repository.",
     githubRepoNameParseFailed:
-      "Could not parse a repository name. Example: /gh create repo codexclaw-demo",
+      "Could not parse a repository name. Example: /gh create repo dex-agent-demo",
     githubRepoLocalPathExists: ({ path }) =>
       `A local directory already exists for that repository: ${path}`,
     githubRepoCreated: ({ workdir, relativeWorkdir, repo, url, branch }) =>
@@ -516,13 +617,57 @@ const MESSAGES: Record<Locale, TranslationCatalog> = {
     shellReadonly:
       "The /sh channel is currently read-only. Write commands are blocked.",
     shellNeedsConfirmation: ({ command }) =>
-      `This command requires confirmation. Send: ${command}`
+      `This command requires confirmation. Send: ${command}`,
+    memoryInboxTitle: "Memory inbox",
+    memoryCandidatesCountLabel: "candidates",
+    memoryProposalsCountLabel: "proposals",
+    memoryRecentCandidatesTitle: "Recent candidates",
+    memoryRecentProposalsTitle: "Recent proposals",
+    memoryInboxEmpty: "No pending memory candidates or proposals.",
+    memoryCandidatesTitle: "Pending memory candidates",
+    memoryNoPendingCandidates: "No pending memory candidates.",
+    memoryInboxProposalsTitle: "Inbox Proposals",
+    memoryNoPendingProposals: "No pending memory proposals.",
+    memorySummaryLabel: "summary",
+    memoryInboxProposalTitle: "Memory proposal",
+    memoryKindLabel: "kind",
+    memoryTitleLabel: "title",
+    memoryReasonDefault: "No explicit reason was recorded.",
+    memoryWhyLabel: "why",
+    memorySourceLabel: "source",
+    memoryDestinationLabel: "destination",
+    memoryPromotionProposalTitle: "Memory Promotion Proposal",
+    memoryProjectTitle: "Project memory",
+    memoryNoRelevantProjectMemory: "No relevant project memory was found.",
+    memoryObjectiveLabel: "objective",
+    memoryLatestClosedBlockLabel: "latest closed block",
+    memoryNextEligibleBlockLabel: "next eligible block",
+    memoryConfidenceLabel: "confidence",
+    memoryNotRecorded: "not recorded",
+    memoryTacticalNotesTitle: "Tactical notes",
+    memoryDurableMemoryTitle: "Durable memory",
+    memorySourcesLabel: "sources",
+    memoryEvidenceLabel: "evidence",
+    memoryNone: "none",
+    buttonMemoryPromote: ({ index }) => `Promote #${index}`,
+    buttonMemoryWhy: ({ index }) => `Why #${index}`,
+    buttonMemoryDismiss: ({ index }) => `Dismiss #${index}`,
+    buttonMemoryConfirmWrite: "Confirm write",
+    buttonMemoryCancel: "Cancel",
+    buttonMemoryCandidates: "Candidates",
+    buttonMemoryProposals: "Proposals",
+    buttonMemoryActive: "ACTIVE",
+    buttonMemoryHandoff: "HANDOFF",
+    buttonMemoryInbox: "Inbox",
+    buttonMemoryRefresh: "Refresh",
+    buttonMemoryConfirm: ({ index }) => `Confirm #${index}`,
+    buttonMemoryCancelIndexed: ({ index }) => `Cancel #${index}`
   },
   zh: {
     buttonRefreshTestStatus: "刷新测试状态",
     emptyResponse: "(空响应)",
     startLines: () => [
-      "CodexClaw 已就绪。",
+      "Dex Agent 已就绪。",
       "普通消息和编码任务会路由到 Codex。",
       "Bot 侧 MCP 仅通过显式 /mcp 命令调用。",
       "试试: /status, /repo, /pwd, /exec, /auto, /plan, /model, /language, /verbose, /skill, /new, /sh",
@@ -639,7 +784,13 @@ const MESSAGES: Record<Locale, TranslationCatalog> = {
     repoSwitched: ({ relativePath, workdir }) =>
       joinLines([
         "项目已切换。",
-        `current project: ${relativePath}`,
+        `active project: ${relativePath}`,
+        `workdir: ${workdir}`
+      ]),
+    repoAlreadyCurrent: ({ relativePath, workdir }) =>
+      joinLines([
+        "The requested project is already active.",
+        `active project: ${relativePath}`,
         `workdir: ${workdir}`
       ]),
     repoSwitchFailed: ({ error }) => `切换项目失败: ${error}`,
@@ -722,6 +873,8 @@ const MESSAGES: Record<Locale, TranslationCatalog> = {
     planNotice: "正在执行仅规划模式的 Codex 任务...",
     taskBusy: ({ mode }) =>
       `当前已有 ${mode || "unknown"} 任务在运行。请等待完成或先使用 /interrupt。`,
+    operationalStatusHeader: "当前运行状态：",
+    interruptWithQueueStatus: "执行已中断。当前队列状态：",
     workspaceContention: ({
       relativeWorkdir,
       mode,
@@ -734,6 +887,7 @@ const MESSAGES: Record<Locale, TranslationCatalog> = {
         `如果你确认要继续，只执行一次请发送 ${continueCommand}。`
       ]),
     continueStarted: ({ mode }) => `已继续执行这条被拦下的请求一次 (${mode})。`,
+    queueRunStarted: ({ mode }) => `队列中的项目已发送给 Codex (${mode})。我会在这里继续显示进度。`,
     continueNothingPending: "当前 chat 没有待继续的被拦截请求。",
     codexBusyForShell:
       "当前有 Codex 任务正在运行。先等待完成，或使用 /interrupt 或 /new。",
@@ -920,7 +1074,7 @@ const MESSAGES: Record<Locale, TranslationCatalog> = {
       joinLines(["推送成功。", `workdir: ${workdir}`, `branch: ${branch}`]),
     githubMissingToken: "缺少 GITHUB_TOKEN，无法调用 GitHub API 创建仓库。",
     githubRepoNameParseFailed:
-      "无法解析仓库名。示例: /gh create repo codexclaw-demo",
+      "无法解析仓库名。示例: /gh create repo dex-agent-demo",
     githubRepoLocalPathExists: ({ path }) =>
       `同名本地目录已存在，无法创建新仓库: ${path}`,
     githubRepoCreated: ({ workdir, relativeWorkdir, repo, url, branch }) =>
@@ -973,12 +1127,171 @@ const MESSAGES: Record<Locale, TranslationCatalog> = {
   "zh-HK": {}
 };
 
+MESSAGES["pt-BR"] = {
+  ...MESSAGES.en,
+  startLines: () => [
+    "Dex Agent pronto.",
+    "Mensagens, áudios e tarefas de código vão para o Codex.",
+    "MCP do bot só roda por comandos explícitos com /mcp.",
+    "Use: /status, /repo, /pwd, /exec, /auto, /plan, /model, /language, /verbose, /skill, /new, /sh",
+    'Exemplo GitHub: /gh commit "feat: init"'
+  ],
+  helpLines: () => [
+    "Comandos:",
+    "/help - Mostra a ajuda",
+    "/status - Mostra o estado do runtime neste chat",
+    "/pwd - Mostra o diretório atual do projeto",
+    "/repo - Lista projetos disponíveis",
+    "/repo <name> - Troca o projeto atual deste chat",
+    "/repo <keyword> - Procura projeto por palavra-chave e troca ou lista candidatos",
+    "/repo recent - Mostra projetos recentes deste chat",
+    "/repo - - Volta para o projeto anterior",
+    "/new - Limpa a conversa salva do projeto atual",
+    "/exec <task> - Força uma execução isolada do Codex sem salvar contexto do projeto",
+    "/auto <task> - Força uma execução isolada totalmente automática",
+    "/plan <task> - Gera apenas um plano, sem intenção direta de editar arquivos",
+    "/continue - Reenvia uma vez o último pedido bloqueado por conflito no mesmo workdir",
+    "/queue [list|add|remove|clear|run] - Gerencia a fila de pedidos do chat",
+    "/fila [listar|adicionar|remover|limpar|executar] - Alias de /queue",
+    "/model [name|reset] - Consulta ou fixa o modelo deste chat",
+    "/language [pt-BR|en|zh|zh-HK] - Consulta ou troca o idioma deste chat",
+    "/verbose [on|off] - Mostra ou esconde avisos do sistema",
+    "/skill list - Mostra os skills deste chat",
+    "/skill status - Alias de /skill list",
+    "/skill on <name> - Ativa um skill",
+    "/skill off <name> - Desativa um skill",
+    "/dev start|stop|status|logs|url - Controla o servidor de dev do projeto",
+    "/sh <command> - Executa um comando Linux restrito",
+    "/sh --confirm <command> - Confirma um comando shell de alto risco",
+    "/restart - Reinicia o processo do bot",
+    "/interrupt - Interrompe a execução atual do Codex",
+    "/stop - Encerra a execução atual do Codex",
+    "/cron_now - Dispara o resumo diário agora",
+    "/gh ... - Skill do GitHub",
+    "/mcp ... - Controle MCP e chamadas explícitas",
+    "Áudios - são transcritos antes de seguir para o Codex"
+  ],
+  statusLines: ({
+    status,
+    recentProjects,
+    shellSummary,
+    skillsSummary,
+    mcpSummary
+  }) => [
+    "Status:",
+    `backend: ${status.backend}`,
+    `situacao: ${status.active ? "trabalhando" : "parado"}`,
+    `ativo: ${status.active ? "sim" : "nao"}`,
+    `modo ativo: ${status.activeMode || "idle"}`,
+    `ultimo modo: ${status.lastMode || "none"}`,
+    `ultima saida: ${status.lastExitCode === null ? "n/a" : status.lastExitCode}`,
+    `pty suportado: ${
+      status.backend === "sdk"
+        ? "n/a (backend sdk)"
+        : status.ptySupported === null
+          ? "desconhecido"
+          : status.ptySupported
+            ? "sim"
+            : "nao (fallback exec)"
+    }`,
+    `modelo preferido: ${status.preferredModel || "herdar padrao do Codex"}`,
+    `idioma: ${status.language} (${languageLabel(status.language, "pt-BR")})`,
+    `avisos do sistema: ${status.verboseOutput ? "on" : "off"}`,
+    `comando: ${status.command}`,
+    `raiz do workspace: ${status.workspaceRoot}`,
+    `workdir: ${status.workdir}`,
+    `projetos recentes: ${recentProjects || "."}`,
+    `contexto do projeto: ${status.projectSessionId ? `retomavel (${status.projectSessionId})` : "novo"}`,
+    `sistema de workflow: ${status.workflowSystem} (interno)`,
+    `fase do workflow: ${status.workflowPhase}`,
+    `shell seguro: ${shellSummary}`,
+    `skills: ${skillsSummary}`,
+    `servidores MCP: ${mcpSummary}`
+  ],
+  usageLanguage: "Uso: /language [pt-BR|en|zh|zh-HK]",
+  languageCurrent: ({ language }) =>
+    `Idioma atual: ${language} (${languageLabel(language, "pt-BR")})`,
+  languageSet: ({ language }) =>
+    `Idioma alterado para ${language} (${languageLabel(language, "pt-BR")}).`,
+  continueStarted: ({ mode }) =>
+    `Retomando uma vez o pedido bloqueado (${mode}).`,
+  startupReady: ({ relativeWorkdir }) =>
+    joinLines([
+      "Dex Agent iniciou e esta pronto.",
+      `projeto atual: ${relativeWorkdir}`
+    ]),
+  restartReady: ({ relativeWorkdir }) =>
+    joinLines([
+      "Restart do bot concluido.",
+      `projeto atual: ${relativeWorkdir}`,
+      "Se voce enviou algum comando durante a janela de restart, envie de novo agora."
+    ]),
+  queueRunStarted: ({ mode }) =>
+    `Item da fila enviado ao Codex (${mode}). Vou mostrar o andamento aqui.`,
+  interruptResult: ({ ok }) =>
+    ok
+      ? "Interrompendo a execucao atual do Codex."
+      : "Nao existe execucao ativa do Codex neste chat.",
+  stopResult: ({ ok }) =>
+    ok
+      ? "A execucao ativa do Codex foi encerrada."
+      : "Nao existe execucao ativa do Codex neste chat.",
+  languageInvalid: "Idiomas suportados: pt-BR, en, zh, zh-HK.",
+  callbackRefreshed: "Status atualizado",
+  emptyResponse: "(resposta vazia)",
+  memoryInboxTitle: "Inbox de memoria",
+  memoryCandidatesCountLabel: "candidates",
+  memoryProposalsCountLabel: "proposals",
+  memoryRecentCandidatesTitle: "Candidates recentes",
+  memoryRecentProposalsTitle: "Proposals recentes",
+  memoryInboxEmpty: "Nao ha candidates ou proposals pendentes.",
+  memoryCandidatesTitle: "Candidates de memoria pendentes",
+  memoryNoPendingCandidates: "Nao ha candidates de memoria pendentes.",
+  memoryInboxProposalsTitle: "Inbox Proposals",
+  memoryNoPendingProposals: "Nao ha proposals de memoria pendentes.",
+  memorySummaryLabel: "summary",
+  memoryInboxProposalTitle: "Proposal de memoria",
+  memoryKindLabel: "kind",
+  memoryTitleLabel: "title",
+  memoryReasonDefault: "Nenhuma razao explicita foi registrada.",
+  memoryWhyLabel: "why",
+  memorySourceLabel: "source",
+  memoryDestinationLabel: "destination",
+  memoryPromotionProposalTitle: "Proposal de promocao de memoria",
+  memoryProjectTitle: "Memoria do projeto",
+  memoryNoRelevantProjectMemory: "Nenhuma memoria relevante do projeto foi encontrada.",
+  memoryObjectiveLabel: "objetivo",
+  memoryLatestClosedBlockLabel: "ultimo bloco fechado",
+  memoryNextEligibleBlockLabel: "proximo bloco elegivel",
+  memoryConfidenceLabel: "confianca",
+  memoryNotRecorded: "nao registrado",
+  memoryTacticalNotesTitle: "Notas taticas",
+  memoryDurableMemoryTitle: "Memoria duravel",
+  memorySourcesLabel: "fontes",
+  memoryEvidenceLabel: "evidencia",
+  memoryNone: "nenhum",
+  buttonMemoryPromote: ({ index }) => `Promover #${index}`,
+  buttonMemoryWhy: ({ index }) => `Motivo #${index}`,
+  buttonMemoryDismiss: ({ index }) => `Descartar #${index}`,
+  buttonMemoryConfirmWrite: "Confirmar escrita",
+  buttonMemoryCancel: "Cancelar",
+  buttonMemoryCandidates: "Candidates",
+  buttonMemoryProposals: "Proposals",
+  buttonMemoryActive: "ACTIVE",
+  buttonMemoryHandoff: "HANDOFF",
+  buttonMemoryInbox: "Inbox",
+  buttonMemoryRefresh: "Atualizar",
+  buttonMemoryConfirm: ({ index }) => `Confirmar #${index}`,
+  buttonMemoryCancelIndexed: ({ index }) => `Cancelar #${index}`
+};
+
 type ArrayMessageKey = "startLines" | "helpLines" | "statusLines" | "pwdLines";
 
 export function normalizeLanguage(value = ""): Locale | "" {
   const raw = String(value || "").trim();
   if (!raw) return DEFAULT_LANGUAGE;
   const lower = raw.toLowerCase();
+  if (lower === "pt" || lower === "pt-br" || lower === "pt_br") return "pt-BR";
   if (lower === "en") return "en";
   if (lower === "zh") return "zh";
   if (lower === "zh-hk" || lower === "zh_hk") return "zh-HK";
@@ -1006,6 +1319,7 @@ export const t: TranslateFn = ((
   const resolvedLocale = normalizeLanguage(locale) || DEFAULT_LANGUAGE;
   const catalogs = [
     MESSAGES[resolvedLocale],
+    resolvedLocale === "pt-BR" ? MESSAGES.en : null,
     resolvedLocale === "zh-HK" ? MESSAGES.zh : null,
     MESSAGES.en
   ].filter((catalog): catalog is TranslationCatalog => Boolean(catalog));

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
+import process from "node:process";
 import { toErrorMessage } from "../lib/errors.js";
 
 const EXECUTE_MASK = 0o111;
@@ -18,6 +19,24 @@ interface NativePtyModule {
 
 interface NodePtyUtilsModule {
   loadNativeModule(name: string): NativePtyModule;
+}
+
+function getNodePtyNativeDir(): {
+  terminalModulePath: string;
+  nativeDir: string;
+} {
+  const require = createRequire(import.meta.url);
+  const terminalModulePath =
+    process.platform === "win32"
+      ? require.resolve("node-pty/lib/windowsTerminal.js")
+      : require.resolve("node-pty/lib/unixTerminal.js");
+  const utils = require("node-pty/lib/utils") as NodePtyUtilsModule;
+  const native = utils.loadNativeModule("pty");
+
+  return {
+    terminalModulePath,
+    nativeDir: native.dir
+  };
 }
 
 export function ensureExecutablePermissions(
@@ -43,17 +62,39 @@ export function ensureExecutablePermissions(
 }
 
 export function resolveNodePtySpawnHelperPath(): string {
-  const require = createRequire(import.meta.url);
-  const unixTerminalPath = require.resolve("node-pty/lib/unixTerminal.js");
-  const unixTerminalDir = path.dirname(unixTerminalPath);
-  const utils = require("node-pty/lib/utils") as NodePtyUtilsModule;
-  const native = utils.loadNativeModule("pty");
+  const { terminalModulePath, nativeDir } = getNodePtyNativeDir();
+  const terminalDir = path.dirname(terminalModulePath);
 
-  return path.resolve(unixTerminalDir, native.dir, "spawn-helper");
+  return path.resolve(terminalDir, nativeDir, "spawn-helper");
+}
+
+export function resolveNodePtyWindowsArtifactPath(): string {
+  const { terminalModulePath, nativeDir } = getNodePtyNativeDir();
+  const terminalDir = path.dirname(terminalModulePath);
+
+  return path.resolve(terminalDir, nativeDir, "pty.node");
 }
 
 export function repairNodePtySpawnHelperPermissions(): ExecutablePermissionResult {
   try {
+    if (process.platform === "win32") {
+      const artifactPath = resolveNodePtyWindowsArtifactPath();
+      if (!fs.existsSync(artifactPath)) {
+        return {
+          path: artifactPath,
+          changed: false,
+          executable: false,
+          error: `Missing node-pty Windows artifact: ${artifactPath}`
+        };
+      }
+
+      return {
+        path: artifactPath,
+        changed: false,
+        executable: true
+      };
+    }
+
     const helperPath = resolveNodePtySpawnHelperPath();
     return ensureExecutablePermissions(helperPath);
   } catch (error: unknown) {

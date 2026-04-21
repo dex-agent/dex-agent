@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   buildTelegramApiUrl,
+  buildTelegramFileUrl,
   requestTelegramJson
 } from "../src/lib/telegramApi.js";
 
@@ -9,6 +10,17 @@ test("buildTelegramApiUrl preserves bot tokens that contain colons", () => {
   assert.equal(
     buildTelegramApiUrl("https://api.telegram.org", "123456:abcDEF", "getMe"),
     "https://api.telegram.org/bot123456:abcDEF/getMe"
+  );
+});
+
+test("buildTelegramFileUrl preserves bot tokens that contain colons", () => {
+  assert.equal(
+    buildTelegramFileUrl(
+      "https://api.telegram.org/",
+      "123456:abcDEF",
+      "/voice/file.ogg"
+    ),
+    "https://api.telegram.org/file/bot123456:abcDEF/voice/file.ogg"
   );
 });
 

@@ -32,11 +32,29 @@ const expectedUsername = String(process.env.TELEGRAM_EXPECTED_USERNAME || "")
   .trim()
   .replace(/^@/, "");
 const smokeChatId = String(process.env.TELEGRAM_SMOKE_CHAT_ID || "").trim();
+const smokeAllowPrimaryChat =
+  String(process.env.TELEGRAM_SMOKE_ALLOW_PRIMARY_CHAT || "").trim().toLowerCase() ===
+  "true";
+const allowedUserIds = String(process.env.ALLOWED_USER_IDS || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
 const apiBase = normalizeTelegramApiBase(process.env.TELEGRAM_API_BASE);
 const proxyUrl = process.env.TELEGRAM_PROXY_URL;
 
 if (!token) {
   console.error("Missing BOT_TOKEN.");
+  process.exit(1);
+}
+
+if (smokeChatId && !smokeAllowPrimaryChat && allowedUserIds.includes(smokeChatId)) {
+  console.error(
+    [
+      "Refusing to send telegram smoke to the primary operator chat.",
+      `chatId: ${smokeChatId}`,
+      "Set TELEGRAM_SMOKE_CHAT_ID to a dedicated diagnostics chat or use TELEGRAM_SMOKE_ALLOW_PRIMARY_CHAT=true only when you really intend to pollute the live chat."
+    ].join("\n")
+  );
   process.exit(1);
 }
 

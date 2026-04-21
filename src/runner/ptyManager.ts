@@ -5,6 +5,7 @@ import process from "node:process";
 import {
   Codex,
   type CodexOptions,
+  type Input,
   type ThreadEvent,
   type ThreadItem,
   type ThreadOptions as CodexThreadOptions
@@ -13,12 +14,31 @@ import pty from "node-pty";
 import throttle from "lodash.throttle";
 import stripAnsi from "strip-ansi";
 import type { AppConfig } from "../config.js";
-import { formatPtyOutput, splitTelegramMessage } from "../bot/formatter.js";
+import {
+  escapeMarkdownV2,
+  extractCodexExecResponse,
+  formatPtyOutput,
+  sanitizeTelegramFacingCodexText,
+  splitTelegramMessage
+} from "../bot/formatter.js";
 import { normalizeLanguage, t, type Locale } from "../bot/i18n.js";
 import { toErrorMessage } from "../lib/errors.js";
 import { repairNodePtySpawnHelperPermissions } from "./ptyPreflight.js";
 type SessionMode = "pty" | "exec" | "sdk";
 type ExitSignal = number | NodeJS.Signals | null;
+type PromptInput = Input;
+type SerializablePromptInput =
+  | string
+  | Array<
+      | {
+          type: "text";
+          text: string;
+        }
+      | {
+          type: "local_image";
+          path: string;
+        }
+    >;
 type WorkflowPhase =
   | "brainstorming"
   | "planning"
@@ -59,7 +79,7 @@ interface BotLike {
 interface CodexThreadLike {
   id: string | null;
   runStreamed(
-    input: string,
+    input: PromptInput,
     options?: {
       signal?: AbortSignal;
     }
@@ -79,6 +99,10 @@ interface ProjectConversationState {
   lastExitCode: number | null;
   lastExitSignal: ExitSignal;
   lastWorkflowPhase: WorkflowPhase | null;
+  lastPromptText: string | null;
+  lastPromptAt: string | null;
+  lastFinalResponseText: string | null;
+  lastFinalizedAt: string | null;
 }
 
 interface ChatRuntimeState {
@@ -89,6 +113,7 @@ interface ChatRuntimeState {
   recentWorkdirs: string[];
   ptySupported: boolean | null;
   pendingPrompt: PendingPromptRequest | null;
+  promptQueue: QueuedPromptRequest[];
   projectStates: Map<string, ProjectConversationState>;
 }
 
@@ -109,6 +134,9 @@ interface RunnerSession {
   lastRendered: string;
   flushQueue: Promise<void>;
   throttledFlush: ReturnType<typeof throttle>;
+  silentOutput: boolean;
+  finalResponseText: string;
+  cleanupPaths: string[];
   write: ((input: string) => void) | null;
   interrupt: (() => void) | null;
   close: (() => void) | null;
@@ -122,6 +150,8 @@ interface SessionOptions {
   fullAuto?: boolean;
   extraArgs?: string[];
   trackConversation?: boolean;
+  silentOutput?: boolean;
+  cleanupPaths?: string[];
 }
 
 interface SendPromptOptions {
@@ -130,6 +160,9 @@ interface SendPromptOptions {
   extraArgs?: string[];
   notice?: string;
   allowWorkspaceConflict?: boolean;
+  silentOutput?: boolean;
+  cleanupPaths?: string[];
+  queueOnBusy?: boolean;
 }
 
 interface SendPromptContext {
@@ -139,10 +172,18 @@ interface SendPromptContext {
 }
 
 interface PendingPromptRequest {
-  prompt: string;
+  prompt: PromptInput;
   workdir: string;
   options: SendPromptOptions;
   blockingChatId: string;
+}
+
+interface QueuedPromptRequest {
+  id: string;
+  prompt: PromptInput;
+  workdir: string;
+  options: SendPromptOptions;
+  createdAt: string;
 }
 
 interface SendPromptStartedResult {
@@ -156,6 +197,14 @@ interface SendPromptBusyResult {
   started: false;
   reason: "busy";
   activeMode: SessionMode;
+}
+
+interface SendPromptQueuedResult {
+  started: false;
+  reason: "queued";
+  activeMode: SessionMode;
+  queueLength: number;
+  item: PromptQueueItemSummary;
 }
 
 interface SendPromptWorkspaceBusyResult {
@@ -174,6 +223,7 @@ interface NoPendingPromptResult {
 export type SendPromptResult =
   | SendPromptStartedResult
   | SendPromptBusyResult
+  | SendPromptQueuedResult
   | SendPromptWorkspaceBusyResult;
 
 export type ContinuePendingPromptResult =
@@ -187,6 +237,10 @@ interface StoredProjectConversationState {
   lastExitCode?: unknown;
   lastExitSignal?: unknown;
   lastWorkflowPhase?: unknown;
+  lastPromptText?: unknown;
+  lastPromptAt?: unknown;
+  lastFinalResponseText?: unknown;
+  lastFinalizedAt?: unknown;
 }
 
 interface StoredChatRuntimeState {
@@ -195,6 +249,7 @@ interface StoredChatRuntimeState {
   verboseOutput?: unknown;
   currentWorkdir?: unknown;
   recentWorkdirs?: unknown;
+  promptQueue?: unknown;
   projects?: Record<string, StoredProjectConversationState>;
 }
 
@@ -207,6 +262,7 @@ export interface PtyManagerSnapshot {
       verboseOutput: boolean;
       currentWorkdir: string;
       recentWorkdirs: string[];
+      promptQueue?: StoredQueuedPromptRequest[];
       projects: Record<
         string,
         {
@@ -215,6 +271,10 @@ export interface PtyManagerSnapshot {
           lastExitCode: number | null;
           lastExitSignal: ExitSignal;
           lastWorkflowPhase: WorkflowPhase | null;
+          lastPromptText: string | null;
+          lastPromptAt: string | null;
+          lastFinalResponseText: string | null;
+          lastFinalizedAt: string | null;
         }
       >;
     }
@@ -242,10 +302,66 @@ export interface PtyManagerStatus {
   workflowPhase: WorkflowPhase | "working" | "none";
 }
 
+export interface OperationalContinuationState {
+  active: boolean;
+  activeMode: SessionMode | null;
+  workflowPhase: WorkflowPhase | "working" | "none";
+  workdir: string;
+  relativeWorkdir: string;
+  pendingPromptText: string | null;
+  queuedItems: PromptQueueItemSummary[];
+  lastPromptText: string | null;
+  lastPromptAt: string | null;
+  lastFinalResponseText: string | null;
+  lastFinalizedAt: string | null;
+}
+
+interface StoredQueuedPromptRequest {
+  id: string;
+  prompt: SerializablePromptInput;
+  workdir: string;
+  options: SendPromptOptions;
+  createdAt: string;
+}
+
+export interface PromptQueueItemSummary {
+  id: string;
+  index: number;
+  text: string;
+  workdir: string;
+  relativeWorkdir: string;
+  createdAt: string;
+}
+
+export interface RecoverableQueuedChatSummary {
+  chatId: string;
+  queueLength: number;
+  workdir: string;
+  relativeWorkdir: string;
+  nextItem: PromptQueueItemSummary;
+}
+
+export interface QueueMutationResult {
+  ok: boolean;
+  item?: PromptQueueItemSummary;
+  removed?: PromptQueueItemSummary;
+  count?: number;
+  reason?: "not_found" | "empty" | "busy" | "full" | "unserializable";
+}
+
 interface PtyManagerOptions {
   bot: BotLike;
   config: Pick<AppConfig, "runner" | "workspace" | "reasoning" | "mcp">;
   onChange?: (snapshot: PtyManagerSnapshot) => void;
+  onResponseFinalized?: (payload: {
+    chatId: string;
+    text: string;
+    promptText: string | null;
+    mode: SessionMode;
+    workdir: string;
+    exitCode: number | null;
+    signal: ExitSignal;
+  }) => Promise<void>;
   codexClientFactory?: (options: CodexOptions) => CodexClientLike;
 }
 
@@ -274,12 +390,157 @@ function extractSessionId(rawText: string): string {
   return matched?.[1] || "";
 }
 
+const MAX_PROMPT_QUEUE_SIZE = 10;
+const INTERRUPT_FORCE_CLOSE_MS = 2000;
+
+function createQueueId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function normalizeProjectQuery(value: string): string {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s/.-]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function scoreProjectQueryMatch(
+  project: { name: string; relativePath: string },
+  query: string
+): number {
+  const normalizedQuery = normalizeProjectQuery(query);
+  if (!normalizedQuery) {
+    return 0;
+  }
+
+  const collapsedQuery = normalizedQuery.replace(/\s+/g, "");
+  const candidates = [project.name, project.relativePath].map((value) =>
+    normalizeProjectQuery(value)
+  );
+
+  let score = 0;
+  if (candidates.some((value) => value === normalizedQuery)) {
+    score += 10;
+  }
+  if (
+    candidates.some((value) => value.replace(/\s+/g, "") === collapsedQuery)
+  ) {
+    score += 8;
+  }
+  if (candidates.some((value) => value.includes(normalizedQuery))) {
+    score += 6;
+  }
+  if (
+    candidates.some((value) =>
+      value.replace(/\s+/g, "").includes(collapsedQuery)
+    )
+  ) {
+    score += 5;
+  }
+
+  for (const token of normalizedQuery.split(/\s+/).filter(Boolean)) {
+    if (candidates.some((value) => value.includes(token))) {
+      score += 1;
+    }
+  }
+
+  return score;
+}
+
+function clonePromptOptionsForQueue(
+  options: SendPromptOptions
+): SendPromptOptions {
+  const replayOptions: SendPromptOptions = {};
+
+  if (options.forceExec) {
+    replayOptions.forceExec = true;
+  }
+  if (options.fullAuto) {
+    replayOptions.fullAuto = true;
+  }
+  if (options.extraArgs?.length) {
+    replayOptions.extraArgs = [...options.extraArgs];
+  }
+  if (options.notice) {
+    replayOptions.notice = options.notice;
+  }
+  if (options.silentOutput) {
+    replayOptions.silentOutput = true;
+  }
+  if (options.cleanupPaths?.length) {
+    replayOptions.cleanupPaths = [...options.cleanupPaths];
+  }
+
+  return replayOptions;
+}
+
 function isLocale(value: string): value is Locale {
-  return value === "en" || value === "zh" || value === "zh-HK";
+  return value === "pt-BR" || value === "en" || value === "zh" || value === "zh-HK";
 }
 
 function toLocale(value: string): Locale {
-  return isLocale(value) ? value : "en";
+  return isLocale(value) ? value : "pt-BR";
+}
+
+function extractUserRequestFromMemoryPacket(text: string): string | null {
+  const source = String(text || "").trim();
+  if (!source.startsWith("Authoritative project memory packet:")) {
+    return null;
+  }
+
+  const marker = "\nUser request:\n";
+  const markerIndex = source.indexOf(marker);
+  if (markerIndex < 0) {
+    return null;
+  }
+
+  const extracted = source.slice(markerIndex + marker.length).trim();
+  return extracted || null;
+}
+
+function normalizeDeferredPromptInput(prompt: PromptInput): PromptInput {
+  if (typeof prompt !== "string") {
+    return prompt;
+  }
+
+  return extractUserRequestFromMemoryPacket(prompt) || prompt;
+}
+
+function toPromptSnapshotText(prompt: PromptInput): string {
+  if (typeof prompt === "string") {
+    return prompt.replace(/\s+/g, " ").trim();
+  }
+
+  return prompt
+    .map((item) =>
+      item.type === "text"
+        ? item.text
+        : `Analyze the attached local image at: ${item.path}`
+    )
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function compactSnapshotText(
+  value: string | null | undefined,
+  limit = 1200
+): string | null {
+  const compact = String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!compact) {
+    return null;
+  }
+
+  return compact.length <= limit
+    ? compact
+    : `${compact.slice(0, limit - 3).trimEnd()}...`;
 }
 
 function isWorkflowPhase(value: unknown): value is WorkflowPhase {
@@ -431,11 +692,13 @@ export class PtyManager {
   ) => CodexClientLike;
   private codexClient: CodexClientLike | null;
   private readonly onChange?: (snapshot: PtyManagerSnapshot) => void;
+  private readonly onResponseFinalized?: PtyManagerOptions["onResponseFinalized"];
 
   constructor({
     bot,
     config,
     onChange,
+    onResponseFinalized,
     codexClientFactory
   }: PtyManagerOptions) {
     this.bot = bot;
@@ -449,6 +712,7 @@ export class PtyManager {
     this.sessions = new Map();
     this.chatState = new Map();
     this.ptyPreflight = repairNodePtySpawnHelperPermissions();
+    this.onResponseFinalized = onResponseFinalized;
 
     if (this.ptyPreflight.error) {
       console.warn(
@@ -468,12 +732,13 @@ export class PtyManager {
 
     const state: ChatRuntimeState = {
       preferredModel: null,
-      language: "en",
+      language: "pt-BR",
       verboseOutput: false,
       currentWorkdir: this.config.runner.cwd,
       recentWorkdirs: [this.config.runner.cwd],
       ptySupported: null,
       pendingPrompt: null,
+      promptQueue: [],
       projectStates: new Map([
         [
           this.config.runner.cwd,
@@ -482,7 +747,11 @@ export class PtyManager {
             lastMode: null,
             lastExitCode: null,
             lastExitSignal: null,
-            lastWorkflowPhase: null
+            lastWorkflowPhase: null,
+            lastPromptText: null,
+            lastPromptAt: null,
+            lastFinalResponseText: null,
+            lastFinalizedAt: null
           }
         ]
       ])
@@ -509,7 +778,11 @@ export class PtyManager {
       lastMode: null,
       lastExitCode: null,
       lastExitSignal: null,
-      lastWorkflowPhase: null
+      lastWorkflowPhase: null,
+      lastPromptText: null,
+      lastPromptAt: null,
+      lastFinalResponseText: null,
+      lastFinalizedAt: null
     };
 
     state.projectStates.set(resolvedWorkdir, projectState);
@@ -530,12 +803,42 @@ export class PtyManager {
       return this.codexClient;
     }
 
+    const childEnv = Object.fromEntries(
+      Object.entries(process.env).filter(
+        (entry): entry is [string, string] => entry[1] !== undefined
+      )
+    );
+    delete childEnv.CODEX_API_KEY;
+    delete childEnv.OPENAI_API_KEY;
+    delete childEnv.OPENAI_BASE_URL;
+    delete childEnv.OPENROUTER_API_KEY;
+    delete childEnv.OPENROUTER_APP_TITLE;
+
+    if (this.config.runner.apiKey) {
+      childEnv.CODEX_API_KEY = this.config.runner.apiKey;
+      childEnv.OPENAI_API_KEY = this.config.runner.apiKey;
+      childEnv.OPENROUTER_API_KEY = this.config.runner.apiKey;
+    }
+
+    if (this.config.runner.baseUrl) {
+      childEnv.OPENAI_BASE_URL = this.config.runner.baseUrl;
+    }
+
     const options: CodexOptions = {
-      config: this.config.runner.sdkConfig
+      config: this.config.runner.sdkConfig,
+      env: childEnv
     };
 
     if (this.config.runner.command !== "codex") {
       options.codexPathOverride = this.config.runner.command;
+    }
+
+    if (this.config.runner.baseUrl) {
+      options.baseUrl = this.config.runner.baseUrl;
+    }
+
+    if (this.config.runner.apiKey) {
+      options.apiKey = this.config.runner.apiKey;
     }
 
     this.codexClient = this.codexClientFactory(options);
@@ -626,7 +929,7 @@ export class PtyManager {
 
   getLanguage(chatId: string | number): Locale {
     const state = this.ensureChatState(chatId);
-    return toLocale(normalizeLanguage(state.language) || "en");
+    return toLocale(normalizeLanguage(state.language) || "pt-BR");
   }
 
   setLanguage(chatId: string | number, language: string): Locale {
@@ -666,12 +969,55 @@ export class PtyManager {
     return this.ensureProjectState(chatId, workdir);
   }
 
+  getOperationalContinuationState(
+    chatId: string | number,
+    workdir = this.getWorkdir(chatId)
+  ): OperationalContinuationState {
+    const key = String(chatId);
+    const state = this.ensureChatState(key);
+    const projectState = this.ensureProjectState(key, workdir);
+    const session = this.sessions.get(key);
+
+    return {
+      active: Boolean(session),
+      activeMode: session?.mode || null,
+      workflowPhase: session
+        ? (session.workflowPhase ?? "working")
+        : (projectState.lastWorkflowPhase ?? "none"),
+      workdir,
+      relativeWorkdir: this.serializeWorkdir(workdir),
+      pendingPromptText: state.pendingPrompt
+        ? compactSnapshotText(toPromptSnapshotText(state.pendingPrompt.prompt))
+        : null,
+      queuedItems: this.listPromptQueue(key),
+      lastPromptText: compactSnapshotText(projectState.lastPromptText),
+      lastPromptAt: projectState.lastPromptAt,
+      lastFinalResponseText: compactSnapshotText(
+        projectState.lastFinalResponseText,
+        1800
+      ),
+      lastFinalizedAt: projectState.lastFinalizedAt
+    };
+  }
+
   rememberWorkdir(state: ChatRuntimeState, workdir: string): void {
     const history = [
       workdir,
       ...(state.recentWorkdirs || []).filter((item) => item !== workdir)
     ];
     state.recentWorkdirs = history.slice(0, 6);
+  }
+
+  rememberPromptForProject(
+    chatId: string | number,
+    workdir: string,
+    prompt: PromptInput
+  ): void {
+    const projectState = this.ensureProjectState(chatId, workdir);
+    projectState.lastPromptText = compactSnapshotText(
+      toPromptSnapshotText(normalizeDeferredPromptInput(prompt))
+    );
+    projectState.lastPromptAt = new Date().toISOString();
   }
 
   clearPendingPrompt(chatId: string | number): void {
@@ -681,33 +1027,231 @@ export class PtyManager {
 
   storePendingPrompt(
     chatId: string | number,
-    prompt: string,
+    prompt: PromptInput,
     workdir: string,
     options: SendPromptOptions,
     blockingChatId: string
   ): void {
     const state = this.ensureChatState(chatId);
-    const replayOptions: SendPromptOptions = {};
-
-    if (options.forceExec) {
-      replayOptions.forceExec = true;
-    }
-    if (options.fullAuto) {
-      replayOptions.fullAuto = true;
-    }
-    if (options.extraArgs?.length) {
-      replayOptions.extraArgs = [...options.extraArgs];
-    }
-    if (options.notice) {
-      replayOptions.notice = options.notice;
-    }
+    const normalizedPrompt = normalizeDeferredPromptInput(prompt);
 
     state.pendingPrompt = {
-      prompt,
+      prompt: normalizedPrompt,
       workdir,
-      options: replayOptions,
+      options: clonePromptOptionsForQueue(options),
       blockingChatId
     };
+  }
+
+  enqueuePrompt(
+    chatId: string | number,
+    prompt: PromptInput,
+    workdir: string,
+    options: SendPromptOptions = {}
+  ): QueueMutationResult {
+    const state = this.ensureChatState(chatId);
+    const normalizedPrompt = normalizeDeferredPromptInput(prompt);
+    if (state.promptQueue.length >= MAX_PROMPT_QUEUE_SIZE) {
+      return {
+        ok: false,
+        reason: "full",
+        count: state.promptQueue.length
+      };
+    }
+
+    const item: QueuedPromptRequest = {
+      id: createQueueId(),
+      prompt: normalizedPrompt,
+      workdir,
+      options: clonePromptOptionsForQueue(options),
+      createdAt: new Date().toISOString()
+    };
+
+    state.promptQueue.push(item);
+    this.onChange?.(this.exportState());
+
+    return {
+      ok: true,
+      item: this.summarizeQueueItem(item, state.promptQueue.length)
+    };
+  }
+
+  listPromptQueue(chatId: string | number): PromptQueueItemSummary[] {
+    const state = this.ensureChatState(chatId);
+    return state.promptQueue.map((item, index) =>
+      this.summarizeQueueItem(item, index + 1)
+    );
+  }
+
+  listRecoverableQueuedChats(): RecoverableQueuedChatSummary[] {
+    const recoverable: RecoverableQueuedChatSummary[] = [];
+
+    for (const [chatId, state] of this.chatState.entries()) {
+      if (this.sessions.has(chatId) || !state.promptQueue.length) {
+        continue;
+      }
+
+      const [nextItem] = state.promptQueue;
+      if (!nextItem) {
+        continue;
+      }
+
+      recoverable.push({
+        chatId,
+        queueLength: state.promptQueue.length,
+        workdir: nextItem.workdir,
+        relativeWorkdir: this.serializeWorkdir(nextItem.workdir),
+        nextItem: this.summarizeQueueItem(nextItem, 1)
+      });
+    }
+
+    return recoverable;
+  }
+
+  removeQueuedPrompt(
+    chatId: string | number,
+    selector: string
+  ): QueueMutationResult {
+    const state = this.ensureChatState(chatId);
+    const normalized = String(selector || "").trim();
+    if (!normalized || !state.promptQueue.length) {
+      return {
+        ok: false,
+        reason: "empty"
+      };
+    }
+
+    const numericIndex = /^\d+$/.test(normalized)
+      ? Number.parseInt(normalized, 10) - 1
+      : -1;
+    const index =
+      numericIndex >= 0
+        ? numericIndex
+        : state.promptQueue.findIndex((item) =>
+            item.id.toLowerCase().startsWith(normalized.toLowerCase())
+          );
+
+    if (index < 0 || index >= state.promptQueue.length) {
+      return {
+        ok: false,
+        reason: "not_found"
+      };
+    }
+
+    const [removed] = state.promptQueue.splice(index, 1);
+    this.onChange?.(this.exportState());
+
+    return {
+      ok: true,
+      removed: this.summarizeQueueItem(removed, index + 1),
+      count: state.promptQueue.length
+    };
+  }
+
+  clearPromptQueue(chatId: string | number): QueueMutationResult {
+    const state = this.ensureChatState(chatId);
+    const count = state.promptQueue.length;
+    state.promptQueue = [];
+    this.onChange?.(this.exportState());
+
+    return {
+      ok: true,
+      count
+    };
+  }
+
+  async runNextQueuedPrompt(
+    ctx: SendPromptContext
+  ): Promise<SendPromptResult | NoPendingPromptResult> {
+    return this.startNextQueuedPrompt(String(ctx.chat.id), {
+      announce: true
+    });
+  }
+
+  private summarizeQueueItem(
+    item: QueuedPromptRequest,
+    index: number
+  ): PromptQueueItemSummary {
+    const text = this.stringifyPromptInput(normalizeDeferredPromptInput(item.prompt))
+      .replace(/\s+/g, " ")
+      .trim();
+
+    return {
+      id: item.id,
+      index,
+      text: text.length > 160 ? `${text.slice(0, 157)}...` : text || "(empty)",
+      workdir: item.workdir,
+      relativeWorkdir: this.serializeWorkdir(item.workdir),
+      createdAt: item.createdAt
+    };
+  }
+
+  private async startNextQueuedPrompt(
+    chatId: string,
+    { announce = false }: { announce?: boolean } = {}
+  ): Promise<SendPromptResult | NoPendingPromptResult> {
+    const state = this.ensureChatState(chatId);
+    if (!state.promptQueue.length) {
+      return {
+        started: false,
+        reason: "no_pending_prompt"
+      };
+    }
+
+    if (this.sessions.has(chatId)) {
+      return {
+        started: false,
+        reason: "busy",
+        activeMode: this.sessions.get(chatId)?.mode || "sdk"
+      };
+    }
+
+    const next = state.promptQueue.shift();
+    if (!next) {
+      return {
+        started: false,
+        reason: "no_pending_prompt"
+      };
+    }
+    this.onChange?.(this.exportState());
+
+    const previousWorkdir = state.currentWorkdir;
+    const switchedWorkdir = next.workdir !== previousWorkdir;
+    if (switchedWorkdir) {
+      this.ensureProjectState(chatId, next.workdir);
+      state.currentWorkdir = next.workdir;
+      this.rememberWorkdir(state, next.workdir);
+      this.onChange?.(this.exportState());
+    }
+
+    const result = await this.sendPrompt(
+      { chat: { id: chatId } },
+      normalizeDeferredPromptInput(next.prompt),
+      {
+        ...next.options,
+        queueOnBusy: false
+      }
+    );
+
+    if (announce && result.started) {
+      await this.bot.telegram
+        .sendMessage(
+          chatId,
+          `Executando item da fila: ${this.summarizeQueueItem(next, 1).text}`
+        )
+        .catch(() => {});
+    }
+
+    if (!result.started) {
+      if (switchedWorkdir) {
+        state.currentWorkdir = previousWorkdir;
+        this.rememberWorkdir(state, previousWorkdir);
+      }
+      state.promptQueue.unshift(next);
+      this.onChange?.(this.exportState());
+    }
+
+    return result;
   }
 
   findWorkspaceConflict(
@@ -740,6 +1284,20 @@ export class PtyManager {
     );
   }
 
+  isProjectDirectory(candidate: string): boolean {
+    const projectMarkers = [
+      ".git",
+      ".agents",
+      ".codex",
+      "package.json",
+      "AGENTS.md"
+    ];
+
+    return projectMarkers.some((marker) =>
+      fs.existsSync(path.join(candidate, marker))
+    );
+  }
+
   listProjects(): Array<{ name: string; path: string; relativePath: string }> {
     const root = this.config.workspace.root;
     const entries = fs.readdirSync(root, { withFileTypes: true });
@@ -749,7 +1307,7 @@ export class PtyManager {
       relativePath: string;
     }> = [];
 
-    if (fs.existsSync(path.join(root, ".git"))) {
+    if (this.isProjectDirectory(root)) {
       projects.push({
         name: path.basename(root),
         path: root,
@@ -762,7 +1320,7 @@ export class PtyManager {
       if (entry.name.startsWith(".")) continue;
 
       const fullPath = path.join(root, entry.name);
-      if (!fs.existsSync(path.join(fullPath, ".git"))) continue;
+      if (!this.isProjectDirectory(fullPath)) continue;
 
       projects.push({
         name: entry.name,
@@ -772,6 +1330,56 @@ export class PtyManager {
     }
 
     return projects.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  resolveProjectWorkdir(
+    targetName: string
+  ): { workdir: string; relativePath: string } | null {
+    const requested = String(targetName || "").trim();
+    if (!requested) {
+      return null;
+    }
+
+    const root = this.config.workspace.root;
+    const candidatePath =
+      requested === "." || requested === path.basename(root)
+        ? root
+        : path.resolve(root, requested);
+
+    if (
+      this.isInsideWorkspaceRoot(candidatePath) &&
+      fs.existsSync(candidatePath) &&
+      fs.statSync(candidatePath).isDirectory() &&
+      this.isProjectDirectory(candidatePath)
+    ) {
+      return {
+        workdir: candidatePath,
+        relativePath: path.relative(root, candidatePath) || "."
+      };
+    }
+
+    const matches = this.listProjects()
+      .map((project) => ({
+        project,
+        score: scoreProjectQueryMatch(project, requested)
+      }))
+      .filter((entry) => entry.score > 0)
+      .sort((left, right) => {
+        if (right.score !== left.score) {
+          return right.score - left.score;
+        }
+
+        return left.project.name.localeCompare(right.project.name);
+      });
+
+    if (!matches.length) {
+      return null;
+    }
+
+    return {
+      workdir: matches[0].project.path,
+      relativePath: matches[0].project.relativePath
+    };
   }
 
   getRecentProjects(
@@ -818,7 +1426,7 @@ export class PtyManager {
       );
     }
 
-    if (!fs.existsSync(path.join(targetPath, ".git"))) {
+    if (!this.isProjectDirectory(targetPath)) {
       throw new Error(
         t(this.getLanguage(key), "targetNotGitRepository", { path: targetPath })
       );
@@ -930,6 +1538,9 @@ export class PtyManager {
         this.config.runner.throttleMs,
         { leading: true, trailing: true }
       ),
+      silentOutput: Boolean(options.silentOutput),
+      finalResponseText: "",
+      cleanupPaths: [...(options.cleanupPaths || [])],
       write: null,
       interrupt: null,
       close: null,
@@ -957,6 +1568,10 @@ export class PtyManager {
   updateSdkRenderableItem(session: RunnerSession, item: ThreadItem): void {
     const text = summarizeSdkItem(item, this.isVerbose(session.chatId));
     const hasEntry = session.renderableItems.has(item.id);
+
+    if (item.type === "agent_message" && item.text?.trim()) {
+      session.finalResponseText = item.text.trim();
+    }
 
     if (!text) {
       if (hasEntry) {
@@ -987,6 +1602,35 @@ export class PtyManager {
       .trim();
   }
 
+  extractFinalResponseText(session: RunnerSession): string {
+    if (session.mode === "sdk" && session.finalResponseText.trim()) {
+      return sanitizeTelegramFacingCodexText(session.finalResponseText.trim());
+    }
+
+    const fallback =
+      session.mode === "exec"
+        ? extractCodexExecResponse(session.rawBuffer)
+        : session.rawBuffer;
+
+    return sanitizeTelegramFacingCodexText(String(fallback || "").trim());
+  }
+
+  async sendFinalOnlyOutput(session: RunnerSession): Promise<void> {
+    const finalText = this.extractFinalResponseText(session);
+    if (!finalText) {
+      return;
+    }
+
+    const chunks = splitTelegramMessage(escapeMarkdownV2(finalText));
+    for (const chunk of chunks) {
+      const sent = await this.bot.telegram.sendMessage(session.chatId, chunk, {
+        parse_mode: "MarkdownV2",
+        disable_web_page_preview: true
+      });
+      session.streamMessageIds.push(sent.message_id);
+    }
+  }
+
   async finalizeSession(
     session: RunnerSession,
     exitCode: number | null,
@@ -1004,8 +1648,23 @@ export class PtyManager {
     this.onChange?.(this.exportState());
 
     if (this.sessions.get(session.chatId) === session) {
-      this.enqueueFlush(session.chatId);
+      await session.flushQueue.catch(() => {});
+      if (session.silentOutput) {
+        await this.sendFinalOnlyOutput(session).catch(() => {});
+      } else {
+        await this.flushToTelegram(session.chatId).catch(() => {});
+      }
     }
+
+    const finalResponseText = this.extractFinalResponseText(session);
+    projectState.lastFinalResponseText = compactSnapshotText(
+      finalResponseText,
+      1800
+    );
+    projectState.lastFinalizedAt = new Date().toISOString();
+    const finalRendered = session.silentOutput
+      ? finalResponseText
+      : session.lastRendered;
 
     if (this.isVerbose(session.chatId)) {
       await this.bot.telegram
@@ -1020,10 +1679,120 @@ export class PtyManager {
         .catch(() => {});
     }
 
+    if (finalRendered && this.onResponseFinalized) {
+      await this.onResponseFinalized({
+        chatId: session.chatId,
+        text: finalResponseText || finalRendered,
+        promptText: projectState.lastPromptText || null,
+        mode: session.mode,
+        workdir: session.workdir,
+        exitCode,
+        signal
+      }).catch(() => {});
+    }
+
     session.throttledFlush.cancel();
     if (this.sessions.get(session.chatId) === session) {
       this.sessions.delete(session.chatId);
     }
+    if (session.cleanupPaths.length) {
+      await Promise.all(
+        session.cleanupPaths.map((cleanupPath) =>
+          fs.promises.rm(cleanupPath, { force: true }).catch(() => {})
+        )
+      );
+    }
+
+    await this.startNextQueuedPrompt(session.chatId, {
+      announce: true
+    }).catch(() => {});
+  }
+
+  stringifyPromptInput(prompt: PromptInput): string {
+    if (typeof prompt === "string") {
+      return prompt;
+    }
+
+    return prompt
+      .map((item) =>
+        item.type === "text"
+          ? item.text
+          : `Analyze the attached local image at: ${item.path}`
+      )
+      .filter(Boolean)
+      .join("\n\n")
+      .trim();
+  }
+
+  serializePromptInput(prompt: PromptInput): SerializablePromptInput | null {
+    if (typeof prompt === "string") {
+      return prompt;
+    }
+
+    const items: SerializablePromptInput = [];
+    for (const item of prompt) {
+      if (item.type === "text") {
+        items.push({
+          type: "text",
+          text: item.text
+        });
+        continue;
+      }
+
+      if (item.type === "local_image") {
+        items.push({
+          type: "local_image",
+          path: item.path
+        });
+        continue;
+      }
+
+      return null;
+    }
+
+    return items;
+  }
+
+  restorePromptInput(raw: unknown): PromptInput | null {
+    if (typeof raw === "string") {
+      return raw;
+    }
+
+    if (!Array.isArray(raw)) {
+      return null;
+    }
+
+    const items: Array<{ type: "text"; text: string } | { type: "local_image"; path: string }> = [];
+    for (const item of raw) {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const candidate = item as { type?: unknown; text?: unknown; path?: unknown };
+      if (candidate.type === "text" && typeof candidate.text === "string") {
+        items.push({
+          type: "text",
+          text: candidate.text
+        });
+        continue;
+      }
+
+      if (
+        candidate.type === "local_image" &&
+        typeof candidate.path === "string" &&
+        fs.existsSync(candidate.path)
+      ) {
+        items.push({
+          type: "local_image",
+          path: candidate.path
+        });
+        continue;
+      }
+
+      return null;
+    }
+
+    return items;
   }
 
   attachOutput(
@@ -1149,7 +1918,7 @@ export class PtyManager {
 
   startSdkSessionWithOptions(
     chatId: string | number,
-    prompt: string,
+    prompt: PromptInput,
     options: SessionOptions = {}
   ): RunnerSession {
     const session = this.createBaseSession(chatId, "sdk", options);
@@ -1165,7 +1934,7 @@ export class PtyManager {
 
   async runSdkTurn(
     session: RunnerSession,
-    prompt: string,
+    prompt: PromptInput,
     options: SessionOptions = {}
   ): Promise<void> {
     let exitCode: number | null = 0;
@@ -1286,6 +2055,7 @@ export class PtyManager {
   async flushToTelegram(chatId: string | number): Promise<void> {
     const session = this.sessions.get(String(chatId));
     if (!session) return;
+    if (session.silentOutput) return;
 
     const rawTail = session.rawBuffer.slice(-60000);
     const rendered = formatPtyOutput(rawTail, {
@@ -1349,13 +2119,15 @@ export class PtyManager {
 
   async sendPrompt(
     ctx: SendPromptContext,
-    prompt: string,
+    prompt: PromptInput,
     options: SendPromptOptions = {}
   ): Promise<SendPromptResult> {
     const chatId = String(ctx.chat.id);
     const workdir = this.getWorkdir(chatId);
     const projectState = this.ensureProjectState(chatId);
     const state = this.ensureChatState(chatId);
+    const promptText = this.stringifyPromptInput(prompt);
+    this.rememberPromptForProject(chatId, workdir, prompt);
 
     if (!options.allowWorkspaceConflict) {
       const conflict = this.findWorkspaceConflict(chatId, workdir);
@@ -1382,6 +2154,26 @@ export class PtyManager {
     if (this.config.runner.backend === "sdk") {
       const running = this.sessions.get(chatId);
       if (running) {
+        if (options.queueOnBusy !== false) {
+          const queued = this.enqueuePrompt(chatId, prompt, workdir, options);
+          if (queued.ok && queued.item) {
+            return {
+              started: false,
+              reason: "queued",
+              activeMode: running.mode,
+              queueLength: this.listPromptQueue(chatId).length,
+              item: queued.item
+            };
+          }
+        }
+
+        if (options.cleanupPaths?.length) {
+          await Promise.all(
+            options.cleanupPaths.map((cleanupPath) =>
+              fs.promises.rm(cleanupPath, { force: true }).catch(() => {})
+            )
+          );
+        }
         return {
           started: false,
           reason: "busy",
@@ -1393,6 +2185,8 @@ export class PtyManager {
       const session = this.startSdkSessionWithOptions(chatId, prompt, {
         fullAuto: Boolean(options.fullAuto),
         extraArgs: options.extraArgs || [],
+        silentOutput: Boolean(options.silentOutput),
+        cleanupPaths: options.cleanupPaths || [],
         workdir,
         resumeSessionId:
           options.forceExec || !projectState.lastSessionId
@@ -1432,6 +2226,26 @@ export class PtyManager {
     if (options.forceExec) {
       const running = this.sessions.get(chatId);
       if (running) {
+        if (options.queueOnBusy !== false) {
+          const queued = this.enqueuePrompt(chatId, prompt, workdir, options);
+          if (queued.ok && queued.item) {
+            return {
+              started: false,
+              reason: "queued",
+              activeMode: running.mode,
+              queueLength: this.listPromptQueue(chatId).length,
+              item: queued.item
+            };
+          }
+        }
+
+        if (options.cleanupPaths?.length) {
+          await Promise.all(
+            options.cleanupPaths.map((cleanupPath) =>
+              fs.promises.rm(cleanupPath, { force: true }).catch(() => {})
+            )
+          );
+        }
         return {
           started: false,
           reason: "busy",
@@ -1439,9 +2253,11 @@ export class PtyManager {
         };
       }
 
-      this.startExecSessionWithOptions(chatId, prompt, {
+      this.startExecSessionWithOptions(chatId, promptText, {
         fullAuto: Boolean(options.fullAuto),
         extraArgs: options.extraArgs || [],
+        silentOutput: Boolean(options.silentOutput),
+        cleanupPaths: options.cleanupPaths || [],
         workdir,
         trackConversation: false
       });
@@ -1458,7 +2274,38 @@ export class PtyManager {
 
     const existingSession = this.sessions.get(chatId);
     if (existingSession) {
+      if (existingSession.mode === "pty") {
+        if (options.cleanupPaths?.length) {
+          existingSession.cleanupPaths.push(...options.cleanupPaths);
+        }
+        existingSession.write?.(`${promptText}\r`);
+        return {
+          started: true,
+          mode: "pty"
+        };
+      }
+
       if (existingSession.mode === "exec") {
+        if (options.queueOnBusy !== false) {
+          const queued = this.enqueuePrompt(chatId, prompt, workdir, options);
+          if (queued.ok && queued.item) {
+            return {
+              started: false,
+              reason: "queued",
+              activeMode: existingSession.mode,
+              queueLength: this.listPromptQueue(chatId).length,
+              item: queued.item
+            };
+          }
+        }
+
+        if (options.cleanupPaths?.length) {
+          await Promise.all(
+            options.cleanupPaths.map((cleanupPath) =>
+              fs.promises.rm(cleanupPath, { force: true }).catch(() => {})
+            )
+          );
+        }
         return {
           started: false,
           reason: "busy",
@@ -1466,7 +2313,23 @@ export class PtyManager {
         };
       }
 
-      existingSession.write?.(`${prompt}\r`);
+      if (options.queueOnBusy !== false) {
+        const queued = this.enqueuePrompt(chatId, prompt, workdir, options);
+        if (queued.ok && queued.item) {
+          return {
+            started: false,
+            reason: "queued",
+            activeMode: existingSession.mode,
+            queueLength: this.listPromptQueue(chatId).length,
+            item: queued.item
+          };
+        }
+      }
+
+      if (options.cleanupPaths?.length) {
+        existingSession.cleanupPaths.push(...options.cleanupPaths);
+      }
+      existingSession.write?.(`${promptText}\r`);
       return {
         started: true,
         mode: "pty"
@@ -1479,7 +2342,7 @@ export class PtyManager {
         ? {
             workdir,
             resumeSessionId: projectState.lastSessionId,
-            initialPrompt: prompt
+            initialPrompt: promptText
           }
         : {
             workdir
@@ -1487,9 +2350,11 @@ export class PtyManager {
     );
 
     if (!session) {
-      session = this.startExecSessionWithOptions(chatId, prompt, {
+      session = this.startExecSessionWithOptions(chatId, promptText, {
         fullAuto: Boolean(options.fullAuto),
         extraArgs: options.extraArgs || [],
+        silentOutput: Boolean(options.silentOutput),
+        cleanupPaths: options.cleanupPaths || [],
         workdir,
         resumeSessionId: projectState.lastSessionId || ""
       });
@@ -1532,7 +2397,7 @@ export class PtyManager {
       };
     }
 
-    session.write?.(`${prompt}\r`);
+    session.write?.(`${promptText}\r`);
     return {
       started: true,
       mode: "pty"
@@ -1556,7 +2421,7 @@ export class PtyManager {
     state.pendingPrompt = null;
 
     try {
-      const result = await this.sendPrompt(ctx, pending.prompt, {
+      const result = await this.sendPrompt(ctx, normalizeDeferredPromptInput(pending.prompt), {
         ...pending.options,
         allowWorkspaceConflict: true
       });
@@ -1578,9 +2443,15 @@ export class PtyManager {
   }
 
   interrupt(chatId: string | number): boolean {
-    const session = this.sessions.get(String(chatId));
+    const key = String(chatId);
+    const session = this.sessions.get(key);
     if (!session) return false;
     session.interrupt?.();
+    globalThis.setTimeout(() => {
+      if (this.sessions.get(key) === session) {
+        this.closeSession(key);
+      }
+    }, INTERRUPT_FORCE_CLOSE_MS);
     return true;
   }
 
@@ -1659,7 +2530,11 @@ export class PtyManager {
           lastMode: projectState.lastMode,
           lastExitCode: projectState.lastExitCode,
           lastExitSignal: projectState.lastExitSignal,
-          lastWorkflowPhase: projectState.lastWorkflowPhase
+          lastWorkflowPhase: projectState.lastWorkflowPhase,
+          lastPromptText: projectState.lastPromptText,
+          lastPromptAt: projectState.lastPromptAt,
+          lastFinalResponseText: projectState.lastFinalResponseText,
+          lastFinalizedAt: projectState.lastFinalizedAt
         };
       }
 
@@ -1671,6 +2546,24 @@ export class PtyManager {
         recentWorkdirs: (state.recentWorkdirs || []).map((workdir) =>
           this.serializeWorkdir(workdir)
         ),
+        promptQueue: state.promptQueue
+          .map((item) => {
+            const prompt = this.serializePromptInput(item.prompt);
+            if (!prompt) {
+              return null;
+            }
+
+            return {
+              id: item.id,
+              prompt,
+              workdir: this.serializeWorkdir(item.workdir),
+              options: clonePromptOptionsForQueue(item.options),
+              createdAt: item.createdAt
+            };
+          })
+          .filter(
+            (item): item is StoredQueuedPromptRequest => item !== null
+          ),
         projects
       };
     }
@@ -1730,7 +2623,27 @@ export class PtyManager {
               rawProjectState?.lastWorkflowPhase
             )
               ? rawProjectState.lastWorkflowPhase
-              : null
+              : null,
+            lastPromptText:
+              typeof rawProjectState?.lastPromptText === "string" &&
+              rawProjectState.lastPromptText.trim()
+                ? rawProjectState.lastPromptText.trim()
+                : null,
+            lastPromptAt:
+              typeof rawProjectState?.lastPromptAt === "string" &&
+              rawProjectState.lastPromptAt.trim()
+                ? rawProjectState.lastPromptAt.trim()
+                : null,
+            lastFinalResponseText:
+              typeof rawProjectState?.lastFinalResponseText === "string" &&
+              rawProjectState.lastFinalResponseText.trim()
+                ? rawProjectState.lastFinalResponseText.trim()
+                : null,
+            lastFinalizedAt:
+              typeof rawProjectState?.lastFinalizedAt === "string" &&
+              rawProjectState.lastFinalizedAt.trim()
+                ? rawProjectState.lastFinalizedAt.trim()
+                : null
           });
         }
       }
@@ -1741,8 +2654,46 @@ export class PtyManager {
           lastMode: null,
           lastExitCode: null,
           lastExitSignal: null,
-          lastWorkflowPhase: null
+          lastWorkflowPhase: null,
+          lastPromptText: null,
+          lastPromptAt: null,
+          lastFinalResponseText: null,
+          lastFinalizedAt: null
         });
+      }
+
+      const promptQueue: QueuedPromptRequest[] = [];
+      if (Array.isArray(rawState?.promptQueue)) {
+        for (const rawQueueItem of rawState.promptQueue) {
+          if (!rawQueueItem || typeof rawQueueItem !== "object") {
+            continue;
+          }
+
+          const candidate = rawQueueItem as Partial<StoredQueuedPromptRequest>;
+          const workdir = this.resolveStoredWorkdir(candidate.workdir);
+          const prompt = this.restorePromptInput(candidate.prompt);
+          if (!workdir || !prompt) {
+            continue;
+          }
+
+          promptQueue.push({
+            id:
+              typeof candidate.id === "string" && candidate.id.trim()
+                ? candidate.id.trim()
+                : createQueueId(),
+            prompt,
+            workdir,
+            options:
+              candidate.options && typeof candidate.options === "object"
+                ? clonePromptOptionsForQueue(candidate.options)
+                : {},
+            createdAt:
+              typeof candidate.createdAt === "string" &&
+              candidate.createdAt.trim()
+                ? candidate.createdAt.trim()
+                : new Date().toISOString()
+          });
+        }
       }
 
       this.chatState.set(String(chatId), {
@@ -1752,7 +2703,7 @@ export class PtyManager {
             ? rawState.preferredModel.trim()
             : null,
         language: toLocale(
-          normalizeLanguage(String(rawState?.language || "")) || "en"
+          normalizeLanguage(String(rawState?.language || "")) || "pt-BR"
         ),
         verboseOutput: Boolean(rawState?.verboseOutput),
         currentWorkdir,
@@ -1762,6 +2713,7 @@ export class PtyManager {
         ].slice(0, 6),
         ptySupported: null,
         pendingPrompt: null,
+        promptQueue: promptQueue.slice(0, MAX_PROMPT_QUEUE_SIZE),
         projectStates
       });
     }

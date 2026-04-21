@@ -1,9 +1,9 @@
 ---
-name: CodexClaw
+name: Dex Agent
 description: Install and operate a Telegram bot that exposes Codex, MCP, GitHub subagents, repo switching, and minimal frontend dev-server control.
 ---
 
-# CodexClaw
+# Dex Agent
 
 ## What This Skill Does
 
@@ -15,8 +15,8 @@ description: Install and operate a Telegram bot that exposes Codex, MCP, GitHub 
 ## Install
 
 ```bash
-git clone https://github.com/MackDing/CodexClaw.git
-cd CodexClaw
+git clone https://github.com/crsantosxx/dex-agent.git
+cd dex-agent
 npm install
 cp .env.example .env
 ```
@@ -29,8 +29,8 @@ Set at least:
 BOT_TOKEN=123456789:telegram-token
 ALLOWED_USER_IDS=123456789
 STATE_FILE=.codex-telegram-claws-state.json
-WORKSPACE_ROOT=.
-CODEX_WORKDIR=.
+WORKSPACE_ROOT=C:/CodexProjetos
+CODEX_WORKDIR=C:/CodexProjetos/dex-agent
 CODEX_BACKEND=sdk
 ```
 
