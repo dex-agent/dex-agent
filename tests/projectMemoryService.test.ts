@@ -564,6 +564,74 @@ test("captureCandidate drops runtime wrappers and acknowledgement-style titles b
   assert.equal((await service.listCandidates(workdir)).length, 0);
 });
 
+test("listCandidates ignores BOM-prefixed mojibake recent-context entries", async () => {
+  const workdir = await createWorkspace();
+  const service = new ProjectMemoryService();
+  const inboxDir = path.join(workdir, ".agents", "INBOX");
+  await fs.mkdir(inboxDir, { recursive: true });
+  const corrupted = {
+    id: "bad-1",
+    createdAt: new Date().toISOString(),
+    workdir,
+    project: path.basename(workdir),
+    scope: "repo",
+    kind: "task_state",
+    stage: "recent_context",
+    baseKind: "task_state",
+    title:
+      "**Foco agora** A mesa convergiu que a prioridade dominante nÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©",
+    summary:
+      "Combinado, e jÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡ deixei isso persistido como regra de trabalho.",
+    evidence: { type: "assistant", value: "finalized:dex-agent" },
+    tags: ["foco", "agora"],
+    confidence: 0.8,
+    source: { type: "runtime", detail: "finalized_codex_response" },
+    reasoning: ["Describes active project state."]
+  };
+  const healthy = {
+    id: "good-1",
+    createdAt: new Date().toISOString(),
+    workdir,
+    project: path.basename(workdir),
+    scope: "repo",
+    kind: "task_state",
+    stage: "recent_context",
+    baseKind: "task_state",
+    title: "Bloco de docs alinhado ao baseline publicado.",
+    summary: "O repo ficou limpo e a retomada foi sincronizada.",
+    evidence: { type: "assistant", value: "finalized:dex-agent" },
+    tags: ["docs", "baseline"],
+    confidence: 0.8,
+    source: { type: "runtime", detail: "finalized_codex_response" },
+    reasoning: ["Describes active project state."]
+  };
+  await fs.writeFile(
+    path.join(inboxDir, "candidates.ndjson"),
+    `\uFEFF${JSON.stringify(corrupted)}\n${JSON.stringify(healthy)}\n`,
+    "utf8"
+  );
+
+  const candidates = await service.listCandidates(workdir);
+
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0]?.id, "good-1");
+});
+
+test("captureCandidate drops severe mojibake before writing to candidates", async () => {
+  const workdir = await createWorkspace();
+  const service = new ProjectMemoryService();
+
+  const candidate = await service.captureCandidate({
+    workdir,
+    text: "Combinado, e jÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡ deixei isso persistido como regra de trabalho.",
+    source: { type: "runtime", detail: "finalized_codex_response" },
+    evidence: { type: "assistant", value: "finalized:dex-agent" }
+  });
+
+  assert.equal(candidate, null);
+  assert.equal((await service.listCandidates(workdir)).length, 0);
+});
+
 test("captureFinalizedResponse auto-promotes strong project skill workflows", async () => {
   const workdir = await createWorkspace();
   const service = new ProjectMemoryService(

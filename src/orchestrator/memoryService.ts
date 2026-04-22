@@ -223,6 +223,45 @@ function compactPacketText(value: string, maxLength = 88): string {
     : `${compact.slice(0, maxLength - 3).trimEnd()}...`;
 }
 
+const MOJIBAKE_FRAGMENTS = [
+  "Ãƒ",
+  "Ã†",
+  "Ã¢",
+  "Ã‚",
+  "Â",
+  "â€",
+  "â€™",
+  "â€œ",
+  "â€\u009d",
+  "â€“",
+  "â€”",
+  "â€¦",
+  "�"
+];
+
+function countSubstringOccurrences(value: string, fragment: string): number {
+  if (!fragment) return 0;
+  let count = 0;
+  let offset = 0;
+  while (offset < value.length) {
+    const next = value.indexOf(fragment, offset);
+    if (next === -1) break;
+    count += 1;
+    offset = next + fragment.length;
+  }
+  return count;
+}
+
+function looksLikeSevereMojibake(value: string): boolean {
+  const compact = normalizeWhitespace(value).replace(/\s+/g, " ");
+  if (!compact) return false;
+  const markerCount = MOJIBAKE_FRAGMENTS.reduce(
+    (total, fragment) => total + countSubstringOccurrences(compact, fragment),
+    0
+  );
+  return markerCount >= 3;
+}
+
 function compactSectionLines(lines: string[]): string[] {
   return lines
     .map((line) => line.trim())
@@ -615,6 +654,16 @@ function isWeakRuntimeCandidate(
   );
 }
 
+function shouldDropCorruptedRecentCandidate(
+  candidate: MemoryCandidate
+): boolean {
+  return (
+    inferCandidateStage(candidate) === "recent_context" &&
+    (looksLikeSevereMojibake(candidate.title) ||
+      looksLikeSevereMojibake(candidate.summary))
+  );
+}
+
 function inferEntryStage(entry: {
   kind: MemoryKind;
   destination?: SkillPromotionDestination;
@@ -943,7 +992,7 @@ export class ProjectMemoryService {
       if (!trimmed) continue;
 
       try {
-        const parsed = JSON.parse(trimmed) as unknown;
+        const parsed = JSON.parse(trimmed.replace(/^\uFEFF/, "")) as unknown;
         if (validator(parsed)) {
           entries.push(parsed);
         }
@@ -971,7 +1020,9 @@ export class ProjectMemoryService {
       this.candidatesPath(path.resolve(workdir)),
       this.isValidCandidate.bind(this)
     );
-    return entries.map((entry) => this.normalizeCandidate(entry));
+    return entries
+      .map((entry) => this.normalizeCandidate(entry))
+      .filter((entry) => !shouldDropCorruptedRecentCandidate(entry));
   }
 
   private async writeCandidates(
@@ -1362,6 +1413,13 @@ export class ProjectMemoryService {
     const candidates = await this.readCandidates(workdir);
     const { summary, title } = summarizeCandidateText(normalizedText);
     if (isWeakRuntimeCandidate(input, title, summary)) {
+      return null;
+    }
+    if (
+      looksLikeSevereMojibake(normalizedText) ||
+      looksLikeSevereMojibake(title) ||
+      looksLikeSevereMojibake(summary)
+    ) {
       return null;
     }
     const promotion = await this.buildCandidatePromotionContext(
