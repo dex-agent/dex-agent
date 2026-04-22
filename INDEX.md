@@ -1,7 +1,7 @@
 # Dex Agent Index
 
-Atualizado em: `2026-04-22T10:03:33-03:00`
-Surface version: `7`
+Atualizado em: `2026-04-22T10:16:48-03:00`
+Surface version: `8`
 Papel: `camada 1 - superficie canonica de retomada`
 
 ## Agora
@@ -9,9 +9,9 @@ Papel: `camada 1 - superficie canonica de retomada`
 - Projeto atual: `Dex Agent`
 - Objetivo atual: usar este workspace como projeto dedicado do bot, com continuidade propria e retomada sem depender da thread de `ConfiguracoesWindows`
 - Estado do runtime: bot validado nesta maquina; confirmar por `scripts/status-dex-agent.ps1` quando a retomada exigir prova viva
-- Bloco mais recente: `ux Telegram - semantica deterministica dos botoes`
+- Bloco mais recente: `publicacao GitHub`
 - Status do bloco mais recente: `100% concluido`
-- Proximo passo indicado: `publicacao GitHub`
+- Proximo passo indicado: `triagem de docs/audio-exemplos`
 
 ## Como usar este arquivo
 
