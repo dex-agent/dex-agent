@@ -50,9 +50,11 @@ test("startup queue recovery announces idle queued chats with action buttons", a
   assert.equal(sent[0].chatId, "8736107242");
   assert.match(sent[0].text, /fila pendente/i);
   assert.match(sent[0].text, /AgendadorConsultasOticas/);
-  const inlineKeyboard = (sent[0].options?.reply_markup as {
-    inline_keyboard?: Array<Array<{ callback_data?: string }>>;
-  })?.inline_keyboard;
+  const inlineKeyboard = (
+    sent[0].options?.reply_markup as {
+      inline_keyboard?: Array<Array<{ callback_data?: string }>>;
+    }
+  )?.inline_keyboard;
   assert.deepEqual(
     inlineKeyboard?.[0]?.map((button) => button.callback_data),
     ["queue:run", "queue:list"]

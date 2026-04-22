@@ -1,4 +1,12 @@
 node_modules/
 .git/
 .env
+.runtime/
+.agents/
+.codex/
+.github/
+docs/
+README.md
+AGENTS.md
+package-lock.json
 .codex-telegram-claws-state.json

@@ -33,8 +33,9 @@ const expectedUsername = String(process.env.TELEGRAM_EXPECTED_USERNAME || "")
   .replace(/^@/, "");
 const smokeChatId = String(process.env.TELEGRAM_SMOKE_CHAT_ID || "").trim();
 const smokeAllowPrimaryChat =
-  String(process.env.TELEGRAM_SMOKE_ALLOW_PRIMARY_CHAT || "").trim().toLowerCase() ===
-  "true";
+  String(process.env.TELEGRAM_SMOKE_ALLOW_PRIMARY_CHAT || "")
+    .trim()
+    .toLowerCase() === "true";
 const allowedUserIds = String(process.env.ALLOWED_USER_IDS || "")
   .split(",")
   .map((value) => value.trim())
@@ -47,7 +48,11 @@ if (!token) {
   process.exit(1);
 }
 
-if (smokeChatId && !smokeAllowPrimaryChat && allowedUserIds.includes(smokeChatId)) {
+if (
+  smokeChatId &&
+  !smokeAllowPrimaryChat &&
+  allowedUserIds.includes(smokeChatId)
+) {
   console.error(
     [
       "Refusing to send telegram smoke to the primary operator chat.",

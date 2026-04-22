@@ -6,7 +6,9 @@ import path from "node:path";
 import { PromptLibraryService } from "../src/orchestrator/promptLibraryService.js";
 
 async function createWorkspace(): Promise<string> {
-  const workdir = await fs.mkdtemp(path.join(os.tmpdir(), "dex-agent-prompts-"));
+  const workdir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "dex-agent-prompts-")
+  );
   await fs.mkdir(path.join(workdir, ".agents"), { recursive: true });
   return workdir;
 }

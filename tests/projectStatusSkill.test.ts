@@ -15,6 +15,31 @@ async function createMemoriaVivaWorkspace(): Promise<{
   const workdir = await fs.mkdtemp(path.join(os.tmpdir(), "dex-agent-status-"));
   await fs.mkdir(path.join(workdir, ".agents"), { recursive: true });
   await fs.mkdir(path.join(workdir, ".codex"), { recursive: true });
+  await fs.writeFile(
+    path.join(workdir, "INDEX.md"),
+    [
+      "# INDEX",
+      "",
+      "## Agora",
+      "- Projeto atual: dex-agent status test.",
+      "- Objetivo atual: governanca de retomada.",
+      "- Proximo passo indicado: validar motor e superficie."
+    ].join("\n"),
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(workdir, ".agents", "PROJECT.md"),
+    [
+      "# Project",
+      "",
+      "## Name",
+      "dex-agent status test",
+      "",
+      "## Current focus",
+      "- consolidar o motor de retomada."
+    ].join("\n"),
+    "utf8"
+  );
 
   await fs.writeFile(
     path.join(workdir, ".agents", "ACTIVE.md"),
@@ -36,6 +61,19 @@ async function createMemoriaVivaWorkspace(): Promise<{
     path.join(workdir, ".agents", "HANDOFF.md"),
     [
       "# Handoff",
+      "",
+      "## Current block status",
+      "- tipo: sprint",
+      "- nome: docs e governanca de retomada",
+      "- conclusao: 100% concluido",
+      "- posicao_no_plano: 1/1",
+      "- objetivo_concluido: consolidar governanca",
+      "- objetivo_atual: consolidar o motor de retomada",
+      "- proximo_passo_indicado: implementar alinhamento do motor",
+      "- retrocesso_padrao: reabrir revisao curta e corrigir o contrato",
+      "- evidencia:",
+      "  - `INDEX.md`",
+      "  - `.agents/HANDOFF.md`",
       "",
       "## Latest completed",
       "- Bloco `101-112` fechado e validado.",
@@ -75,7 +113,8 @@ async function createMemoriaVivaWorkspace(): Promise<{
       scope: "repo",
       kind: "decision",
       title: "Keep durable memory proposal-first",
-      summary: "Strong memory writes must be proposed and confirmed before append.",
+      summary:
+        "Strong memory writes must be proposed and confirmed before append.",
       evidence: {
         type: "operator",
         value: "user decision"
@@ -117,13 +156,31 @@ test("project status skill reads canonical memoria-viva files and memory ledger"
   assert.equal(result.parseMode, "markdown");
   assert.equal(contract.projectProfile, "memoria-viva-project-profile");
   assert.equal(contract.decisionSource, "hybrid");
-  assert.equal(contract.currentStatus.latestClosedBlock, "101-112");
-  assert.equal(contract.currentStatus.nextEligibleBlock, "113-124");
+  assert.equal(contract.currentStatus.projectName, "dex-agent status test");
+  assert.equal(
+    contract.currentStatus.latestClosedBlock,
+    "docs e governanca de retomada"
+  );
+  assert.equal(
+    contract.currentStatus.nextEligibleBlock,
+    "implementar alinhamento do motor"
+  );
+  assert.equal(
+    contract.currentBlockStatus?.name,
+    "docs e governanca de retomada"
+  );
+  assert.equal(
+    contract.currentBlockStatus?.nextStep,
+    "implementar alinhamento do motor"
+  );
   assert.equal(contract.relevantMemory.length, 1);
-  assert.equal(contract.memoryConfidence, "high");
+  assert.equal(contract.memoryConfidence, "medium");
   assert.match(result.text, /\*Status Atual do Projeto\*/i);
+  assert.match(result.text, /\*Current block status\*/i);
   assert.match(result.text, /\*Memory used:\*/i);
   assert.match(result.text, /\.agents\/MEMORY\.ndjson/i);
+  assert.match(result.text, /INDEX\.md/i);
+  assert.match(result.text, /\.agents\/PROJECT\.md/i);
   assert.doesNotMatch(result.text, /C:\\/i);
 });
 
@@ -168,10 +225,13 @@ test("project status skill renders explicit variants only", async () => {
   });
 
   assert.match(executive.text, /\*Panorama Executivo\*/i);
+  assert.match(executive.text, /docs e governanca de retomada/i);
   assert.match(next.text, /\*Proximo Bloco\*/i);
+  assert.match(next.text, /implementar alinhamento do motor/i);
   assert.match(steps.text, /\*Primeiros Passos\*/i);
   assert.match(commands.text, /\*Comandos Sugeridos\*/i);
   assert.match(prompts.text, /\*Prompts Prontos\*/i);
+  assert.match(prompts.text, /\*Execucao\*/i);
   assert.match(queue.text, /\*Fila de Proximos Blocos\*/i);
   assert.match(sources.text, /\*Fontes Canonicas Priorizadas\*/i);
   assert.match(sources.text, /\*Memory ledger used:\*/i);
@@ -187,8 +247,28 @@ test("project status commands variant exposes clickable preset command buttons",
     variant: "commands"
   });
 
-  assert.equal(commands.buttons?.[0]?.[0]?.callbackData, "project_status:command:0");
-  assert.equal(commands.buttons?.at(-1)?.[0]?.callbackData, "inbox:show");
+  assert.equal(
+    commands.buttons?.[0]?.[0]?.callbackData,
+    "project_status:command:0"
+  );
+  assert.equal(commands.buttons?.at(-2)?.[0]?.callbackData, "inbox:show");
+  assert.equal(commands.buttons?.at(-2)?.[1]?.callbackData, "memory:show");
+  assert.equal(
+    commands.buttons?.at(-2)?.[2]?.callbackData,
+    "memory:view:active"
+  );
+  assert.equal(
+    commands.buttons?.at(-2)?.[3]?.callbackData,
+    "memory:view:handoff"
+  );
+  assert.equal(
+    commands.buttons?.at(-1)?.[0]?.callbackData,
+    "memory:view:index"
+  );
+  assert.equal(
+    commands.buttons?.at(-1)?.[1]?.callbackData,
+    "memory:view:project"
+  );
 });
 
 test("project status prompts variant exposes clickable preset prompt buttons", async () => {
@@ -208,20 +288,24 @@ test("project status prompts variant exposes clickable preset prompt buttons", a
     variant: "prompts"
   });
 
-  assert.match(prompts.text, /Panorama exec/i);
+  assert.match(prompts.text, /2 blocos seguidos/i);
+  assert.match(prompts.text, /\*Custom\*/i);
   assert.match(prompts.text, /Sprint implementacao/i);
+  assert.match(prompts.text, /tipo: Planejamento/i);
+  const callbackData =
+    prompts.buttons?.flat().map((button) => button.callbackData) || [];
+  assert.ok(callbackData.includes("project_status:prompt:builtin~0"));
+  assert.ok(callbackData.includes("project_status:prompt:builtin~3"));
   assert.equal(
     prompts.buttons?.[0]?.[0]?.callbackData,
     "project_status:prompt:builtin~0"
   );
-  assert.equal(
-    prompts.buttons?.[1]?.[0]?.callbackData,
-    "project_status:prompt:builtin~2"
-  );
 });
 
 test("project understanding handles partial memoria-viva profile without inventing sections", async () => {
-  const workdir = await fs.mkdtemp(path.join(os.tmpdir(), "dex-agent-partial-"));
+  const workdir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "dex-agent-partial-")
+  );
   await fs.mkdir(path.join(workdir, ".agents"), { recursive: true });
   await fs.writeFile(
     path.join(workdir, ".agents", "ACTIVE.md"),
@@ -288,11 +372,13 @@ test("project status shows quick reuse when skills or skill candidates exist", a
 
   assert.match(result.text, /\*Reuso Rapido\*/i);
   assert.match(result.text, /retomada\\-projeto/i);
-  assert.match(result.text, /Skills pendentes/i);
+  assert.match(result.text, /Candidates de skill sob revisao/i);
 });
 
 test("project understanding returns safe fallback when no canonical profile exists", async () => {
-  const workdir = await fs.mkdtemp(path.join(os.tmpdir(), "dex-agent-unknown-"));
+  const workdir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "dex-agent-unknown-")
+  );
   const contract = await buildProjectUnderstanding({
     workdir,
     memoryService: new ProjectMemoryService()

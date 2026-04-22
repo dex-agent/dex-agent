@@ -20,7 +20,15 @@ export type MemoryKind =
   | "skill_candidate"
   | "noise";
 
-export type DurableMemoryKind = Exclude<MemoryKind, "noise" | "skill_candidate">;
+export type DurableMemoryKind = Exclude<
+  MemoryKind,
+  "noise" | "skill_candidate"
+>;
+export type MemoryStage =
+  | "recent_context"
+  | "durable_memory"
+  | "skill_candidate"
+  | "real_skill";
 
 export type MemoryScope = "repo" | "subsystem" | "task";
 
@@ -52,6 +60,7 @@ export interface MemoryEntry {
   project: string;
   scope: MemoryScope;
   kind: MemoryKind;
+  stage?: MemoryStage;
   title: string;
   summary: string;
   evidence: MemoryReference;
@@ -68,6 +77,7 @@ export interface MemoryCandidate {
   project: string;
   scope: MemoryScope;
   kind: MemoryKind;
+  stage?: MemoryStage;
   baseKind: DurableMemoryKind;
   title: string;
   summary: string;
@@ -172,7 +182,9 @@ const STOPWORDS = new Set([
 ]);
 
 function normalizeWhitespace(value: string): string {
-  return String(value || "").replace(/\r/g, "").trim();
+  return String(value || "")
+    .replace(/\r/g, "")
+    .trim();
 }
 
 function normalizeAscii(value: string): string {
@@ -201,6 +213,14 @@ function firstSentence(value: string, maxLength = 96): string {
   return sentence.length <= maxLength
     ? sentence
     : `${sentence.slice(0, maxLength - 3).trimEnd()}...`;
+}
+
+function compactPacketText(value: string, maxLength = 88): string {
+  const compact = normalizeWhitespace(value).replace(/\s+/g, " ");
+  if (!compact) return "";
+  return compact.length <= maxLength
+    ? compact
+    : `${compact.slice(0, maxLength - 3).trimEnd()}...`;
 }
 
 function compactSectionLines(lines: string[]): string[] {
@@ -235,14 +255,43 @@ function extractSectionLines(markdown: string, heading: string): string[] {
   return section;
 }
 
-function extractBulletValue(lines: string[], prefix: string): string | null {
-  const normalizedPrefix = normalizeAscii(prefix.trim());
+function extractBulletValue(
+  lines: string[],
+  prefix: string | string[]
+): string | null {
+  const prefixes = Array.isArray(prefix) ? prefix : [prefix];
+  const normalizedPrefixes = prefixes.map((item) => ({
+    raw: item,
+    normalized: normalizeAscii(item.trim())
+  }));
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed.startsWith("- ")) continue;
     const body = trimmed.slice(2).trim();
-    if (!normalizeAscii(body).startsWith(normalizedPrefix)) continue;
-    return body.slice(prefix.length).trim().replace(/\.$/, "") || null;
+    const bodyProbe = normalizeAscii(body);
+    const matched = normalizedPrefixes.find((item) =>
+      bodyProbe.startsWith(item.normalized)
+    );
+    if (!matched) continue;
+    return body.slice(matched.raw.length).trim().replace(/\.$/, "") || null;
+  }
+  return null;
+}
+
+function extractSectionFallbackValue(lines: string[]): string | null {
+  const compact = compactSectionLines(lines)
+    .map((line) => line.replace(/^- /, "").trim())
+    .filter(Boolean);
+  return compact[0] || null;
+}
+
+function extractFirstUsefulLine(lines: string[]): string | null {
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const withoutBullet = trimmed.replace(/^- /, "").trim();
+    if (!withoutBullet) continue;
+    return withoutBullet.replace(/\.$/, "") || null;
   }
   return null;
 }
@@ -259,19 +308,43 @@ function extractBlocksFromLines(lines: string[]): string[] {
   return blocks;
 }
 
+function extractClosedResiduals(lines: string[]): string[] {
+  const residuals: string[] = [];
+  for (const line of lines) {
+    const match = line.match(/Residual fechado no vivo:\s*`([^`]+)`/i);
+    if (match?.[1]) {
+      residuals.push(match[1]);
+    }
+  }
+  return residuals;
+}
+
 function extractLatestClosedBlock(
   activeContent: string,
   handoffContent: string
 ): string | null {
-  const activeObjective = extractSectionLines(activeContent, "Current objective");
-  const latestCompleted = extractSectionLines(handoffContent, "Latest completed");
+  const activeObjective = extractSectionLines(
+    activeContent,
+    "Current objective"
+  );
+  const latestCompleted = extractSectionLines(
+    handoffContent,
+    "Latest completed"
+  );
   const currentProof = extractSectionLines(activeContent, "Current proof");
+  const lastClosedResidual = extractSectionLines(
+    activeContent,
+    "Last closed residual"
+  );
   const blocks = [
     ...extractBlocksFromLines(activeObjective),
     ...extractBlocksFromLines(latestCompleted),
     ...extractBlocksFromLines(currentProof)
   ];
-  return blocks.at(-1) || null;
+  if (blocks.length > 0) {
+    return blocks.at(-1) || null;
+  }
+  return extractClosedResiduals(lastClosedResidual).at(-1) || null;
 }
 
 function extractNextEligibleBlock(markdown: string): string | null {
@@ -281,7 +354,34 @@ function extractNextEligibleBlock(markdown: string): string | null {
     /Proximo bloco elegivel agora:\s*-?\s*`([^`]+)`/i
   );
   if (handoffMatch?.[1]) return handoffMatch[1];
+  const slotMatch = markdown.match(
+    /Proximo slot elegivel(?: no historico de front-end)?:\s*`([^`]+)`/i
+  );
+  if (slotMatch?.[1]) return slotMatch[1];
   return null;
+}
+
+interface OperationalCurrentBlockStatus {
+  name: string | null;
+  currentObjective: string | null;
+  nextStep: string | null;
+}
+
+function extractCurrentBlockStatus(
+  handoffContent: string
+): OperationalCurrentBlockStatus | null {
+  const lines = compactSectionLines(
+    extractSectionLines(handoffContent, "Current block status")
+  );
+  if (!lines.length) {
+    return null;
+  }
+
+  return {
+    name: extractBulletValue(lines, "nome:"),
+    currentObjective: extractBulletValue(lines, "objetivo_atual:"),
+    nextStep: extractBulletValue(lines, "proximo_passo_indicado:")
+  };
 }
 
 async function pathExists(targetPath: string): Promise<boolean> {
@@ -448,11 +548,137 @@ function scoreEntry(
   );
 }
 
+function inferCandidateStage(candidate: {
+  kind: MemoryKind;
+  baseKind?: DurableMemoryKind;
+  destination?: SkillPromotionDestination;
+  stage?: MemoryStage;
+}): MemoryStage {
+  if (candidate.stage) {
+    return candidate.stage;
+  }
+  if (candidate.kind === "skill_candidate") {
+    return "skill_candidate";
+  }
+  if ((candidate.baseKind || candidate.kind) === "task_state") {
+    return "recent_context";
+  }
+  return "durable_memory";
+}
+
+function isWeakRuntimeCandidate(
+  input: MemoryCaptureInput,
+  title: string,
+  summary: string
+): boolean {
+  if (
+    input.source.type !== "runtime" ||
+    input.source.detail !== "finalized_codex_response"
+  ) {
+    return false;
+  }
+
+  const normalizedTitle = normalizeAscii(title).trim();
+  const probe = normalizedTitle.replace(/[`"'()[\]{}:;,.!?*_]+/g, " ").trim();
+  const summaryProbe = normalizeAscii(summary);
+  if (!probe) return true;
+
+  if (/^\[[^\]\r\n]+\|[^\]\r\n]+\]/.test(normalizedTitle)) {
+    return true;
+  }
+
+  if (
+    /^\[?error\]?/i.test(title) ||
+    /\bunder-development features enabled: memories\b/i.test(summaryProbe)
+  ) {
+    return true;
+  }
+
+  if (
+    /^(usei|entendi|achei|continuei|encontrei|corrigi|detectei|promovi|revisei|fechei|acompanhei|apliquei|ajustei|validei|confirmei|retomei|montei|rodei|executei|gerei)\b/i.test(
+      probe
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    /^(sim|nao\b|a implementacao concluiu\b|foco atual\b|tema da reuniao\b|veredito\b|pensamento\b|planejamento\b|construir\b|revisar\b|testar\b|organizar\b)\b/i.test(
+      probe
+    )
+  ) {
+    return true;
+  }
+
+  return /^(fechamos|conclui|concluimos|nesta passada|o que ficou provado|visao do|visao da|fechamos a sequencia|sequencia ate o sprint|resumo honesto|vou\b|agora vou\b|o que apareceu\b|o que surgiu\b|o que ficou\b)\b/i.test(
+    probe
+  );
+}
+
+function inferEntryStage(entry: {
+  kind: MemoryKind;
+  destination?: SkillPromotionDestination;
+  stage?: MemoryStage;
+}): MemoryStage {
+  if (entry.stage) {
+    return entry.stage;
+  }
+  if (entry.destination && entry.destination !== "memory") {
+    return "real_skill";
+  }
+  return "durable_memory";
+}
+
+function stageStrength(stage: MemoryStage): number {
+  switch (stage) {
+    case "recent_context":
+      return 1;
+    case "durable_memory":
+      return 2;
+    case "skill_candidate":
+      return 3;
+    case "real_skill":
+      return 4;
+    default:
+      return 0;
+  }
+}
+
 function confidenceFromScore(score: number): MemoryConfidence {
   if (score <= 0) return "none";
   if (score < 20) return "low";
   if (score < 40) return "medium";
   return "high";
+}
+
+function toDurableMemoryKind(
+  kind: MemoryKind | DurableMemoryKind
+): DurableMemoryKind {
+  switch (kind) {
+    case "decision":
+    case "rule":
+    case "procedure":
+    case "exception":
+    case "fact":
+    case "task_state":
+      return kind;
+    default:
+      return "procedure";
+  }
+}
+
+function summarizeCandidateText(normalizedText: string): {
+  summary: string;
+  title: string;
+} {
+  const summary =
+    normalizedText.length <= 260
+      ? normalizedText
+      : `${normalizedText.slice(0, 257).trimEnd()}...`;
+  return {
+    summary,
+    title: firstSentence(summary)
+  };
 }
 
 export class ProjectMemoryService {
@@ -487,6 +713,14 @@ export class ProjectMemoryService {
     return path.join(workdir, ".agents", "ACTIVE.md");
   }
 
+  private indexPath(workdir: string): string {
+    return path.join(workdir, "INDEX.md");
+  }
+
+  private projectPath(workdir: string): string {
+    return path.join(workdir, ".agents", "PROJECT.md");
+  }
+
   private handoffPath(workdir: string): string {
     return path.join(workdir, ".agents", "HANDOFF.md");
   }
@@ -503,35 +737,70 @@ export class ProjectMemoryService {
     sources: string[];
     usedOperationalState: boolean;
   }> {
+    const indexPath = this.indexPath(workdir);
+    const projectPath = this.projectPath(workdir);
     const activePath = this.activePath(workdir);
     const handoffPath = this.handoffPath(workdir);
     const napkinPath = this.napkinPath(workdir);
 
+    const hasIndex = await pathExists(indexPath);
+    const hasProject = await pathExists(projectPath);
     const hasActive = await pathExists(activePath);
     const hasHandoff = await pathExists(handoffPath);
     const hasNapkin = await pathExists(napkinPath);
 
-    const activeContent = hasActive ? await fs.readFile(activePath, "utf8") : "";
+    const indexContent = hasIndex ? await fs.readFile(indexPath, "utf8") : "";
+    const projectContent = hasProject
+      ? await fs.readFile(projectPath, "utf8")
+      : "";
+    const activeContent = hasActive
+      ? await fs.readFile(activePath, "utf8")
+      : "";
     const handoffContent = hasHandoff
       ? await fs.readFile(handoffPath, "utf8")
       : "";
-    const napkinContent = hasNapkin ? await fs.readFile(napkinPath, "utf8") : "";
+    const napkinContent = hasNapkin
+      ? await fs.readFile(napkinPath, "utf8")
+      : "";
 
-    const currentObjective = extractBulletValue(
-      extractSectionLines(activeContent, "Current objective"),
-      "Frente principal atual:"
+    const currentObjectiveLines = extractSectionLines(
+      activeContent,
+      "Current objective"
     );
+    const currentBlockStatus = extractCurrentBlockStatus(handoffContent);
+    const currentObjective =
+      currentBlockStatus?.currentObjective ||
+      extractBulletValue(extractSectionLines(indexContent, "Agora"), [
+        "Objetivo atual:",
+        "Current objective:"
+      ]) ||
+      extractFirstUsefulLine(
+        extractSectionLines(projectContent, "Current focus")
+      ) ||
+      extractBulletValue(currentObjectiveLines, [
+        "Frente principal atual:",
+        "Frente ativa:",
+        "Objetivo atual:"
+      ]) ||
+      extractSectionFallbackValue(currentObjectiveLines);
     const latestClosedBlock = extractLatestClosedBlock(
       activeContent,
       handoffContent
     );
     const nextEligibleBlock =
+      currentBlockStatus?.nextStep ||
       extractNextEligibleBlock(activeContent) ||
-      extractNextEligibleBlock(handoffContent);
+      extractNextEligibleBlock(handoffContent) ||
+      extractBulletValue(extractSectionLines(indexContent, "Agora"), [
+        "Proximo passo indicado:",
+        "Next step:"
+      ]);
     const tacticalNotes = compactSectionLines(napkinContent.split("\n"))
       .filter((line) => !line.startsWith("#"))
       .slice(0, 3);
     const sources = [
+      ...(hasIndex ? [indexPath] : []),
+      ...(hasProject ? [projectPath] : []),
       ...(hasActive ? [activePath] : []),
       ...(hasHandoff ? [handoffPath] : []),
       ...(hasNapkin ? [napkinPath] : [])
@@ -561,7 +830,12 @@ export class ProjectMemoryService {
       }
     }
 
-    return entries.filter((entry) => !supersededIds.has(entry.id));
+    return entries
+      .filter((entry) => !supersededIds.has(entry.id))
+      .map((entry) => ({
+        ...entry,
+        stage: inferEntryStage(entry)
+      }));
   }
 
   private isValidEntry(entry: unknown): entry is MemoryEntry {
@@ -569,19 +843,19 @@ export class ProjectMemoryService {
     const candidate = entry as MemoryEntry;
     return Boolean(
       candidate.id &&
-        candidate.createdAt &&
-        candidate.project &&
-        candidate.scope &&
-        candidate.kind &&
-        candidate.title &&
-        candidate.summary &&
-        candidate.evidence?.type &&
-        candidate.evidence?.value &&
-        Array.isArray(candidate.tags) &&
-        Array.isArray(candidate.supersedes) &&
-        typeof candidate.confidence === "number" &&
-        candidate.source?.type &&
-        candidate.source?.detail
+      candidate.createdAt &&
+      candidate.project &&
+      candidate.scope &&
+      candidate.kind &&
+      candidate.title &&
+      candidate.summary &&
+      candidate.evidence?.type &&
+      candidate.evidence?.value &&
+      Array.isArray(candidate.tags) &&
+      Array.isArray(candidate.supersedes) &&
+      typeof candidate.confidence === "number" &&
+      candidate.source?.type &&
+      candidate.source?.detail
     );
   }
 
@@ -590,20 +864,20 @@ export class ProjectMemoryService {
     const entry = candidate as MemoryCandidate;
     return Boolean(
       entry.id &&
-        entry.createdAt &&
-        entry.workdir &&
-        entry.project &&
-        entry.scope &&
-        entry.kind &&
-        entry.title &&
-        entry.summary &&
-        entry.evidence?.type &&
-        entry.evidence?.value &&
-        Array.isArray(entry.tags) &&
-        typeof entry.confidence === "number" &&
-        entry.source?.type &&
-        entry.source?.detail &&
-        Array.isArray(entry.reasoning)
+      entry.createdAt &&
+      entry.workdir &&
+      entry.project &&
+      entry.scope &&
+      entry.kind &&
+      entry.title &&
+      entry.summary &&
+      entry.evidence?.type &&
+      entry.evidence?.value &&
+      Array.isArray(entry.tags) &&
+      typeof entry.confidence === "number" &&
+      entry.source?.type &&
+      entry.source?.detail &&
+      Array.isArray(entry.reasoning)
     );
   }
 
@@ -620,6 +894,7 @@ export class ProjectMemoryService {
 
     return {
       ...candidate,
+      stage: inferCandidateStage(candidate),
       baseKind,
       promptText: candidate.promptText || null,
       destination,
@@ -634,15 +909,17 @@ export class ProjectMemoryService {
     const entry = proposal as MemoryWriteProposal;
     return Boolean(
       entry.id &&
-        entry.createdAt &&
-        entry.workdir &&
-        entry.candidateId &&
-        typeof entry.reason === "string" &&
-        this.isValidEntry(entry.entry)
+      entry.createdAt &&
+      entry.workdir &&
+      entry.candidateId &&
+      typeof entry.reason === "string" &&
+      this.isValidEntry(entry.entry)
     );
   }
 
-  private normalizeProposal(proposal: MemoryWriteProposal): MemoryWriteProposal {
+  private normalizeProposal(
+    proposal: MemoryWriteProposal
+  ): MemoryWriteProposal {
     return {
       ...proposal,
       destination: proposal.destination || "memory",
@@ -678,7 +955,10 @@ export class ProjectMemoryService {
     return entries;
   }
 
-  private async writeNdjson(targetPath: string, entries: unknown[]): Promise<void> {
+  private async writeNdjson(
+    targetPath: string,
+    entries: unknown[]
+  ): Promise<void> {
     await fs.mkdir(path.dirname(targetPath), { recursive: true });
     const payload = entries.length
       ? `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`
@@ -734,7 +1014,9 @@ export class ProjectMemoryService {
       return candidates[index] || null;
     }
 
-    return candidates.find((candidate) => candidate.id === String(selector)) || null;
+    return (
+      candidates.find((candidate) => candidate.id === String(selector)) || null
+    );
   }
 
   private async resolveProposal(
@@ -749,7 +1031,9 @@ export class ProjectMemoryService {
       return proposals[index] || null;
     }
 
-    return proposals.find((proposal) => proposal.id === String(selector)) || null;
+    return (
+      proposals.find((proposal) => proposal.id === String(selector)) || null
+    );
   }
 
   private scoreCandidateSimilarity(
@@ -783,6 +1067,143 @@ export class ProjectMemoryService {
     ).length;
 
     return candidateMatches + ledgerMatches;
+  }
+
+  private async buildCandidatePromotionContext(
+    workdir: string,
+    input: MemoryCaptureInput,
+    classificationKind: DurableMemoryKind,
+    title: string,
+    summary: string
+  ): Promise<{
+    assessment: SkillAssessment;
+    draft: SkillDraft | null;
+    candidateKind: MemoryKind;
+    baseKind: DurableMemoryKind;
+    stage: MemoryStage;
+  }> {
+    const existingMatches = await this.countSimilarWorkflowMatches(
+      workdir,
+      title,
+      summary
+    );
+    const projectName = path.basename(workdir);
+    const assessment = this.skillPromotionService.assessCandidate({
+      workdir,
+      projectName,
+      title,
+      summary,
+      promptText: input.promptText,
+      evidenceValue: input.evidence.value,
+      existingMatches
+    });
+    const draft = assessment.shouldSuggestSkill
+      ? this.skillPromotionService.buildDraft({
+          workdir,
+          projectName,
+          title,
+          summary,
+          promptText: input.promptText,
+          evidenceValue: input.evidence.value,
+          sourceDetail: input.source.detail,
+          tags: inferTags(`${title} ${summary}`),
+          assessment
+        })
+      : null;
+    const candidateKind =
+      assessment.shouldSuggestSkill && draft
+        ? "skill_candidate"
+        : classificationKind;
+    const baseKind = toDurableMemoryKind(classificationKind);
+    const stage = inferCandidateStage({
+      kind: candidateKind,
+      baseKind,
+      destination: assessment.destination
+    });
+
+    return { assessment, draft, candidateKind, baseKind, stage };
+  }
+
+  private buildNewCandidate(
+    workdir: string,
+    input: MemoryCaptureInput,
+    classification: { kind: MemoryKind; reasoning: string[] },
+    payload: {
+      title: string;
+      summary: string;
+      assessment: SkillAssessment;
+      draft: SkillDraft | null;
+      candidateKind: MemoryKind;
+      baseKind: DurableMemoryKind;
+      stage: MemoryStage;
+    }
+  ): MemoryCandidate {
+    return {
+      id: randomUUID(),
+      createdAt: new Date().toISOString(),
+      workdir,
+      project: path.basename(workdir),
+      scope: input.scope || "repo",
+      kind: payload.candidateKind,
+      stage: payload.stage,
+      baseKind: payload.baseKind,
+      title: payload.title,
+      summary: payload.summary,
+      evidence: input.evidence,
+      tags: inferTags(`${payload.title} ${payload.summary}`),
+      confidence:
+        input.kind && input.kind !== "noise"
+          ? 0.9
+          : classification.kind === "fact"
+            ? 0.65
+            : 0.8,
+      source: input.source,
+      reasoning: [...classification.reasoning, ...payload.assessment.rationale],
+      promptText: input.promptText || null,
+      destination: payload.assessment.destination,
+      autoPromote: payload.assessment.shouldAutoPromote,
+      skillAssessment: payload.assessment,
+      skillDraft: payload.draft
+    };
+  }
+
+  private mergeCandidateUpdate(
+    existing: MemoryCandidate,
+    payload: {
+      assessment: SkillAssessment;
+      draft: SkillDraft | null;
+      candidateKind: MemoryKind;
+      stage: MemoryStage;
+    }
+  ): MemoryCandidate {
+    const existingStage = inferCandidateStage(existing);
+    const upgradedStage =
+      stageStrength(payload.stage) > stageStrength(existingStage)
+        ? payload.stage
+        : existingStage;
+
+    return this.normalizeCandidate({
+      ...existing,
+      kind:
+        payload.candidateKind === "skill_candidate"
+          ? "skill_candidate"
+          : existing.kind,
+      stage: upgradedStage,
+      destination:
+        existing.destination && existing.destination !== "memory"
+          ? existing.destination
+          : payload.assessment.destination,
+      autoPromote:
+        Boolean(existing.autoPromote) || payload.assessment.shouldAutoPromote,
+      skillAssessment:
+        stageStrength(payload.stage) > stageStrength(existingStage)
+          ? payload.assessment
+          : existing.skillAssessment || payload.assessment,
+      skillDraft: existing.skillDraft || payload.draft || null,
+      reasoning: Array.from(
+        new Set([...existing.reasoning, ...payload.assessment.rationale])
+      )
+    });
   }
 
   shouldUseMemory(prompt: string, intent: MemoryIntent = "auto"): boolean {
@@ -886,7 +1307,7 @@ export class ProjectMemoryService {
       lines.push("- tactical notes:");
       lines.push(
         ...packet.tacticalNotes
-          .slice(0, 3)
+          .slice(0, 2)
           .map((line) => `  - ${line.replace(/^- /, "")}`)
       );
     }
@@ -895,26 +1316,17 @@ export class ProjectMemoryService {
       lines.push("- durable memory:");
       lines.push(
         ...packet.relevantMemory
-          .slice(0, 5)
+          .slice(0, 3)
           .map(
             (entry) =>
-              `  - [${entry.kind}] ${entry.title} - ${entry.summary} (evidence: ${entry.evidence.value})`
+              `  - [${entry.stage || inferEntryStage(entry)}|${entry.kind}] ${compactPacketText(entry.title || entry.summary, 88)}`
           )
       );
     }
-
-    lines.push("- source files:");
-    lines.push(
-      ...packet.sources
-        .slice(0, 5)
-        .map(
-          (source) =>
-            `  - ${path.relative(packet.workdir, source) || path.basename(source)}`
-        )
-    );
     lines.push(
       "",
       "Use this project memory only when it is relevant. If the request conflicts with this memory, say so explicitly.",
+      "If this compact packet is insufficient, inspect the underlying project files before acting.",
       "",
       "User request:",
       prompt
@@ -928,12 +1340,15 @@ export class ProjectMemoryService {
     return `Using project memory from: ${packet.sources
       .slice(0, 3)
       .map(
-        (source) => path.relative(packet.workdir, source) || path.basename(source)
+        (source) =>
+          path.relative(packet.workdir, source) || path.basename(source)
       )
       .join(", ")}`;
   }
 
-  async captureCandidate(input: MemoryCaptureInput): Promise<MemoryCandidate | null> {
+  async captureCandidate(
+    input: MemoryCaptureInput
+  ): Promise<MemoryCandidate | null> {
     const workdir = path.resolve(input.workdir);
     const normalizedText = normalizeWhitespace(input.text).replace(/\s+/g, " ");
     const classification = input.kind
@@ -945,84 +1360,35 @@ export class ProjectMemoryService {
     }
 
     const candidates = await this.readCandidates(workdir);
-    const summary = normalizedText.length <= 260
-      ? normalizedText
-      : `${normalizedText.slice(0, 257).trimEnd()}...`;
-    const title = firstSentence(summary);
-    const existingMatches = await this.countSimilarWorkflowMatches(
+    const { summary, title } = summarizeCandidateText(normalizedText);
+    if (isWeakRuntimeCandidate(input, title, summary)) {
+      return null;
+    }
+    const promotion = await this.buildCandidatePromotionContext(
       workdir,
+      input,
+      toDurableMemoryKind(classification.kind),
       title,
       summary
     );
-    const assessment = this.skillPromotionService.assessCandidate({
-      workdir,
-      projectName: path.basename(workdir),
-      title,
-      summary,
-      promptText: input.promptText,
-      evidenceValue: input.evidence.value,
-      existingMatches
-    });
     const existing = candidates.find(
       (candidate) =>
         normalizeAscii(candidate.title) === normalizeAscii(title) &&
         normalizeAscii(candidate.summary) === normalizeAscii(summary)
     );
     if (existing) {
-      return existing;
+      const merged = this.mergeCandidateUpdate(existing, promotion);
+      const next = candidates.map((candidate) =>
+        candidate.id === existing.id ? merged : candidate
+      );
+      await this.writeCandidates(workdir, next);
+      return merged;
     }
-
-    const draft = assessment.shouldSuggestSkill
-      ? this.skillPromotionService.buildDraft({
-          workdir,
-          projectName: path.basename(workdir),
-          title,
-          summary,
-          promptText: input.promptText,
-          evidenceValue: input.evidence.value,
-          sourceDetail: input.source.detail,
-          tags: inferTags(`${title} ${summary}`),
-          assessment
-        })
-      : null;
-    const kind =
-      assessment.shouldSuggestSkill && draft ? "skill_candidate" : classification.kind;
-    const baseKind: DurableMemoryKind =
-      classification.kind === "decision" ||
-      classification.kind === "rule" ||
-      classification.kind === "procedure" ||
-      classification.kind === "exception" ||
-      classification.kind === "fact" ||
-      classification.kind === "task_state"
-        ? classification.kind
-        : "procedure";
-
-    const candidate: MemoryCandidate = {
-      id: randomUUID(),
-      createdAt: new Date().toISOString(),
-      workdir,
-      project: path.basename(workdir),
-      scope: input.scope || "repo",
-      kind,
-      baseKind,
+    const candidate = this.buildNewCandidate(workdir, input, classification, {
       title,
       summary,
-      evidence: input.evidence,
-      tags: inferTags(`${title} ${summary}`),
-      confidence:
-        input.kind && input.kind !== "noise"
-          ? 0.9
-            : classification.kind === "fact"
-              ? 0.65
-              : 0.8,
-      source: input.source,
-      reasoning: [...classification.reasoning, ...assessment.rationale],
-      promptText: input.promptText || null,
-      destination: assessment.destination,
-      autoPromote: assessment.shouldAutoPromote,
-      skillAssessment: assessment,
-      skillDraft: draft
-    };
+      ...promotion
+    });
 
     candidates.unshift(candidate);
     await this.writeCandidates(workdir, candidates);
@@ -1047,6 +1413,13 @@ export class ProjectMemoryService {
     return candidate;
   }
 
+  async getCandidate(
+    workdir: string,
+    selector: string | number
+  ): Promise<MemoryCandidate | null> {
+    return this.resolveCandidate(path.resolve(workdir), selector);
+  }
+
   async explainCandidate(
     workdir: string,
     selector: string | number
@@ -1059,12 +1432,13 @@ export class ProjectMemoryService {
     const lines = [
       `Candidate ${candidate.id}`,
       `kind: ${candidate.kind}`,
+      `stage: ${inferCandidateStage(candidate)}`,
       `base kind: ${candidate.baseKind}`,
       `title: ${candidate.title}`,
       `why it matters: ${reasons}`,
       `evidence: ${candidate.evidence.type} -> ${candidate.evidence.value}`
     ];
-    if (candidate.kind === "skill_candidate") {
+    if (inferCandidateStage(candidate) === "skill_candidate") {
       lines.push(`destination: ${candidate.destination || "review"}`);
       lines.push(`auto promote: ${candidate.autoPromote ? "yes" : "no"}`);
     }
@@ -1083,11 +1457,12 @@ export class ProjectMemoryService {
     const existing = proposals.find(
       (proposal) =>
         proposal.candidateId === candidate.id ||
-        (
-          normalizeAscii(proposal.entry.kind) === normalizeAscii(candidate.kind) &&
-          normalizeAscii(proposal.entry.title) === normalizeAscii(candidate.title) &&
-          normalizeAscii(proposal.entry.summary) === normalizeAscii(candidate.summary)
-        )
+        (normalizeAscii(proposal.entry.kind) ===
+          normalizeAscii(candidate.kind) &&
+          normalizeAscii(proposal.entry.title) ===
+            normalizeAscii(candidate.title) &&
+          normalizeAscii(proposal.entry.summary) ===
+            normalizeAscii(candidate.summary))
     );
     if (existing) {
       return existing;
@@ -1105,12 +1480,16 @@ export class ProjectMemoryService {
         project: candidate.project,
         scope: candidate.scope,
         kind: candidate.baseKind,
+        stage:
+          candidate.destination && candidate.destination !== "memory"
+            ? "real_skill"
+            : "durable_memory",
         title: candidate.title,
         summary: candidate.summary,
         evidence: candidate.evidence,
         tags: [
           ...candidate.tags,
-          ...(candidate.kind === "skill_candidate"
+          ...(inferCandidateStage(candidate) === "skill_candidate"
             ? [
                 "skill-promoted",
                 `skill-destination:${candidate.destination || "review"}`
@@ -1195,7 +1574,11 @@ export class ProjectMemoryService {
 
     const ledgerPath = this.ledgerPath(resolvedWorkdir);
     await fs.mkdir(path.dirname(ledgerPath), { recursive: true });
-    await fs.appendFile(ledgerPath, `${JSON.stringify(proposal.entry)}\n`, "utf8");
+    await fs.appendFile(
+      ledgerPath,
+      `${JSON.stringify(proposal.entry)}\n`,
+      "utf8"
+    );
     await this.writeProposals(
       resolvedWorkdir,
       proposals.filter((item) => item.id !== proposal.id)
@@ -1212,7 +1595,9 @@ export class ProjectMemoryService {
   async getProjectSkillStatus(workdir: string): Promise<ProjectSkillStatus> {
     const resolvedWorkdir = path.resolve(workdir);
     const pendingCandidates = (await this.listCandidates(resolvedWorkdir))
-      .filter((candidate) => candidate.kind === "skill_candidate")
+      .filter(
+        (candidate) => inferCandidateStage(candidate) === "skill_candidate"
+      )
       .map((candidate) => ({
         id: candidate.id,
         title: candidate.title,
@@ -1256,7 +1641,7 @@ export class ProjectMemoryService {
       };
     }
 
-    if (candidate.kind !== "skill_candidate") {
+    if (inferCandidateStage(candidate) !== "skill_candidate") {
       return {
         candidate,
         message: null,
@@ -1269,7 +1654,9 @@ export class ProjectMemoryService {
       const applied = proposal
         ? await this.applyPromotion(input.workdir, proposal.id)
         : { ok: false as const };
-      const projectSkillStatus = await this.getProjectSkillStatus(input.workdir);
+      const projectSkillStatus = await this.getProjectSkillStatus(
+        input.workdir
+      );
       if (!applied.ok) {
         return {
           candidate,
@@ -1317,17 +1704,21 @@ export class ProjectMemoryService {
 
   async readOperationalFile(
     workdir: string,
-    target: "active" | "handoff" | "napkin" | "ledger"
+    target: "index" | "project" | "active" | "handoff" | "napkin" | "ledger"
   ): Promise<string | null> {
     const resolvedWorkdir = path.resolve(workdir);
     const targetPath =
-      target === "active"
-        ? this.activePath(resolvedWorkdir)
-        : target === "handoff"
-          ? this.handoffPath(resolvedWorkdir)
-          : target === "napkin"
-            ? this.napkinPath(resolvedWorkdir)
-            : this.ledgerPath(resolvedWorkdir);
+      target === "index"
+        ? this.indexPath(resolvedWorkdir)
+        : target === "project"
+          ? this.projectPath(resolvedWorkdir)
+          : target === "active"
+            ? this.activePath(resolvedWorkdir)
+            : target === "handoff"
+              ? this.handoffPath(resolvedWorkdir)
+              : target === "napkin"
+                ? this.napkinPath(resolvedWorkdir)
+                : this.ledgerPath(resolvedWorkdir);
 
     if (!(await pathExists(targetPath))) {
       return null;

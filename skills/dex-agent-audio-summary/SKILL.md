@@ -1,25 +1,31 @@
 ---
 name: dex-agent-audio-summary
-description: Use quando o usuario pedir resumo em audio enviado pelo proprio bot desta conversa via Dex Agent. Esta skill usa o repo local em que ela esta instalada, envia `voice note` no Telegram via `bot.telegram.sendVoice(...)`, usa `pt-BR-FranciscaNeural` quando suportado, e deve confirmar entrega por `message_id` em vez de parar num arquivo local.
+description: Use quando o usuario pedir resumo ou explicacao em audio enviado pelo proprio bot via Dex Agent. Esta e a skill global canonica para esse fluxo, usa `C:\CodexProjetos\dex-agent` como repo operacional de transporte, envia `voice note` no Telegram via `bot.telegram.sendVoice(...)`, usa `pt-BR-FranciscaNeural` quando suportado, e deve confirmar entrega por `message_id` em vez de parar num arquivo local.
 ---
 
 # Dex Agent Audio Summary
 
 Use esta skill quando o pedido for:
+
 - "me manda um resumo em audio"
+- "me explica isso em audio"
+- "manda um audio explicando como usar"
 - "envia isso no bot em audio"
 - "repete o padrao do audio"
 - "manda o resumo detalhado em audio"
 
 Nao use esta skill para:
+
 - gerar apenas um arquivo local sem enviar
 - imagem, fluxograma ou organograma
 - audio vindo de Hermes, SSH ou OpenClaw remoto
 
 ## Contrato verificado
 
+- skill canonica: global
 - transporte correto: `Dex Agent`
-- repo operacional: `<repo-root>`
+- repo operacional canonico: `C:\CodexProjetos\dex-agent`
+- espelho no repo: `C:\CodexProjetos\dex-agent\skills\dex-agent-audio-summary\`
 - TTS verificado: `src/lib/audioTts.ts`
 - envio verificado: `src/lib/audioSummaryManager.ts`
 - metodo real: `bot.telegram.sendVoice(...)`
@@ -39,6 +45,7 @@ Nao use esta skill para:
 Nao parar em `.mp3` local.
 
 O fluxo correto e:
+
 1. preparar o texto
 2. garantir que a fala passe pela normalizacao do `AudioTts`, para nao ler tracos, caminhos, emoji ou ruido literal
 3. sintetizar para `ogg/opus` pelo pipeline do `Dex Agent`
@@ -47,22 +54,24 @@ O fluxo correto e:
 
 ## Caminho rapido
 
-Se o objetivo for enviar agora um resumo detalhado:
+Se o objetivo for enviar agora um resumo ou audio explicativo a partir de qualquer workspace:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File ".\skills\dex-agent-audio-summary\scripts\send-dex-agent-audio-summary.ps1" -Text "seu resumo aqui"
+powershell -ExecutionPolicy Bypass -File "C:\Users\crsan\.codex\skills\dex-agent-audio-summary\scripts\send-dex-agent-audio-summary.ps1" -Text "seu resumo aqui"
 ```
 
 Se o texto estiver em arquivo:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File ".\skills\dex-agent-audio-summary\scripts\send-dex-agent-audio-summary.ps1" -TextPath "C:\caminho\resumo.txt"
+powershell -ExecutionPolicy Bypass -File "C:\Users\crsan\.codex\skills\dex-agent-audio-summary\scripts\send-dex-agent-audio-summary.ps1" -TextPath "C:\caminho\resumo.txt"
 ```
+
+Dentro do proprio repo `Dex Agent`, o helper espelhado em `.\skills\dex-agent-audio-summary\scripts\send-dex-agent-audio-summary.ps1` continua sendo um atalho equivalente.
 
 ## O que a skill deve fazer
 
-1. Montar o resumo em texto falavel.
-2. Rodar o pipeline do repo `Dex Agent`, nao um atalho externo.
+1. Montar o resumo ou explicacao em texto falavel.
+2. Rodar o pipeline canonico do repo `Dex Agent`, inclusive quando o pedido nascer em outro projeto.
 3. Enviar para o chat padrao configurado no bot, salvo override explicito.
 4. Responder com o resultado objetivo:
    - `message_id`
@@ -72,6 +81,7 @@ powershell -ExecutionPolicy Bypass -File ".\skills\dex-agent-audio-summary\scrip
 ## Checklist de normalizacao
 
 Antes de considerar o audio pronto, confirmar que o pipeline falado nao esta:
+
 - lendo emoji
 - lendo markdown cru
 - lendo caminhos locais
@@ -81,9 +91,11 @@ Antes de considerar o audio pronto, confirmar que o pipeline falado nao esta:
 ## Recuperacao rapida
 
 Se houver duvida ou drift:
+
 - ler `<repo-root>/src/lib/audioTts.ts`
 - ler `<repo-root>/src/lib/audioSummaryManager.ts`
 - ler `<repo-root>/tests/audioTts.test.ts`
+- usar o wrapper global `C:\Users\crsan\.codex\skills\dex-agent-audio-summary\scripts\send-dex-agent-audio-summary.ps1` quando o pedido vier de outro repo
 - checar `.env` do `Dex Agent` para `BOT_TOKEN`, `PROACTIVE_USER_IDS`, `ALLOWED_USER_IDS`, `TTS_ENABLED` e `TTS_EDGE_VOICE`
 
 ## Sinais de pronto

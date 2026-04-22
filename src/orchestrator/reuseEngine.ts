@@ -28,10 +28,14 @@ export class ProjectReuseEngine {
   }
 
   getSkillPromotionService(): SkillPromotionService | null {
-    const service = (this.memoryService as ProjectMemoryService & {
-      getSkillPromotionService?: () => SkillPromotionService;
-    }).getSkillPromotionService;
-    return typeof service === "function" ? service.call(this.memoryService) : null;
+    const service = (
+      this.memoryService as ProjectMemoryService & {
+        getSkillPromotionService?: () => SkillPromotionService;
+      }
+    ).getSkillPromotionService;
+    return typeof service === "function"
+      ? service.call(this.memoryService)
+      : null;
   }
 
   async preparePrompt(input: {
@@ -53,7 +57,10 @@ export class ProjectReuseEngine {
       ? `Reusing project skill context: ${relevantSkills.map((skill) => skill.name).join(", ")}`
       : null;
     const promptWithSkills = relevantSkills.length
-      ? skillPromotionService!.renderRelevantSkillsPacket(relevantSkills, prompt)
+      ? skillPromotionService!.renderRelevantSkillsPacket(
+          relevantSkills,
+          prompt
+        )
       : prompt;
 
     if (!packet) {
@@ -69,14 +76,15 @@ export class ProjectReuseEngine {
     return {
       prompt: this.memoryService.renderMemoryPacket(packet, promptWithSkills),
       promptWithSkills,
-      disclosure: [
-        skillDisclosure,
-        packet.confidence === "low"
-          ? this.memoryService.buildSourceDisclosure(packet)
-          : null
-      ]
-        .filter(Boolean)
-        .join("\n") || null,
+      disclosure:
+        [
+          skillDisclosure,
+          packet.confidence === "low"
+            ? this.memoryService.buildSourceDisclosure(packet)
+            : null
+        ]
+          .filter(Boolean)
+          .join("\n") || null,
       packet,
       relevantSkills
     };

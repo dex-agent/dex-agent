@@ -145,14 +145,17 @@ export class AudioTranscriber {
   }
 
   private looksLikeMetaReplyInsteadOfTranscript(text: string): boolean {
-    const normalized = String(text || "").trim().toLowerCase();
+    const normalized = String(text || "")
+      .trim()
+      .toLowerCase();
     if (!normalized) {
       return false;
     }
 
     const asksToSendAudio =
-      /\b(envie|anexe|compartilhe|mande|send|share|attach)\b/.test(normalized) &&
-      /\b(audio|áudio|arquivo|file)\b/.test(normalized);
+      /\b(envie|anexe|compartilhe|mande|send|share|attach)\b/.test(
+        normalized
+      ) && /\b(audio|áudio|arquivo|file)\b/.test(normalized);
     const genericMetaPhrases = [
       "ficarei no aguardo",
       "i heard this from your audio",
@@ -316,7 +319,9 @@ export class AudioTranscriber {
     });
 
     if (fileResponse.statusCode < 200 || fileResponse.statusCode >= 300) {
-      throw new Error(`Telegram file download failed: HTTP ${fileResponse.statusCode}`);
+      throw new Error(
+        `Telegram file download failed: HTTP ${fileResponse.statusCode}`
+      );
     }
 
     if (fileResponse.bytes.byteLength > this.config.maxFileBytes) {
@@ -326,10 +331,7 @@ export class AudioTranscriber {
     }
 
     const text = this.usesOpenRouterChatCompletions()
-      ? await this.transcribeWithOpenRouterChatCompletions(
-          source,
-          fileResponse
-        )
+      ? await this.transcribeWithOpenRouterChatCompletions(source, fileResponse)
       : await this.transcribeWithOpenAiStyleApi(source, fileResponse);
 
     if (!text) {

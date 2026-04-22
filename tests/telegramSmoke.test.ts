@@ -39,5 +39,8 @@ test("telegram smoke refuses to send to the primary operator chat by default", (
   );
 
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /Refusing to send telegram smoke to the primary operator chat/i);
+  assert.match(
+    result.stderr,
+    /Refusing to send telegram smoke to the primary operator chat/i
+  );
 });

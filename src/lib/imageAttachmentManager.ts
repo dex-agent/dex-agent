@@ -147,7 +147,10 @@ function isImagePath(filePath: string): boolean {
   return IMAGE_EXTENSIONS.has(path.extname(filePath).toLowerCase());
 }
 
-function resolveCandidatePath(candidate: string, workdir: string): string | null {
+function resolveCandidatePath(
+  candidate: string,
+  workdir: string
+): string | null {
   const cleaned = cleanCandidate(candidate);
   if (!cleaned) {
     return null;

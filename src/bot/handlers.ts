@@ -45,10 +45,11 @@ import {
   type MemoryWriteProposal
 } from "../orchestrator/memoryService.js";
 import { ProjectReuseEngine } from "../orchestrator/reuseEngine.js";
+import { PromptLibraryService } from "../orchestrator/promptLibraryService.js";
 import {
-  PromptLibraryService
-} from "../orchestrator/promptLibraryService.js";
-import { buildProjectPromptPresets } from "../orchestrator/skills/projectStatusSkill.js";
+  buildProjectPromptPresets,
+  type ProjectPromptPreset
+} from "../orchestrator/skills/projectStatusSkill.js";
 
 interface SkillResultPayload {
   text?: string;
@@ -118,6 +119,10 @@ const INBOX_OVERVIEW_BUTTON_ROWS: LocalizedButtonSpec[][] = [
     { labelKey: "buttonMemoryProposals", callbackData: "inbox:proposals" }
   ],
   [
+    { labelKey: "buttonMemoryIndex", callbackData: "memory:view:index" },
+    { labelKey: "buttonMemoryProject", callbackData: "memory:view:project" }
+  ],
+  [
     { labelKey: "buttonMemoryActive", callbackData: "memory:view:active" },
     { labelKey: "buttonMemoryHandoff", callbackData: "memory:view:handoff" }
   ]
@@ -125,6 +130,8 @@ const INBOX_OVERVIEW_BUTTON_ROWS: LocalizedButtonSpec[][] = [
 
 const PROJECT_MEMORY_BUTTON_ROW: LocalizedButtonSpec[] = [
   { labelKey: "buttonMemoryInbox", callbackData: "inbox:show" },
+  { labelKey: "buttonMemoryIndex", callbackData: "memory:view:index" },
+  { labelKey: "buttonMemoryProject", callbackData: "memory:view:project" },
   { labelKey: "buttonMemoryActive", callbackData: "memory:view:active" },
   { labelKey: "buttonMemoryHandoff", callbackData: "memory:view:handoff" }
 ];
@@ -168,6 +175,106 @@ function normalizeAscii(value: string): string {
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "")
     .toLowerCase();
+}
+
+function extractRememberShortcut(text: string): string | null {
+  const value = String(text || "").trim();
+  if (!value) return null;
+
+  const patterns = [
+    /^(?:lembra(?:\s+(?:disso|isso))?|guarda(?:\s+(?:disso|isso))?|salva(?:\s+(?:disso|isso))?)\s*[:-]\s*(.+)$/i,
+    /^(?:lembra(?:\s+(?:disso|isso))?|guarda(?:\s+(?:disso|isso))?|salva(?:\s+(?:disso|isso))?)\s+como\s+memoria(?:\s+duravel)?\s*[:-]\s*(.+)$/i,
+    /^(?:lembra(?:\s+(?:disso|isso))?|guarda(?:\s+(?:disso|isso))?|salva(?:\s+(?:disso|isso))?)\s+como\s+(?:habilidade|skill)(?:\s+(?:de\s+projeto|global))?\s*[:-]\s*(.+)$/i,
+    /^grave\s+isso\s+como\s+(?:memoria(?:\s+duravel)?|(?:habilidade|skill)(?:\s+(?:de\s+projeto|global))?)\s*[:-]\s*(.+)$/i
+  ];
+
+  for (const pattern of patterns) {
+    if (pattern.test(value)) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function parseRememberCapture(rawRemember: string): {
+  text: string;
+  kind?:
+    | "decision"
+    | "rule"
+    | "procedure"
+    | "exception"
+    | "fact"
+    | "task_state";
+  promptText?: string;
+} {
+  const trimmed = String(rawRemember || "").trim();
+  let rememberText = trimmed;
+  let promptText: string | undefined;
+
+  const wrapperPatterns: Array<{
+    pattern: RegExp;
+    marksSkillIntent?: boolean;
+  }> = [
+    {
+      pattern:
+        /^(?:lembra(?:\s+(?:disso|isso))?|guarda(?:\s+(?:disso|isso))?|salva(?:\s+(?:disso|isso))?)\s+como\s+(?:habilidade|skill)(?:\s+(?:de\s+projeto|global))?\s*[:-]\s*(.+)$/i,
+      marksSkillIntent: true
+    },
+    {
+      pattern:
+        /^grave\s+isso\s+como\s+(?:habilidade|skill)(?:\s+(?:de\s+projeto|global))?\s*[:-]\s*(.+)$/i,
+      marksSkillIntent: true
+    },
+    {
+      pattern:
+        /^(?:lembra(?:\s+(?:disso|isso))?|guarda(?:\s+(?:disso|isso))?|salva(?:\s+(?:disso|isso))?)\s+como\s+memoria(?:\s+duravel)?\s*[:-]\s*(.+)$/i
+    },
+    {
+      pattern: /^grave\s+isso\s+como\s+memoria(?:\s+duravel)?\s*[:-]\s*(.+)$/i
+    },
+    {
+      pattern:
+        /^(?:lembra(?:\s+(?:disso|isso))?|guarda(?:\s+(?:disso|isso))?|salva(?:\s+(?:disso|isso))?)\s*[:-]\s*(.+)$/i
+    }
+  ];
+
+  for (const wrapper of wrapperPatterns) {
+    const match = trimmed.match(wrapper.pattern);
+    if (match?.[1]) {
+      rememberText = match[1].trim();
+      if (wrapper.marksSkillIntent) {
+        promptText = trimmed;
+      }
+      break;
+    }
+  }
+
+  const skillMatch = rememberText.match(
+    /^(?:isso (?:tem que|precisa|deve) virar skill(?:\s+(?:de\s+projeto|global))?|memoriza(?: isso)? como (?:habilidade|skill)(?:\s+(?:de\s+projeto|global))?|promove(?: isso)? para skill(?:\s+(?:de\s+projeto|global))?|vira skill(?:\s+(?:de\s+projeto|global))?)\s*[:-]\s*(.+)$/i
+  );
+  if (skillMatch?.[1]) {
+    rememberText = skillMatch[1].trim();
+    promptText = promptText || trimmed;
+  }
+
+  const typedMatch = rememberText.match(
+    /^(decision|rule|procedure|exception|fact|task_state)\s*[:-]\s*(.+)$/i
+  );
+
+  return {
+    text: typedMatch?.[2] || rememberText,
+    kind: typedMatch?.[1]
+      ? (typedMatch[1].toLowerCase() as
+          | "decision"
+          | "rule"
+          | "procedure"
+          | "exception"
+          | "fact"
+          | "task_state")
+      : undefined,
+    promptText
+  };
 }
 
 function toPlainTelegramFallback(text: string): string {
@@ -225,7 +332,9 @@ async function sendSkillResult(
   const text = payload?.text || t(locale, "emptyResponse");
   const sourceText = String(text || "");
   const markdown =
-    payload.parseMode === "markdown" ? sourceText : escapeMarkdownV2(sourceText);
+    payload.parseMode === "markdown"
+      ? sourceText
+      : escapeMarkdownV2(sourceText);
   const markdownChunks = splitTelegramMessage(markdown, 3900);
   const plainFallbackText =
     payload.parseMode === "markdown"
@@ -564,61 +673,234 @@ function buildProjectStatusMeetingPrompt(
 }
 
 function buildFinalResponsePlanPrompt(currentText: string): string {
-  return buildPlanPrompt([
-    "Use a conclusao abaixo como base canonica para planejar o proximo sprint.",
-    "Entregue um plano curto, operacional e verificavel.",
-    "Se nao houver base suficiente para planejar com seguranca, diga isso claramente.",
-    "",
-    "Conclusao atual:",
-    stripProjectStatusFormatting(currentText)
-  ].join("\n"));
+  return buildPlanPrompt(
+    [
+      "Use a conclusao abaixo como base canonica para planejar o proximo sprint.",
+      "Entregue um plano curto, operacional e verificavel.",
+      "Se nao houver base suficiente para planejar com seguranca, diga isso claramente.",
+      "",
+      "Conclusao atual:",
+      stripProjectStatusFormatting(currentText)
+    ].join("\n")
+  );
 }
 
 function applyLocalExecutionPreference(prompt: string): string {
   return [
     "Preferencia operacional deste bot/projeto:",
-    "- nao use context-mode por padrao neste repo",
     "- para leitura, extracao local, cortes de arquivo e verificacoes compactas, prefira $motor-local",
-    "- so use context-mode se eu pedir explicitamente ou se ficar realmente bloqueado sem ele",
     "",
     prompt.trim()
   ].join("\n");
 }
 
 function buildFinalResponseContinuePrompt(currentText: string): string {
-  return applyLocalExecutionPreference([
-    "Considere a conclusao abaixo como aprovada.",
-    "Continue imediatamente o proximo passo natural da implementacao ou do sprint atual no projeto aberto.",
-    "Se nao houver proximo passo claro e seguro, pare e diga objetivamente que o correto agora e usar /plan.",
-    "",
-    "Conclusao aprovada:",
-    stripProjectStatusFormatting(currentText)
-  ].join("\n"));
+  return applyLocalExecutionPreference(
+    [
+      "Treat this button click as approval for exactly one follow-up execution scoped to the finalized conclusion below.",
+      "Execute only the next eligible block or next concrete implementation step already implied by that conclusion in the open project.",
+      "Do not reinterpret this click as blanket approval for unrelated work, a new meeting, or a full replan.",
+      "Se o proximo passo seguro nao for execucao e sim revisao ou /plan, diga isso objetivamente e pare.",
+      "",
+      "Approved context:",
+      stripProjectStatusFormatting(currentText)
+    ].join("\n")
+  );
 }
 
 function buildFinalResponseMeetingPrompt(currentText: string): string {
-  return applyLocalExecutionPreference([
-    "Faca uma reuniao com especialistas sobre a conclusao abaixo.",
-    "Trate isso como fechamento de bloco ou de uma implementacao.",
-    "",
-    stripProjectStatusFormatting(currentText),
-    "",
-    "Entregue:",
-    "- Objetivo",
-    "- Mesa convocada",
-    "- Sugestoes",
-    "- Divergencias e tensoes",
-    "- Decisoes tomadas",
-    "- Encaminhamento"
-  ].join("\n"));
+  return applyLocalExecutionPreference(
+    [
+      "Faca uma reuniao com especialistas sobre a conclusao abaixo.",
+      "Trate isso como fechamento de bloco ou de uma implementacao.",
+      "",
+      stripProjectStatusFormatting(currentText),
+      "",
+      "Entregue:",
+      "- Objetivo",
+      "- Mesa convocada",
+      "- Sugestoes",
+      "- Divergencias e tensoes",
+      "- Decisoes tomadas",
+      "- Encaminhamento"
+    ].join("\n")
+  );
+}
+
+function parseIsoTimestamp(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function compactStatusPreview(
+  value: string | null | undefined,
+  max = 120
+): string {
+  const normalized = String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return "";
+  if (normalized.length <= max) return normalized;
+  return `${normalized.slice(0, Math.max(0, max - 3)).trimEnd()}...`;
+}
+
+function formatRelativeTimestamp(
+  locale: Locale,
+  value: string | null | undefined
+): string | null {
+  const timestamp = parseIsoTimestamp(value);
+  if (timestamp === null) {
+    return null;
+  }
+
+  const deltaSeconds = Math.round((timestamp - Date.now()) / 1000);
+  const absoluteSeconds = Math.abs(deltaSeconds);
+  const formatter = new Intl.RelativeTimeFormat(locale, {
+    numeric: "auto"
+  });
+
+  if (absoluteSeconds < 60) {
+    return formatter.format(deltaSeconds, "second");
+  }
+
+  const deltaMinutes = Math.round(deltaSeconds / 60);
+  if (Math.abs(deltaMinutes) < 60) {
+    return formatter.format(deltaMinutes, "minute");
+  }
+
+  const deltaHours = Math.round(deltaMinutes / 60);
+  if (Math.abs(deltaHours) < 24) {
+    return formatter.format(deltaHours, "hour");
+  }
+
+  const deltaDays = Math.round(deltaHours / 24);
+  return formatter.format(deltaDays, "day");
+}
+
+type OperationalPosture =
+  | "working"
+  | "pending_replay"
+  | "queued"
+  | "awaiting_closeout"
+  | "recent_finish"
+  | "prolonged_silence"
+  | "idle";
+
+function deriveOperationalPosture(
+  state: OperationalContinuationState
+): OperationalPosture {
+  if (state.active) {
+    return "working";
+  }
+
+  if (state.pendingPromptText) {
+    return "pending_replay";
+  }
+
+  if (state.queuedItems.length) {
+    return "queued";
+  }
+
+  const lastPromptAt = parseIsoTimestamp(state.lastPromptAt);
+  const lastFinalizedAt = parseIsoTimestamp(state.lastFinalizedAt);
+
+  if (
+    lastPromptAt !== null &&
+    (lastFinalizedAt === null || lastPromptAt > lastFinalizedAt)
+  ) {
+    return "awaiting_closeout";
+  }
+
+  if (lastFinalizedAt !== null) {
+    const ageMs = Date.now() - lastFinalizedAt;
+    if (ageMs <= 15 * 60 * 1000) {
+      return "recent_finish";
+    }
+    if (ageMs >= 6 * 60 * 60 * 1000) {
+      return "prolonged_silence";
+    }
+  }
+
+  return "idle";
+}
+
+function buildObservabilityLines(
+  locale: Locale,
+  state: OperationalContinuationState,
+  options: {
+    includeHeader?: boolean;
+    includeLastResponse?: boolean;
+  } = {}
+): string[] {
+  const { includeHeader = true, includeLastResponse = true } = options;
+  const lines: string[] = [];
+  const postureKey = {
+    working: "statusPostureWorking",
+    pending_replay: "statusPosturePendingReplay",
+    queued: "statusPostureQueued",
+    awaiting_closeout: "statusPostureAwaitingCloseout",
+    recent_finish: "statusPostureRecentFinish",
+    prolonged_silence: "statusPostureProlongedSilence",
+    idle: "statusPostureIdle"
+  } as const;
+  const posture = t(locale, postureKey[deriveOperationalPosture(state)]);
+
+  if (includeHeader) {
+    lines.push("", t(locale, "statusObservabilityHeader"));
+  }
+
+  lines.push(t(locale, "statusOperationalPosture", { value: posture }));
+
+  if (state.pendingPromptText) {
+    lines.push(
+      t(locale, "statusPendingPromptSignal", {
+        text: compactStatusPreview(state.pendingPromptText)
+      })
+    );
+  }
+
+  if (state.queuedItems.length) {
+    lines.push(
+      t(locale, "statusQueueSignal", {
+        count: state.queuedItems.length,
+        next: compactStatusPreview(state.queuedItems[0]?.text || "")
+      })
+    );
+  }
+
+  const lastPromptAge = formatRelativeTimestamp(locale, state.lastPromptAt);
+  if (lastPromptAge) {
+    lines.push(t(locale, "statusLastPromptSignal", { value: lastPromptAge }));
+  }
+
+  const lastFinalizedAge = formatRelativeTimestamp(
+    locale,
+    state.lastFinalizedAt
+  );
+  if (lastFinalizedAge) {
+    lines.push(
+      t(locale, "statusLastFinalizedSignal", { value: lastFinalizedAge })
+    );
+  }
+
+  if (includeLastResponse && state.lastFinalResponseText) {
+    lines.push(
+      t(locale, "statusLastFinalResponseSignal", {
+        text: compactStatusPreview(state.lastFinalResponseText)
+      })
+    );
+  }
+
+  return lines;
 }
 
 function hasPlannedSprint(contract: ProjectUnderstandingContract): boolean {
   return Boolean(
     contract.currentStatus.nextEligibleBlock ||
-      contract.nextStepSummary.length ||
-      contract.nextQueue.length ||
-      contract.suggestedCommands.length
+    contract.nextStepSummary.length ||
+    contract.nextQueue.length ||
+    contract.suggestedCommands.length
   );
 }
 
@@ -631,29 +913,39 @@ function buildProjectContinuePrompt(
   ];
 
   if (contract.currentStatus.nextEligibleBlock) {
-    lines.push(`Proximo bloco elegivel: ${contract.currentStatus.nextEligibleBlock}.`);
+    lines.push(
+      `Proximo bloco elegivel: ${contract.currentStatus.nextEligibleBlock}.`
+    );
   }
 
   if (contract.currentStatus.executionFormal) {
-    lines.push(`Estado formal atual: ${contract.currentStatus.executionFormal}.`);
+    lines.push(
+      `Estado formal atual: ${contract.currentStatus.executionFormal}.`
+    );
   }
 
   if (contract.nextQueue.length) {
     lines.push("", "Fila canonica:");
-    lines.push(...contract.nextQueue.map((line) => `- ${line.replace(/^- /, "").trim()}`));
+    lines.push(
+      ...contract.nextQueue.map((line) => `- ${line.replace(/^- /, "").trim()}`)
+    );
   }
 
   if (contract.nextStepSummary.length) {
     lines.push("", "Passos imediatos registrados:");
     lines.push(
-      ...contract.nextStepSummary.map((line) => `- ${line.replace(/^- /, "").trim()}`)
+      ...contract.nextStepSummary.map(
+        (line) => `- ${line.replace(/^- /, "").trim()}`
+      )
     );
   }
 
   if (contract.suggestedCommands.length) {
     lines.push("", "Comandos sugeridos do contrato:");
     lines.push(
-      ...contract.suggestedCommands.map((line) => `- ${line.replace(/^- /, "").trim()}`)
+      ...contract.suggestedCommands.map(
+        (line) => `- ${line.replace(/^- /, "").trim()}`
+      )
     );
   }
 
@@ -668,17 +960,22 @@ function buildProjectContinuePrompt(
 
 function buildProjectCommandPrompt(command: string): string {
   const cleanedCommand = command.replace(/^- /, "").trim();
-  return applyLocalExecutionPreference([
-    "Use o comando sugerido abaixo como atalho operacional do projeto atual.",
-    `Comando/protocolo selecionado: ${cleanedCommand}`,
-    "",
-    "Se isso for um comando de leitura, execute a leitura e resuma o resultado.",
-    "Se isso for um comando operacional, use-o como guia para continuar o trabalho agora.",
-    "Se ele nao estiver disponivel ou nao fizer sentido neste contexto, explique objetivamente sem inventar."
-  ].join("\n"));
+  return applyLocalExecutionPreference(
+    [
+      "Use o comando sugerido abaixo como atalho operacional do projeto atual.",
+      `Comando/protocolo selecionado: ${cleanedCommand}`,
+      "",
+      "Se isso for um comando de leitura, execute a leitura e resuma o resultado.",
+      "Se isso for um comando operacional, use-o como guia para continuar o trabalho agora.",
+      "Se ele nao estiver disponivel ou nao fizer sentido neste contexto, explique objetivamente sem inventar."
+    ].join("\n")
+  );
 }
 
-function inferMemoryIntent(prompt: string, fallback: MemoryIntent = "auto"): MemoryIntent {
+function inferMemoryIntent(
+  prompt: string,
+  fallback: MemoryIntent = "auto"
+): MemoryIntent {
   if (fallback !== "auto") {
     return fallback;
   }
@@ -692,7 +989,11 @@ function inferMemoryIntent(prompt: string, fallback: MemoryIntent = "auto"): Mem
     return "trivial";
   }
 
-  if (/\b(plan|sprint|next step|roadmap|refactor|implement|debug|fix|review)\b/i.test(normalized)) {
+  if (
+    /\b(plan|sprint|next step|roadmap|refactor|implement|debug|fix|review)\b/i.test(
+      normalized
+    )
+  ) {
     if (/\b(plan|roadmap|sprint)\b/i.test(normalized)) return "planning";
     if (/\b(debug|fix)\b/i.test(normalized)) return "debug";
     return "implementation";
@@ -731,10 +1032,10 @@ function hasOperationalContinuationSignal(
 ): boolean {
   return Boolean(
     state.active ||
-      state.pendingPromptText ||
-      state.queuedItems.length ||
-      state.lastPromptText ||
-      state.lastFinalResponseText
+    state.pendingPromptText ||
+    state.queuedItems.length ||
+    state.lastPromptText ||
+    state.lastFinalResponseText
   );
 }
 
@@ -746,48 +1047,34 @@ function buildContinuePromptFromState(
   const lines = [
     "Operational continuation state for this chat:",
     `- project: ${state.relativeWorkdir}`,
-    `- active session: ${state.active ? "yes" : "no"}`,
-    `- active mode: ${state.activeMode || "idle"}`,
     `- workflow phase: ${state.workflowPhase}`
   ];
 
   const lastPrompt = compactContinuationText(state.lastPromptText);
-  const lastFinal = compactContinuationText(state.lastFinalResponseText, 720);
   const pending = compactContinuationText(state.pendingPromptText);
+  const nextQueued = compactContinuationText(state.queuedItems[0]?.text, 220);
+  const liveCut = pending || nextQueued || lastPrompt;
 
-  if (lastPrompt) {
-    lines.push(`- last live request: ${lastPrompt}`);
-  }
-  if (lastFinal) {
-    lines.push(`- last live result: ${lastFinal}`);
-  }
-  if (pending) {
-    lines.push(`- pending prompt: ${pending}`);
-  }
-  if (state.queuedItems.length) {
-    lines.push(
-      `- next queued item: ${compactContinuationText(state.queuedItems[0]?.text, 220)}`
-    );
+  if (liveCut) {
+    lines.push(`- live cut: ${liveCut}`);
   }
 
   lines.push(
     "",
     "Use this operational state as the primary source of truth for requests to continue or resume work in this chat.",
+    "Do not treat prior assistant narration as verified live state.",
     "If it conflicts with durable project memory, prefer the operational continuation state and treat durable memory as fallback that may be stale."
   );
 
   if (packet) {
-    lines.push("", "Canonical memoria-viva fallback:");
+    lines.push("", "Durable memoria-viva fallback only if needed:");
     if (packet.currentObjective) {
       lines.push(`- current objective: ${packet.currentObjective}`);
-    }
-    if (packet.latestClosedBlock) {
-      lines.push(`- latest closed block: ${packet.latestClosedBlock}`);
     }
     if (packet.nextEligibleBlock) {
       lines.push(`- next eligible block: ${packet.nextEligibleBlock}`);
     }
-    for (const note of packet.tacticalNotes.slice(0, 3)) {
+    for (const note of packet.tacticalNotes.slice(0, 1)) {
       lines.push(`- tactical note: ${note.replace(/^- /, "").trim()}`);
     }
   }
@@ -796,10 +1083,17 @@ function buildContinuePromptFromState(
   return lines.join("\n");
 }
 
-function formatMemorySourcesForReply(workdir: string, sources: string[]): string {
+function formatMemorySourcesForReply(
+  workdir: string,
+  sources: string[]
+): string {
   return sources
     .slice(0, 3)
-    .map((source) => path.relative(workdir, source).replace(/\\/g, "/") || path.basename(source))
+    .map(
+      (source) =>
+        path.relative(workdir, source).replace(/\\/g, "/") ||
+        path.basename(source)
+    )
     .join(", ");
 }
 
@@ -857,34 +1151,321 @@ function buildInboxOverviewButtons(
   };
 }
 
+function compactMemoryUiText(
+  value: string | null | undefined,
+  max = 96
+): string {
+  const normalized = String(value || "")
+    .replace(/\[([^\]]+)\]\(<\/abs\/path\/[^>]+>\)/gi, "$1")
+    .replace(/\[([^\]]+)\]\(\/abs\/path\/[^)]+\)/gi, "$1")
+    .replace(/\[([^\]]+)\]\(([A-Za-z]:[^\s)]+)\)/gi, "$1")
+    .replace(/\/abs\/path\/[^\s)]+/gi, (match) => {
+      const raw = match.replace(/^\/abs\/path\//i, "");
+      const [token, line] = raw.split(/:(\d+)$/).filter(Boolean);
+      const base = path.basename(token || raw);
+      return line ? `${base}:${line}` : base;
+    })
+    .replace(/[A-Za-z]:[\\/][^\s)]+/g, (match) => {
+      const normalizedPath = match.replace(/\\/g, "/");
+      const [token, line] = normalizedPath.split(/:(\d+)$/).filter(Boolean);
+      const base = path.posix.basename(token || normalizedPath);
+      return line ? `${base}:${line}` : base;
+    })
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return "";
+  if (normalized.length <= max) return normalized;
+  return `${normalized.slice(0, Math.max(0, max - 3)).trimEnd()}...`;
+}
+
+function humanizeMemoryKind(
+  locale: Locale,
+  kind: string | null | undefined
+): string {
+  switch (kind) {
+    case "skill_candidate":
+      return t(locale, "memoryKindSkillCandidate");
+    case "decision":
+      return t(locale, "memoryKindDecision");
+    case "rule":
+      return t(locale, "memoryKindRule");
+    case "procedure":
+      return t(locale, "memoryKindProcedure");
+    case "exception":
+      return t(locale, "memoryKindException");
+    case "fact":
+      return t(locale, "memoryKindFact");
+    case "task_state":
+      return t(locale, "memoryKindTaskState");
+    default:
+      return String(kind || t(locale, "memoryNotRecorded"));
+  }
+}
+
+function humanizeMemoryDestination(
+  locale: Locale,
+  destination: string | null | undefined
+): string {
+  switch (destination) {
+    case "memory":
+      return t(locale, "memoryDestinationMemory");
+    case "project_skill":
+      return t(locale, "memoryDestinationProjectSkill");
+    case "global_skill":
+      return t(locale, "memoryDestinationGlobalSkill");
+    default:
+      return t(locale, "memoryDestinationReview");
+  }
+}
+
+function humanizeMemoryStage(
+  locale: Locale,
+  stage: string | null | undefined
+): string {
+  switch (stage) {
+    case "recent_context":
+      return t(locale, "memoryStageRecentContext");
+    case "durable_memory":
+      return t(locale, "memoryStageDurableMemory");
+    case "skill_candidate":
+      return t(locale, "memoryStageSkillCandidate");
+    case "real_skill":
+      return t(locale, "memoryStageRealSkill");
+    default:
+      return t(locale, "memoryNotRecorded");
+  }
+}
+
+function humanizeCandidateReason(
+  locale: Locale,
+  reason: string | null | undefined
+): string {
+  const normalized = String(reason || "").trim();
+  if (!normalized) {
+    return t(locale, "memoryReasonDefault");
+  }
+
+  const replacements: Array<[RegExp, string]> = [
+    [
+      /Prompt explicitly asks to preserve the workflow as a reusable skill\./gi,
+      t(locale, "memoryReasonExplicitSkillRequest")
+    ],
+    [
+      /Operator explicitly asked for reusable skill promotion\./gi,
+      t(locale, "memoryReasonExplicitSkillRequest")
+    ],
+    [
+      /Multiple structural signals suggest this workflow should become a reusable skill\./gi,
+      t(locale, "memoryReasonStrongSignals")
+    ],
+    [
+      /A similar workflow already appeared before\./gi,
+      t(locale, "memoryReasonWorkflowRepeated")
+    ],
+    [
+      /The workflow contains three or more explicit steps\./gi,
+      t(locale, "memoryReasonThreeSteps")
+    ],
+    [
+      /The workflow references commands, files, scripts, or operational contracts\./gi,
+      t(locale, "memoryReasonOperationalReferences")
+    ],
+    [
+      /The destination is clearly project-specific\./gi,
+      t(locale, "memoryReasonProjectSpecific")
+    ],
+    [
+      /The destination spans multiple projects or a reusable personal workflow\./gi,
+      t(locale, "memoryReasonGlobalScope")
+    ],
+    [
+      /The signal is strong and clear enough for automatic skill promotion\./gi,
+      t(locale, "memoryReasonAutoPromoteStrong")
+    ],
+    [
+      /The workflow looks reusable, but it still needs manual review\./gi,
+      t(locale, "memoryReasonNeedsManualReview")
+    ],
+    [
+      /The workflow should stay in memory until the reuse signal is stronger\./gi,
+      t(locale, "memoryReasonReuseSignalWeak")
+    ],
+    [
+      /Looks like a procedure or repeatable command flow\./gi,
+      t(locale, "memoryReasonProcedureFlow")
+    ],
+    [
+      /Contains decision language\./gi,
+      t(locale, "memoryReasonDecisionLanguage")
+    ],
+    [
+      /Contains stable rule language\./gi,
+      t(locale, "memoryReasonRuleLanguage")
+    ],
+    [
+      /Describes an exception or guardrail\./gi,
+      t(locale, "memoryReasonExceptionGuardrail")
+    ],
+    [/Describes active project state\./gi, t(locale, "memoryReasonTaskState")],
+    [
+      /Useful fact with reusable project context\./gi,
+      t(locale, "memoryReasonReusableFact")
+    ],
+    [
+      /Explicitly classified by caller\./gi,
+      t(locale, "memoryReasonExplicitClassification")
+    ],
+    [
+      /Candidate was captured from runtime evidence\./gi,
+      t(locale, "memoryReasonRuntimeEvidence")
+    ],
+    [
+      /Text is too short to become durable memory\./gi,
+      t(locale, "memoryReasonTextTooShort")
+    ]
+  ];
+
+  let text = normalized;
+  for (const [pattern, replacement] of replacements) {
+    text = text.replace(pattern, replacement);
+  }
+
+  return compactMemoryUiText(text, 180);
+}
+
+function getMemoryCandidateDisplayTitle(
+  locale: Locale,
+  candidate: MemoryCandidate
+): string {
+  const title =
+    candidate.skillDraft?.title ||
+    candidate.title ||
+    candidate.summary ||
+    t(locale, "memoryUntitledCandidate");
+
+  if (
+    /^Use (este|this) prompt de retomada em uma nova conversa/i.test(title) ||
+    /^```text Projeto:/i.test(title)
+  ) {
+    return t(locale, "memoryResumePromptTitle");
+  }
+
+  return compactMemoryUiText(title, 88);
+}
+
+function formatCandidateListItem(
+  locale: Locale,
+  candidate: MemoryCandidate,
+  index: number
+): string {
+  const stage =
+    candidate.stage ||
+    (candidate.destination && candidate.destination !== "memory"
+      ? "skill_candidate"
+      : candidate.baseKind === "task_state"
+        ? "recent_context"
+        : "durable_memory");
+  const lines = [
+    `${index + 1}. *${escapeMarkdownV2(getMemoryCandidateDisplayTitle(locale, candidate))}*`,
+    `   ${t(locale, "memoryTypeLabel")}: ${escapeMarkdownV2(humanizeMemoryKind(locale, candidate.baseKind))}`,
+    `   ${t(locale, "memoryStageLabel")}: ${escapeMarkdownV2(humanizeMemoryStage(locale, stage))}`
+  ];
+
+  if (stage === "skill_candidate") {
+    lines.push(
+      `   ${t(locale, "memoryDestinationLabel")}: ${escapeMarkdownV2(humanizeMemoryDestination(locale, candidate.destination))}`
+    );
+  }
+
+  lines.push(
+    `   ${t(locale, "memorySummaryLabel")}: ${escapeMarkdownV2(compactMemoryUiText(candidate.summary, 120) || t(locale, "memoryNotRecorded"))}`
+  );
+
+  return lines.join("\n");
+}
+
+function getMemoryProposalDisplayTitle(
+  locale: Locale,
+  proposal: MemoryWriteProposal
+): string {
+  const title =
+    proposal.skillDraft?.title ||
+    proposal.entry.title ||
+    proposal.entry.summary ||
+    t(locale, "memoryUntitledCandidate");
+
+  if (
+    /^Use (este|this) prompt de retomada em uma nova conversa/i.test(title) ||
+    /^```text Projeto:/i.test(title)
+  ) {
+    return t(locale, "memoryResumePromptTitle");
+  }
+
+  return compactMemoryUiText(title, 88);
+}
+
 function renderInboxOverview(
   locale: Locale,
   candidates: MemoryCandidate[],
   proposals: MemoryWriteProposal[]
 ): MemoryReplyPayload {
+  const recentContextCount = candidates.filter(
+    (candidate) =>
+      (candidate.stage ||
+        (candidate.baseKind === "task_state"
+          ? "recent_context"
+          : candidate.destination && candidate.destination !== "memory"
+            ? "skill_candidate"
+            : "durable_memory")) === "recent_context"
+  ).length;
+  const durableCount = candidates.filter(
+    (candidate) =>
+      (candidate.stage ||
+        (candidate.baseKind === "task_state"
+          ? "recent_context"
+          : candidate.destination && candidate.destination !== "memory"
+            ? "skill_candidate"
+            : "durable_memory")) === "durable_memory"
+  ).length;
+  const skillCandidateCount = candidates.filter(
+    (candidate) =>
+      (candidate.stage ||
+        (candidate.baseKind === "task_state"
+          ? "recent_context"
+          : candidate.destination && candidate.destination !== "memory"
+            ? "skill_candidate"
+            : "durable_memory")) === "skill_candidate"
+  ).length;
   const text = [
     `*${t(locale, "memoryInboxTitle")}*`,
     "",
     `${t(locale, "memoryCandidatesCountLabel")}: ${candidates.length}`,
     `${t(locale, "memoryProposalsCountLabel")}: ${proposals.length}`,
+    `${t(locale, "memoryRecentContextCountLabel")}: ${recentContextCount}`,
+    `${t(locale, "memoryDurableCountLabel")}: ${durableCount}`,
+    `${t(locale, "memorySkillCandidateCountLabel")}: ${skillCandidateCount}`,
     "",
     ...(candidates.length
       ? [
           `*${t(locale, "memoryRecentCandidatesTitle")}*`,
-          ...candidates.slice(0, 5).map(
-            (candidate, index) =>
-              `${index + 1}. *[${candidate.kind}]* ${escapeMarkdownV2(candidate.title)}${candidate.kind === "skill_candidate" ? ` \\(${escapeMarkdownV2(candidate.destination || "review")}\\)` : ""}`
-          ),
+          ...candidates
+            .slice(0, 5)
+            .map(
+              (candidate, index) =>
+                `${index + 1}. *${escapeMarkdownV2(getMemoryCandidateDisplayTitle(locale, candidate))}*`
+            ),
           ""
         ]
       : []),
     ...(proposals.length
       ? [
           `*${t(locale, "memoryRecentProposalsTitle")}*`,
-          ...proposals.slice(0, 5).map(
-            (proposal, index) =>
-              `${index + 1}. *[${proposal.entry.kind}]* ${escapeMarkdownV2(proposal.entry.title)}${proposal.destination !== "memory" ? ` \\(${escapeMarkdownV2(proposal.destination)}\\)` : ""}`
-          )
+          ...proposals
+            .slice(0, 5)
+            .map(
+              (proposal, index) =>
+                `${index + 1}. *${escapeMarkdownV2(getMemoryProposalDisplayTitle(locale, proposal))}*`
+            )
         ]
       : [t(locale, "memoryInboxEmpty")])
   ].join("\n");
@@ -917,9 +1498,11 @@ function renderInboxCandidates(
     text: [
       `*${t(locale, "memoryInboxCandidatesTitle")}*`,
       "",
-      ...candidates.slice(0, 6).map((candidate, index) =>
-        `${index + 1}. *[${candidate.kind}]* ${escapeMarkdownV2(candidate.title)}${candidate.kind === "skill_candidate" ? ` \\(${escapeMarkdownV2(candidate.destination || "review")}\\)` : ""}\n   ${t(locale, "memoryEvidenceLabel")}: ${escapeMarkdownV2(candidate.evidence.value)}`
-      )
+      ...candidates
+        .slice(0, 6)
+        .map((candidate, index) =>
+          formatCandidateListItem(locale, candidate, index)
+        )
     ].join("\n"),
     buttons: buildInboxCandidateButtons(locale, candidates.length)
   };
@@ -943,9 +1526,11 @@ function renderMemoryCandidates(
     text: [
       `*${t(locale, "memoryCandidatesTitle")}*`,
       "",
-      ...candidates.slice(0, 6).map((candidate, index) =>
-        `${index + 1}. *[${candidate.kind}]* ${escapeMarkdownV2(candidate.title)}${candidate.kind === "skill_candidate" ? ` \\(${escapeMarkdownV2(candidate.destination || "review")}\\)` : ""}\n   ${t(locale, "memoryEvidenceLabel")}: ${escapeMarkdownV2(candidate.evidence.value)}`
-      )
+      ...candidates
+        .slice(0, 6)
+        .map((candidate, index) =>
+          formatCandidateListItem(locale, candidate, index)
+        )
     ].join("\n"),
     buttons: buildInboxCandidateButtons(locale, candidates.length)
   };
@@ -969,9 +1554,12 @@ function renderInboxProposals(
     text: [
       `*${t(locale, "memoryInboxProposalsTitle")}*`,
       "",
-      ...proposals.slice(0, 6).map((proposal, index) =>
-        `${index + 1}. *[${proposal.entry.kind}]* ${escapeMarkdownV2(proposal.entry.title)}${proposal.destination !== "memory" ? ` \\(${escapeMarkdownV2(proposal.destination)}\\)` : ""}\n   ${t(locale, "memorySummaryLabel")}: ${escapeMarkdownV2(proposal.entry.summary)}`
-      )
+      ...proposals
+        .slice(0, 6)
+        .map(
+          (proposal, index) =>
+            `${index + 1}. *${escapeMarkdownV2(getMemoryProposalDisplayTitle(locale, proposal))}*\n   ${t(locale, "memoryTypeLabel")}: ${escapeMarkdownV2(humanizeMemoryKind(locale, proposal.entry.kind))}\n   ${t(locale, "memoryStageLabel")}: ${escapeMarkdownV2(humanizeMemoryStage(locale, proposal.entry.stage || (proposal.destination !== "memory" ? "real_skill" : "durable_memory")))}${proposal.destination !== "memory" ? `\n   ${t(locale, "memoryDestinationLabel")}: ${escapeMarkdownV2(humanizeMemoryDestination(locale, proposal.destination))}` : ""}\n   ${t(locale, "memorySummaryLabel")}: ${escapeMarkdownV2(compactMemoryUiText(proposal.entry.summary, 120) || t(locale, "memoryNotRecorded"))}`
+        )
     ].join("\n"),
     buttons: proposals.slice(0, 3).map((_, index) => [
       {
@@ -994,14 +1582,14 @@ function renderMemoryProposal(
     text: [
       `*${t(locale, "memoryPromotionProposalTitle")}*`,
       "",
-      `${t(locale, "memoryKindLabel")}: \`${proposal.entry.kind}\``,
-      `${t(locale, "memoryDestinationLabel")}: \`${proposal.destination}\``,
-      `${t(locale, "memoryTitleLabel")}: ${escapeMarkdownV2(proposal.entry.title)}`,
-      `${t(locale, "memorySummaryLabel")}: ${escapeMarkdownV2(proposal.entry.summary)}`,
-      `${t(locale, "memoryEvidenceLabel")}: ${escapeMarkdownV2(proposal.entry.evidence.value)}`,
-      `${t(locale, "memorySourceLabel")}: ${escapeMarkdownV2(proposal.entry.source.detail)}`,
+      `${t(locale, "memoryKindLabel")}: ${escapeMarkdownV2(humanizeMemoryKind(locale, proposal.entry.kind))}`,
+      `${t(locale, "memoryStageLabel")}: ${escapeMarkdownV2(humanizeMemoryStage(locale, proposal.entry.stage || (proposal.destination !== "memory" ? "real_skill" : "durable_memory")))}`,
+      `${t(locale, "memoryDestinationLabel")}: ${escapeMarkdownV2(humanizeMemoryDestination(locale, proposal.destination))}`,
+      `${t(locale, "memoryTitleLabel")}: ${escapeMarkdownV2(getMemoryProposalDisplayTitle(locale, proposal))}`,
+      `${t(locale, "memorySummaryLabel")}: ${escapeMarkdownV2(compactMemoryUiText(proposal.entry.summary, 220) || t(locale, "memoryNotRecorded"))}`,
+      `${t(locale, "memoryEvidenceLabel")}: ${escapeMarkdownV2(compactMemoryUiText(proposal.entry.evidence.value, 140) || t(locale, "memoryNotRecorded"))}`,
       "",
-      `${t(locale, "memoryWhyLabel")}: ${escapeMarkdownV2(proposal.reason || t(locale, "memoryReasonDefault"))}`
+      `${t(locale, "memoryWhyLabel")}: ${escapeMarkdownV2(humanizeCandidateReason(locale, proposal.reason))}`
     ].join("\n"),
     buttons: buildInboxProposalButtons(locale, proposal.id)
   };
@@ -1013,19 +1601,56 @@ function renderInboxProposal(
 ): MemoryReplyPayload {
   return {
     text: [
-      `*${t(locale, "memoryInboxProposalTitle")}*`,
+      `*${t(locale, "memoryPromotionProposalTitle")}*`,
       "",
-      `${t(locale, "memoryKindLabel")}: \`${proposal.entry.kind}\``,
-      `${t(locale, "memoryDestinationLabel")}: \`${proposal.destination}\``,
-      `${t(locale, "memoryTitleLabel")}: ${escapeMarkdownV2(proposal.entry.title)}`,
-      `${t(locale, "memorySummaryLabel")}: ${escapeMarkdownV2(proposal.entry.summary)}`,
-      `${t(locale, "memoryEvidenceLabel")}: ${escapeMarkdownV2(proposal.entry.evidence.value)}`,
-      `${t(locale, "memorySourceLabel")}: ${escapeMarkdownV2(proposal.entry.source.detail)}`,
+      `${t(locale, "memoryKindLabel")}: ${escapeMarkdownV2(humanizeMemoryKind(locale, proposal.entry.kind))}`,
+      `${t(locale, "memoryStageLabel")}: ${escapeMarkdownV2(humanizeMemoryStage(locale, proposal.entry.stage || (proposal.destination !== "memory" ? "real_skill" : "durable_memory")))}`,
+      `${t(locale, "memoryDestinationLabel")}: ${escapeMarkdownV2(humanizeMemoryDestination(locale, proposal.destination))}`,
+      `${t(locale, "memoryTitleLabel")}: ${escapeMarkdownV2(getMemoryProposalDisplayTitle(locale, proposal))}`,
+      `${t(locale, "memorySummaryLabel")}: ${escapeMarkdownV2(compactMemoryUiText(proposal.entry.summary, 220) || t(locale, "memoryNotRecorded"))}`,
+      `${t(locale, "memoryEvidenceLabel")}: ${escapeMarkdownV2(compactMemoryUiText(proposal.entry.evidence.value, 140) || t(locale, "memoryNotRecorded"))}`,
       "",
-      `${t(locale, "memoryWhyLabel")}: ${escapeMarkdownV2(proposal.reason || t(locale, "memoryReasonDefault"))}`
+      `${t(locale, "memoryWhyLabel")}: ${escapeMarkdownV2(humanizeCandidateReason(locale, proposal.reason))}`
     ].join("\n"),
     buttons: buildInboxProposalButtons(locale, proposal.id)
   };
+}
+
+function renderCandidateExplanation(
+  locale: Locale,
+  candidate: MemoryCandidate
+): string {
+  const stage =
+    candidate.stage ||
+    (candidate.destination && candidate.destination !== "memory"
+      ? "skill_candidate"
+      : candidate.baseKind === "task_state"
+        ? "recent_context"
+        : "durable_memory");
+  const lines = [
+    `*${t(locale, "memoryCandidateDetailTitle")}*`,
+    "",
+    `${t(locale, "memoryKindLabel")}: ${escapeMarkdownV2(humanizeMemoryKind(locale, candidate.baseKind))}`,
+    `${t(locale, "memoryStageLabel")}: ${escapeMarkdownV2(humanizeMemoryStage(locale, stage))}`,
+    `${t(locale, "memoryTitleLabel")}: ${escapeMarkdownV2(getMemoryCandidateDisplayTitle(locale, candidate))}`,
+    `${t(locale, "memorySummaryLabel")}: ${escapeMarkdownV2(compactMemoryUiText(candidate.summary, 220) || t(locale, "memoryNotRecorded"))}`,
+    `${t(locale, "memoryEvidenceLabel")}: ${escapeMarkdownV2(compactMemoryUiText(candidate.evidence.value, 140) || t(locale, "memoryNotRecorded"))}`
+  ];
+
+  if (stage === "skill_candidate") {
+    lines.push(
+      `${t(locale, "memoryDestinationLabel")}: ${escapeMarkdownV2(humanizeMemoryDestination(locale, candidate.destination))}`,
+      `${t(locale, "memoryAutoPromoteLabel")}: ${escapeMarkdownV2(candidate.autoPromote ? t(locale, "memoryYes") : t(locale, "memoryNo"))}`
+    );
+  }
+
+  lines.push(
+    "",
+    `${t(locale, "memoryWhyLabel")}: ${escapeMarkdownV2(humanizeCandidateReason(locale, candidate.reasoning.join(" ")))}`,
+    `${t(locale, "memoryCapturedFromLabel")}: ${escapeMarkdownV2(`${candidate.source.type}: ${candidate.source.detail}`)}`
+  );
+
+  return lines.join("\n");
 }
 
 function buildMemoryHelpText(memoryReadmePath: string): string {
@@ -1037,9 +1662,13 @@ function buildMemoryHelpText(memoryReadmePath: string): string {
     "- `/memory discard <id|index>`: descarta um candidato pendente",
     "- `/memory why <id|index>`: explica por que aquele candidato apareceu",
     "- `/memory remember <texto>`: cria um candidato manual com base em contexto concreto",
+    "- `/remember <texto>`: atalho curto que ja tenta abrir a proposta de promocao",
+    "- `/refinar <texto>`: abre o trilho guiado quando a captura ainda estiver frouxa",
+    "- `guarda isso: ...`: atalho de texto livre para o mesmo fluxo",
+    "- `guarda isso como skill de projeto: ...`: preserva a intencao de promover para skill",
     "",
     "Contrato atual:",
-    "- memoria operacional vem de `.agents/ACTIVE.md`, `.agents/HANDOFF.md` e `.codex/napkin.md`",
+    "- localizacao comeca em `INDEX.md` e na camada 2 `.agents/PROJECT.md`, `.agents/ACTIVE.md`, `.agents/HANDOFF.md` e `.codex/napkin.md`",
     "- memoria duravel fica em `.agents/MEMORY.ndjson`",
     "- skill candidate e o estagio entre memoria reutilizavel e skill pronta",
     "- escrita duravel segue `proposal-first writes`",
@@ -1064,10 +1693,28 @@ function buildInboxHelpText(memoryReadmePath: string): string {
     "Contrato atual:",
     "- candidates e proposals sobrevivem a restart",
     "- `.agents/INBOX/` e revisavel, nao e memoria duravel final",
-    "- quando o candidato for `skill_candidate`, o destino sugerido tambem aparece",
+    "- quando o estagio do candidato for `skill_candidate`, o destino sugerido tambem aparece",
     "- `.agents/MEMORY.ndjson` continua append-only",
     "",
     `README completo: ${memoryReadmePath}`
+  ].join("\n");
+}
+
+function buildRememberRefinementGuide(rawRemember: string): string {
+  const preview = compactMemoryUiText(rawRemember, 140) || "nota vazia";
+  return [
+    "This note is still too weak to become a memory candidate.",
+    "",
+    "Use `refinador-intencao` and answer quickly:",
+    "1. destino: memoria | skill deste repo | skill global | estado vivo",
+    "2. repo alvo: dex-agent raiz | repo filho | ainda nao sei",
+    "3. escopo: so este repo | varios repos | ainda nao sei",
+    "4. repeticao: sim | talvez | nao",
+    "5. evidencia: decisao | comando | arquivo | comportamento real",
+    "",
+    `Rascunho atual: ${preview}`,
+    "",
+    "Depois disso, tente `/remember ...` de novo."
   ].join("\n");
 }
 
@@ -1077,7 +1724,7 @@ function buildPromptLibraryHelpText(): string {
     "- `/prompts` ou `/prompts show`: lista prompts prontos do projeto atual",
     "- `/prompts add <label> :: <prompt>`: adiciona um prompt custom com intent `implementation`",
     "- `/prompts add <intent> :: <label> :: <prompt>`: adiciona um prompt custom com intent explicito",
-    "- `/prompts run <selector>`: executa um prompt da biblioteca",
+    "- `/prompts run <numero|selector>`: executa um prompt da biblioteca",
     "- `/prompts remove <selector>`: remove um prompt custom",
     "",
     "Intents aceitos:",
@@ -1087,68 +1734,168 @@ function buildPromptLibraryHelpText(): string {
     "- `implementation`",
     "",
     "Exemplos:",
+    "- `/prompts run 1`",
+    "- `/prompts run builtin:0`",
     "- `/prompts add Sprint implementacao :: /plan concordo com voce quero crie os sprint de planejamento de implementacao usando $sprinter`",
     "- `/prompts add planning :: Sprint implementacao :: /plan concordo com voce quero crie os sprint de planejamento de implementacao usando $sprinter`"
   ].join("\n");
 }
 
+const PROMPT_LIBRARY_PAGE_SIZE = 8;
+
+function normalizePromptLibraryPage(page: number, total: number): number {
+  const lastPage = Math.max(0, Math.ceil(total / PROMPT_LIBRARY_PAGE_SIZE) - 1);
+  return Math.min(Math.max(0, page), lastPage);
+}
+
 function buildPromptLibraryButtons(
-  presets: ReturnType<typeof buildProjectPromptPresets>
+  presets: ReturnType<typeof buildProjectPromptPresets>,
+  page = 0
 ): Array<Array<{ text: string; callbackData: string }>> {
+  const safePage = normalizePromptLibraryPage(page, presets.length);
+  const start = safePage * PROMPT_LIBRARY_PAGE_SIZE;
+  const pagePresets = presets.slice(start, start + PROMPT_LIBRARY_PAGE_SIZE);
+  const buttons = pagePresets.map((preset, index) => ({
+    text: `${start + index + 1}. ${compactPromptLibraryText(preset.label, 20)}`,
+    callbackData: `prompts:run:${preset.selector.replace(/:/g, "~")}`
+  }));
   const rows: Array<Array<{ text: string; callbackData: string }>> = [];
-  for (const preset of presets.slice(0, 8)) {
-    const row = [
-      {
-        text: `Usar ${preset.label}`,
-        callbackData: `prompts:run:${preset.selector.replace(/:/g, "~")}`
-      }
-    ];
 
-    if (preset.removable) {
-      row.push({
-        text: `Remover ${preset.label}`,
-        callbackData: `prompts:remove:${preset.selector.replace(/:/g, "~")}`
-      });
-    }
-
-    rows.push(row);
+  for (let index = 0; index < buttons.length; index += 2) {
+    rows.push(buttons.slice(index, index + 2));
   }
 
-  rows.push([{ text: "Atualizar", callbackData: "prompts:show" }]);
+  if (presets.length > PROMPT_LIBRARY_PAGE_SIZE) {
+    rows.push([
+      ...(safePage > 0
+        ? [{ text: "← Anterior", callbackData: `prompts:show:${safePage - 1}` }]
+        : []),
+      {
+        text: `${safePage + 1}/${Math.ceil(presets.length / PROMPT_LIBRARY_PAGE_SIZE)}`,
+        callbackData: "prompts:show"
+      },
+      ...(start + PROMPT_LIBRARY_PAGE_SIZE < presets.length
+        ? [{ text: "Proxima →", callbackData: `prompts:show:${safePage + 1}` }]
+        : [])
+    ]);
+  }
+
+  rows.push([{ text: "Atualizar", callbackData: `prompts:show:${safePage}` }]);
   return rows;
 }
 
+function compactPromptLibraryText(value: string, max = 108): string {
+  const normalized = String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return "";
+  if (normalized.length <= max) return normalized;
+  return `${normalized.slice(0, Math.max(0, max - 3)).trimEnd()}...`;
+}
+
+function humanizePromptIntent(intent: ProjectPromptPreset["intent"]): string {
+  switch (intent) {
+    case "continue":
+      return "Continuacao";
+    case "planning":
+      return "Planejamento";
+    case "implementation":
+      return "Implementacao";
+    default:
+      return "Status";
+  }
+}
+
+function formatPromptLibrarySection(
+  title: string,
+  presets: ProjectPromptPreset[],
+  startIndex = 0
+): string[] {
+  if (!presets.length) return [];
+
+  return [
+    `*${title}*`,
+    ...presets.map(
+      (preset, index) =>
+        `${startIndex + index + 1}. *${escapeMarkdownV2(preset.label)}*` +
+        `\n   tipo: ${escapeMarkdownV2(humanizePromptIntent(preset.intent))}` +
+        `\n   atalho: ${escapeMarkdownV2(`/prompts run ${startIndex + index + 1}`)}` +
+        `\n   uso: ${escapeMarkdownV2(compactPromptLibraryText(preset.prompt))}`
+    ),
+    ""
+  ];
+}
+
+function groupPromptLibraryPresets(
+  presets: ProjectPromptPreset[]
+): Array<{ title: string; presets: ProjectPromptPreset[] }> {
+  const order = [
+    "Execucao",
+    "Planejamento",
+    "Reuniao",
+    "Testes",
+    "Analise",
+    "Organizacao",
+    "Retomada",
+    "Custom"
+  ];
+
+  return order
+    .map((title) => ({
+      title,
+      presets: presets.filter((preset) => preset.group === title)
+    }))
+    .filter((group) => group.presets.length);
+}
+
 function renderPromptLibrary(
-  presets: ReturnType<typeof buildProjectPromptPresets>
+  presets: ReturnType<typeof buildProjectPromptPresets>,
+  page = 0
 ): MemoryReplyPayload {
   if (!presets.length) {
     return {
-      text: ["*Biblioteca de Prompts*", "", "Nenhum prompt disponivel neste projeto."].join(
-        "\n"
-      )
+      text: [
+        "*Biblioteca de Prompts*",
+        "",
+        "Nenhum prompt disponivel neste projeto."
+      ].join("\n")
     };
   }
+  const safePage = normalizePromptLibraryPage(page, presets.length);
+  const grouped = groupPromptLibraryPresets(presets);
+  let offset = 0;
+  const sections = grouped.flatMap((group) => {
+    const lines = formatPromptLibrarySection(
+      group.title,
+      group.presets,
+      offset
+    );
+    offset += group.presets.length;
+    return lines;
+  });
 
   return {
     text: [
       "*Biblioteca de Prompts*",
       "",
-      ...presets.map(
-        (preset, index) =>
-          `${index + 1}. *${escapeMarkdownV2(preset.label)}*` +
-          `\nintent: \`${preset.intent}\`` +
-          `\nsource: ${escapeMarkdownV2(preset.source)}` +
-          `\nselector: \`${escapeMarkdownV2(preset.selector)}\``
-      ),
+      "Use esta biblioteca para reaproveitar pedidos frequentes sem redigitar tudo.",
       "",
-      "Use os botoes para executar rapido ou `/prompts add ...` para adicionar novos prompts."
+      ...sections,
+      "",
+      `Pagina rapida: ${safePage + 1}/${Math.max(1, Math.ceil(presets.length / PROMPT_LIBRARY_PAGE_SIZE))}.`,
+      "Use `/prompts run <numero>` para executar pelo indice da lista.",
+      "Toque em um atalho abaixo para executar rapido.",
+      "Para adicionar novos prompts, use `/prompts add ...`.",
+      "Para remover prompts custom, use `/prompts remove custom:<id>`."
     ].join("\n"),
-    buttons: buildPromptLibraryButtons(presets)
+    buttons: buildPromptLibraryButtons(presets, safePage)
   };
 }
 
 function normalizePromptSelector(value: string): string {
-  return String(value || "").replace(/~/g, ":").trim();
+  return String(value || "")
+    .replace(/~/g, ":")
+    .trim();
 }
 
 function resolveProjectPromptPreset(
@@ -1162,7 +1909,10 @@ function resolveProjectPromptPreset(
 
   const numeric = Number(normalized);
   if (Number.isInteger(numeric) && numeric >= 0) {
-    return presets[numeric] || null;
+    if (numeric === 0) {
+      return presets[0] || null;
+    }
+    return presets[numeric - 1] || null;
   }
 
   return presets.find((preset) => preset.selector === normalized) || null;
@@ -1215,7 +1965,8 @@ function renderRelevantMemory(
           ]
         : []),
       `${t(locale, "memorySourcesLabel")}: ${escapeMarkdownV2(
-        formatMemorySourcesForReply(workdir, packet.sources) || t(locale, "memoryNone")
+        formatMemorySourcesForReply(workdir, packet.sources) ||
+          t(locale, "memoryNone")
       )}`
     ].join("\n"),
     buttons: [buildLocalizedButtonRow(locale, PROJECT_MEMORY_BUTTON_ROW)]
@@ -1239,7 +1990,8 @@ export function registerHandlers({
   telegramConfig,
   adminActions
 }: RegisterHandlersOptions): void {
-  const effectiveReuseEngine = reuseEngine || new ProjectReuseEngine(memoryService);
+  const effectiveReuseEngine =
+    reuseEngine || new ProjectReuseEngine(memoryService);
   const localeOf = (chatId: string | number): Locale =>
     ptyManager.getLanguage(chatId);
   const buildPromptWithMemory = async (
@@ -1248,8 +2000,8 @@ export function registerHandlers({
     prompt: string,
     intent: MemoryIntent
   ): Promise<{
-      prompt: string;
-      disclosure: string | null;
+    prompt: string;
+    disclosure: string | null;
   }> => {
     const prepared = await effectiveReuseEngine.preparePrompt({
       workdir,
@@ -1345,8 +2097,7 @@ export function registerHandlers({
     reason: "interrupt" | "status" = "status"
   ): Promise<void> => {
     const status = ptyManager.getStatus(ctx.chat.id);
-    const items = ptyManager.listPromptQueue(ctx.chat.id);
-    const nextItem = items[0];
+    const operational = ptyManager.getOperationalContinuationState(ctx.chat.id);
 
     const lines = [
       t(
@@ -1358,18 +2109,17 @@ export function registerHandlers({
       `active: ${status.active ? "yes" : "no"}`,
       `mode: ${status.activeMode || "idle"}`,
       `project: ${status.relativeWorkdir}`,
-      `queued items: ${items.length}`
+      ...buildObservabilityLines(locale, operational, {
+        includeHeader: false,
+        includeLastResponse: false
+      })
     ];
-
-    if (nextItem) {
-      lines.push(`next item: ${nextItem.text}`);
-    }
 
     await sendSkillResult(
       ctx,
       {
         text: lines.join("\n"),
-        buttons: buildQueueButtons(items)
+        buttons: buildQueueButtons(operational.queuedItems)
       },
       locale,
       audioSummaryManager
@@ -1379,7 +2129,15 @@ export function registerHandlers({
   const executeProjectStatus = async (
     ctx: any,
     locale: Locale,
-    variant: "default" | "executive" | "next" | "sources" | "steps" | "commands" | "prompts" | "queue" = "default"
+    variant:
+      | "default"
+      | "executive"
+      | "next"
+      | "sources"
+      | "steps"
+      | "commands"
+      | "prompts"
+      | "queue" = "default"
   ): Promise<void> => {
     try {
       const result = await skills.project_status.execute({
@@ -1441,6 +2199,7 @@ export function registerHandlers({
   const handleStatusCommand = async (ctx: any): Promise<void> => {
     const locale = localeOf(ctx.chat.id);
     const status = ptyManager.getStatus(ctx.chat.id);
+    const operational = ptyManager.getOperationalContinuationState(ctx.chat.id);
     const skillStates = skillRegistry.list(ctx.chat.id);
     const mcpServers = skills.mcp.mcpClient.listServers();
     const shellSummary = shellManager.isEnabled()
@@ -1461,19 +2220,23 @@ export function registerHandlers({
           )
           .join(", ")
       : "none";
+    const observabilityLines = buildObservabilityLines(locale, operational);
     await sendChunkedMarkdown(
       ctx,
-      t(locale, "statusLines", {
-        status,
-        recentProjects:
-          ptyManager
-            .getRecentProjects(ctx.chat.id)
-            .map((item) => item.relativePath)
-            .join(", ") || ".",
-        shellSummary,
-        skillsSummary,
-        mcpSummary
-      }).join("\n")
+      [
+        ...t(locale, "statusLines", {
+          status,
+          recentProjects:
+            ptyManager
+              .getRecentProjects(ctx.chat.id)
+              .map((item) => item.relativePath)
+              .join(", ") || ".",
+          shellSummary,
+          skillsSummary,
+          mcpSummary
+        }),
+        ...observabilityLines
+      ].join("\n")
     );
   };
 
@@ -1529,7 +2292,9 @@ export function registerHandlers({
 
     if (/^recent$/i.test(payload)) {
       const recentProjects = ptyManager.getRecentProjects(ctx.chat.id);
-      const recent = recentProjects.map((project) => `- ${project.relativePath}`);
+      const recent = recentProjects.map(
+        (project) => `- ${project.relativePath}`
+      );
       const keyboard = Markup.inlineKeyboard(
         buildRepoButtons(recentProjects, status.workdir, {
           includePrevious: recentProjects.length > 1
@@ -1652,6 +2417,19 @@ export function registerHandlers({
     if (text.startsWith("/")) return;
 
     try {
+      const rememberShortcut = extractRememberShortcut(text);
+      if (rememberShortcut) {
+        const workdir = ptyManager.getStatus(ctx.chat.id).workdir;
+        await handleRememberCapture(
+          ctx,
+          locale,
+          workdir,
+          rememberShortcut,
+          "text remember shortcut"
+        );
+        return;
+      }
+
       if (isOperationalStatusQuestion(text)) {
         await renderOperationalStatus(ctx, locale, "status");
         return;
@@ -1674,7 +2452,10 @@ export function registerHandlers({
     if (!fileId) return;
 
     if (!audioTranscriber?.isEnabled()) {
-      await sendChunkedMarkdown(ctx, t(locale, "audioTranscriptionUnavailable"));
+      await sendChunkedMarkdown(
+        ctx,
+        t(locale, "audioTranscriptionUnavailable")
+      );
       return;
     }
 
@@ -1806,7 +2587,17 @@ export function registerHandlers({
     const rawVariant = normalizeAscii(
       extractCommandPayload(ctx.message.text, "project")
     );
-    const variantMap: Record<string, "default" | "executive" | "next" | "sources" | "steps" | "commands" | "queue" | "prompts"> = {
+    const variantMap: Record<
+      string,
+      | "default"
+      | "executive"
+      | "next"
+      | "sources"
+      | "steps"
+      | "commands"
+      | "queue"
+      | "prompts"
+    > = {
       "": "default",
       default: "default",
       executive: "executive",
@@ -1907,6 +2698,26 @@ export function registerHandlers({
         await sendChunkedMarkdown(
           ctx,
           "Nao encontrei esse prompt. Use /prompts para ver os seletores atuais."
+        );
+        return;
+      }
+
+      const showPageMatch = payload.match(/^show\s+(\d+)$/i);
+      if (showPageMatch?.[1]) {
+        const rendered = renderPromptLibrary(
+          presets,
+          Number(showPageMatch[1]) - 1
+        );
+        await applySkillResult(
+          ctx,
+          {
+            text: rendered.text,
+            parseMode: "markdown",
+            buttons: rendered.buttons
+          },
+          locale,
+          ptyManager,
+          audioSummaryManager
         );
         return;
       }
@@ -2021,7 +2832,10 @@ export function registerHandlers({
         promoteMatch[1].trim()
       );
       if (!proposal) {
-        await sendChunkedMarkdown(ctx, "No inbox candidate matched that selector.");
+        await sendChunkedMarkdown(
+          ctx,
+          "No inbox candidate matched that selector."
+        );
         return;
       }
       const rendered = renderInboxProposal(locale, proposal);
@@ -2056,13 +2870,15 @@ export function registerHandlers({
 
     const whyMatch = payload.match(/^why\s+(.+)$/i);
     if (whyMatch?.[1]) {
-      const explanation = await memoryService.explainCandidate(
+      const candidate = await memoryService.getCandidate(
         workdir,
         whyMatch[1].trim()
       );
       await sendChunkedMarkdown(
         ctx,
-        explanation || "No inbox candidate matched that selector."
+        candidate
+          ? renderCandidateExplanation(locale, candidate)
+          : "No inbox candidate matched that selector."
       );
       return;
     }
@@ -2119,6 +2935,60 @@ export function registerHandlers({
     );
   });
 
+  async function handleRememberCapture(
+    ctx: any,
+    locale: Locale,
+    workdir: string,
+    rawRemember: string,
+    sourceDetail = "/memory remember"
+  ): Promise<void> {
+    const parsed = parseRememberCapture(rawRemember);
+    const candidate = await memoryService.captureCandidate({
+      workdir,
+      text: parsed.text,
+      kind: parsed.kind,
+      promptText: parsed.promptText,
+      source: {
+        type: "operator",
+        detail: sourceDetail
+      },
+      evidence: {
+        type: "operator",
+        value: rawRemember
+      }
+    });
+
+    if (!candidate) {
+      await sendChunkedMarkdown(ctx, buildRememberRefinementGuide(rawRemember));
+      return;
+    }
+
+    const proposal = await memoryService.proposePromotion(
+      workdir,
+      candidate.id
+    );
+    if (proposal) {
+      const rendered = renderMemoryProposal(locale, proposal);
+      await applySkillResult(
+        ctx,
+        {
+          text: rendered.text,
+          parseMode: "markdown",
+          buttons: rendered.buttons
+        },
+        locale,
+        ptyManager,
+        audioSummaryManager
+      );
+      return;
+    }
+
+    await sendChunkedMarkdown(
+      ctx,
+      `Created memory candidate ${candidate.id}\nkind: ${candidate.kind}\ntitle: ${candidate.title}`
+    );
+  }
+
   bot.command("memory", async (ctx: any) => {
     const locale = localeOf(ctx.chat.id);
     const payload = extractCommandPayload(ctx.message.text, "memory");
@@ -2137,24 +3007,24 @@ export function registerHandlers({
 
     if (!payload || /^(show|status)$/i.test(payload)) {
       const packet = await memoryService.buildMemoryPacket({
-          workdir,
-          prompt: "project memory status",
-          intent: "status"
-        });
-        const rendered = renderRelevantMemory(locale, workdir, packet);
-        await applySkillResult(
-          ctx,
-          {
-            text: rendered.text,
-            parseMode: "markdown",
-            buttons: rendered.buttons
-          },
-          locale,
-          ptyManager,
-          audioSummaryManager
-        );
-        return;
-      }
+        workdir,
+        prompt: "project memory status",
+        intent: "status"
+      });
+      const rendered = renderRelevantMemory(locale, workdir, packet);
+      await applySkillResult(
+        ctx,
+        {
+          text: rendered.text,
+          parseMode: "markdown",
+          buttons: rendered.buttons
+        },
+        locale,
+        ptyManager,
+        audioSummaryManager
+      );
+      return;
+    }
 
     if (/^candidates$/i.test(payload)) {
       const rendered = renderMemoryCandidates(
@@ -2182,7 +3052,10 @@ export function registerHandlers({
         promoteMatch[1].trim()
       );
       if (!proposal) {
-        await sendChunkedMarkdown(ctx, "No memory candidate matched that selector.");
+        await sendChunkedMarkdown(
+          ctx,
+          "No memory candidate matched that selector."
+        );
         return;
       }
       const rendered = renderMemoryProposal(locale, proposal);
@@ -2217,57 +3090,72 @@ export function registerHandlers({
 
     const whyMatch = payload.match(/^why\s+(.+)$/i);
     if (whyMatch?.[1]) {
-      const explanation = await memoryService.explainCandidate(
+      const candidate = await memoryService.getCandidate(
         workdir,
         whyMatch[1].trim()
       );
       await sendChunkedMarkdown(
         ctx,
-        explanation || "No memory candidate matched that selector."
+        candidate
+          ? renderCandidateExplanation(locale, candidate)
+          : "No memory candidate matched that selector."
       );
       return;
     }
 
     const rememberMatch = payload.match(/^remember\s+(.+)$/i);
     if (rememberMatch?.[1]) {
-      const rawRemember = rememberMatch[1].trim();
-      const typedMatch = rawRemember.match(
-        /^(decision|rule|procedure|exception|fact|task_state)\s*[:-]\s*(.+)$/i
-      );
-      const candidate = await memoryService.captureCandidate({
-        workdir,
-        text: typedMatch?.[2] || rawRemember,
-        kind: typedMatch?.[1]
-          ? (typedMatch[1].toLowerCase() as any)
-          : undefined,
-        source: {
-          type: "operator",
-          detail: "/memory remember"
-        },
-        evidence: {
-          type: "operator",
-          value: rawRemember
-        }
-      });
-
-      if (!candidate) {
-        await sendChunkedMarkdown(
-          ctx,
-          "That note was too weak to become a memory candidate. Add more concrete project context."
-        );
-        return;
-      }
-
-      await sendChunkedMarkdown(
+      await handleRememberCapture(
         ctx,
-        `Created memory candidate ${candidate.id}\nkind: ${candidate.kind}\ntitle: ${candidate.title}`
+        locale,
+        workdir,
+        rememberMatch[1].trim(),
+        "/memory remember"
       );
       return;
     }
 
     await sendChunkedMarkdown(
       ctx,
-      "Usage: /memory [show|help|candidates|promote <id|index>|discard <id|index>|why <id|index>|remember <text>] or /inbox [...]"
+      "Usage: /memory [show|help|candidates|promote <id|index>|discard <id|index>|why <id|index>|remember <text>] or /remember <text> or /inbox [...]"
+    );
+  });
+
+  bot.command("remember", async (ctx: any) => {
+    const locale = localeOf(ctx.chat.id);
+    const payload = extractCommandPayload(ctx.message.text, "remember");
+    const workdir = ptyManager.getStatus(ctx.chat.id).workdir;
+
+    if (!payload) {
+      await sendChunkedMarkdown(ctx, "Usage: /remember <text>");
+      return;
+    }
+
+    await handleRememberCapture(
+      ctx,
+      locale,
+      workdir,
+      payload.trim(),
+      "/remember"
+    );
+  });
+
+  bot.command("refinar", async (ctx: any) => {
+    const payload = extractCommandPayload(ctx.message.text, "refinar");
+
+    if (!payload) {
+      await sendChunkedMarkdown(
+        ctx,
+        ["Uso: /refinar <texto>", "", buildRememberRefinementGuide("")].join(
+          "\n"
+        )
+      );
+      return;
+    }
+
+    await sendChunkedMarkdown(
+      ctx,
+      buildRememberRefinementGuide(payload.trim())
     );
   });
 
@@ -2549,9 +3437,9 @@ export function registerHandlers({
       applyLocalExecutionPreference(task),
       "implementation",
       {
-      forceExec: true,
-      fullAuto: true,
-      notice: t(locale, "autoNotice")
+        forceExec: true,
+        fullAuto: true,
+        notice: t(locale, "autoNotice")
       }
     );
   });
@@ -2616,7 +3504,10 @@ export function registerHandlers({
       .filter(Boolean);
     const normalizedAction = normalizeAscii(action);
 
-    if (!trimmedPayload || /^(list|ls|listar|ver|status)$/.test(normalizedAction)) {
+    if (
+      !trimmedPayload ||
+      /^(list|ls|listar|ver|status)$/.test(normalizedAction)
+    ) {
       await renderQueueList(ctx, locale);
       return;
     }
@@ -2642,7 +3533,9 @@ export function registerHandlers({
         return;
       }
 
-      const finalTask = projectScopedMatch ? projectScopedMatch[2].trim() : task;
+      const finalTask = projectScopedMatch
+        ? projectScopedMatch[2].trim()
+        : task;
       if (!finalTask) {
         await sendChunkedMarkdown(ctx, t(locale, "usageQueue"));
         return;
@@ -2805,10 +3698,7 @@ export function registerHandlers({
   bot.command("interrupt", async (ctx: any) => {
     const locale = localeOf(ctx.chat.id);
     const ok = ptyManager.interrupt(ctx.chat.id);
-    await sendChunkedMarkdown(
-      ctx,
-      t(locale, "interruptResult", { ok })
-    );
+    await sendChunkedMarkdown(ctx, t(locale, "interruptResult", { ok }));
 
     if (ok && ptyManager.listPromptQueue(ctx.chat.id).length) {
       await renderOperationalStatus(ctx, locale, "interrupt");
@@ -3100,7 +3990,10 @@ export function registerHandlers({
           argument || ""
         );
         if (!proposal) {
-          await sendChunkedMarkdown(ctx, "No memory candidate matched that selector.");
+          await sendChunkedMarkdown(
+            ctx,
+            "No memory candidate matched that selector."
+          );
           return;
         }
         const rendered = renderMemoryProposal(locale, proposal);
@@ -3133,13 +4026,15 @@ export function registerHandlers({
       }
 
       if (action === "why") {
-        const explanation = await memoryService.explainCandidate(
+        const candidate = await memoryService.getCandidate(
           workdir,
           argument || ""
         );
         await sendChunkedMarkdown(
           ctx,
-          explanation || "No memory candidate matched that selector."
+          candidate
+            ? renderCandidateExplanation(locale, candidate)
+            : "No memory candidate matched that selector."
         );
         return;
       }
@@ -3189,8 +4084,17 @@ export function registerHandlers({
       }
 
       if (action === "view") {
-        const target = (argument || "active") as "active" | "handoff" | "napkin" | "ledger";
-        const content = await memoryService.readOperationalFile(workdir, target);
+        const target = (argument || "active") as
+          | "index"
+          | "project"
+          | "active"
+          | "handoff"
+          | "napkin"
+          | "ledger";
+        const content = await memoryService.readOperationalFile(
+          workdir,
+          target
+        );
         await sendChunkedMarkdown(
           ctx,
           content
@@ -3273,7 +4177,10 @@ export function registerHandlers({
           argument || ""
         );
         if (!proposal) {
-          await sendChunkedMarkdown(ctx, "No inbox candidate matched that selector.");
+          await sendChunkedMarkdown(
+            ctx,
+            "No inbox candidate matched that selector."
+          );
           return;
         }
         const rendered = renderInboxProposal(locale, proposal);
@@ -3306,13 +4213,15 @@ export function registerHandlers({
       }
 
       if (action === "why") {
-        const explanation = await memoryService.explainCandidate(
+        const candidate = await memoryService.getCandidate(
           workdir,
           argument || ""
         );
         await sendChunkedMarkdown(
           ctx,
-          explanation || "No inbox candidate matched that selector."
+          candidate
+            ? renderCandidateExplanation(locale, candidate)
+            : "No inbox candidate matched that selector."
         );
         return;
       }
@@ -3382,7 +4291,11 @@ export function registerHandlers({
       await ctx.answerCbQuery(t(locale, "callbackRefreshed"));
 
       if (action === "show") {
-        const rendered = renderPromptLibrary(presets);
+        const page = rawArgument ? Number(rawArgument) : 0;
+        const rendered = renderPromptLibrary(
+          presets,
+          Number.isFinite(page) ? page : 0
+        );
         await applySkillResult(
           ctx,
           {
@@ -3429,7 +4342,9 @@ export function registerHandlers({
         );
         await sendChunkedMarkdown(
           ctx,
-          removed ? `Prompt removido: ${removed.label}` : "Nao encontrei esse prompt custom."
+          removed
+            ? `Prompt removido: ${removed.label}`
+            : "Nao encontrei esse prompt custom."
         );
         return;
       }
@@ -3559,7 +4474,10 @@ export function registerHandlers({
 
         if (action === "audio") {
           if (!audioSummaryManager?.isEnabled()) {
-            await sendChunkedMarkdown(ctx, t(locale, "audioSummaryUnavailable"));
+            await sendChunkedMarkdown(
+              ctx,
+              t(locale, "audioSummaryUnavailable")
+            );
             return;
           }
 
@@ -3568,13 +4486,17 @@ export function registerHandlers({
             typeof result === "string" ? result : result.text || ""
           );
           if (!summarySent) {
-            await sendChunkedMarkdown(ctx, t(locale, "audioSummaryUnavailable"));
+            await sendChunkedMarkdown(
+              ctx,
+              t(locale, "audioSummaryUnavailable")
+            );
           }
           return;
         }
 
         if (action === "meeting") {
-          const sourceText = typeof result === "string" ? result : result.text || "";
+          const sourceText =
+            typeof result === "string" ? result : result.text || "";
           const prompt = buildProjectStatusMeetingPrompt(variant, sourceText);
           await executeActionPrompt(ctx, locale, prompt, "planning");
           return;
@@ -3624,7 +4546,10 @@ export function registerHandlers({
 
     if (data.startsWith("final_action:")) {
       const [, action, requestId] = data.split(":", 3);
-      const record = audioSummaryManager?.resolveRequest(ctx.chat.id, requestId);
+      const record = audioSummaryManager?.resolveRequest(
+        ctx.chat.id,
+        requestId
+      );
 
       if (!record) {
         await ctx.answerCbQuery(t(locale, "audioSummaryExpired"));
@@ -3654,7 +4579,7 @@ export function registerHandlers({
         return;
       }
 
-      if (action === "continue") {
+      if (action === "continue" || action === "execute") {
         await executeActionPrompt(
           ctx,
           locale,
@@ -3664,12 +4589,33 @@ export function registerHandlers({
         return;
       }
 
-      if (action === "meeting") {
+      if (action === "meeting" || action === "review") {
         await executeActionPrompt(
           ctx,
           locale,
           buildFinalResponseMeetingPrompt(record.text),
           "planning"
+        );
+        return;
+      }
+
+      if (action === "inbox" || action === "organize") {
+        const workdir = ptyManager.getStatus(ctx.chat.id).workdir;
+        const rendered = renderInboxOverview(
+          locale,
+          await memoryService.listCandidates(workdir),
+          await memoryService.listProposals(workdir)
+        );
+        await applySkillResult(
+          ctx,
+          {
+            text: rendered.text,
+            parseMode: "markdown",
+            buttons: rendered.buttons
+          },
+          locale,
+          ptyManager,
+          audioSummaryManager
         );
         return;
       }

@@ -35,8 +35,107 @@ export interface ProjectPromptPreset {
   prompt: string;
   intent: ProjectPromptIntent;
   selector: string;
+  group: string;
   source: "builtin" | "custom";
+  featured?: boolean;
   removable?: boolean;
+}
+
+function compactPromptPresetText(value: string, max = 108): string {
+  const normalized = String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return "";
+  if (normalized.length <= max) return normalized;
+  return `${normalized.slice(0, Math.max(0, max - 3)).trimEnd()}...`;
+}
+
+function humanizePromptIntent(intent: ProjectPromptIntent): string {
+  switch (intent) {
+    case "continue":
+      return "Continuacao";
+    case "planning":
+      return "Planejamento";
+    case "implementation":
+      return "Implementacao";
+    default:
+      return "Status";
+  }
+}
+
+function buildExecutionPrompt(task: string): string {
+  return [
+    "Use $roteador-programacao para escolher o menor fluxo seguro e aplique $kant como lente transversal.",
+    task
+  ].join(" ");
+}
+
+function buildPlanningPrompt(task: string): string {
+  return [
+    "Use $roteador-programacao para escolher o menor fluxo seguro. Se o melhor caminho for planejamento, use $sprinter. Aplique $kant como lente transversal.",
+    task
+  ].join(" ");
+}
+
+function buildMeetingPrompt(task: string): string {
+  return [
+    "Use $roteador-programacao para enquadrar o caso. Se a melhor resposta for mesa, use $reuniao. Aplique $kant como lente transversal.",
+    task
+  ].join(" ");
+}
+
+function pickQuickPromptPresets(
+  presets: ProjectPromptPreset[]
+): ProjectPromptPreset[] {
+  const featuredBuiltins = presets.filter(
+    (preset) => preset.source === "builtin" && preset.featured
+  );
+  const custom = presets
+    .filter((preset) => preset.source === "custom")
+    .slice(0, 2);
+  const quick = [...featuredBuiltins, ...custom];
+  return (quick.length ? quick : presets).slice(0, 8);
+}
+
+function formatPromptPresetSection(
+  title: string,
+  presets: ProjectPromptPreset[],
+  startIndex = 0
+): string[] {
+  if (!presets.length) return [];
+
+  return [
+    `*${escapeMarkdownV2(title)}*`,
+    ...presets.map(
+      (preset, index) =>
+        `*${startIndex + index + 1}. ${escapeMarkdownV2(preset.label)}*` +
+        `\n   tipo: ${escapeMarkdownV2(humanizePromptIntent(preset.intent))}` +
+        `\n   uso: ${escapeMarkdownV2(compactPromptPresetText(preset.prompt))}`
+    ),
+    ""
+  ];
+}
+
+function groupPromptPresets(
+  presets: ProjectPromptPreset[]
+): Array<{ title: string; presets: ProjectPromptPreset[] }> {
+  const order = [
+    "Execucao",
+    "Planejamento",
+    "Reuniao",
+    "Testes",
+    "Analise",
+    "Organizacao",
+    "Retomada",
+    "Custom"
+  ];
+
+  return order
+    .map((title) => ({
+      title,
+      presets: presets.filter((preset) => preset.group === title)
+    }))
+    .filter((group) => group.presets.length);
 }
 
 function sanitizeCommandText(line: string): string {
@@ -52,12 +151,16 @@ function labelForSuggestedCommand(line: string): string {
   if (command.includes("get-content .agents\\active.md")) return "Ler ACTIVE";
   if (command.includes("get-content .agents\\handoff.md")) return "Ler HANDOFF";
   if (command.includes("npm run ")) {
-    return sanitizeCommandText(line).replace(/^npm run\s+/i, "").slice(0, 22);
+    return sanitizeCommandText(line)
+      .replace(/^npm run\s+/i, "")
+      .slice(0, 22);
   }
   return sanitizeCommandText(line).slice(0, 22) || "Comando";
 }
 
-function buildCommandButtons(contract: ProjectUnderstandingContract): ProjectStatusButton[][] {
+function buildCommandButtons(
+  contract: ProjectUnderstandingContract
+): ProjectStatusButton[][] {
   const rows: ProjectStatusButton[][] = [];
   const buttons = contract.suggestedCommands.slice(0, 4).map((line, index) => ({
     text: labelForSuggestedCommand(line),
@@ -91,46 +194,314 @@ export function buildProjectPromptPresets(
 
   const builtins: ProjectPromptPreset[] = [
     {
-      label: "Panorama exec",
-      intent: "status",
+      label: "2 blocos seguidos",
+      intent: "continue",
       selector: "builtin:0",
+      group: "Execucao",
       source: "builtin",
-      prompt: `Me devolva um panorama executivo honesto do estado atual do projeto ${projectName}, usando memoria viva, sem inventar backlog e destacando o bloco fechado ${latestClosedBlock} e o proximo bloco ${nextBlock}.`
+      featured: true,
+      prompt: buildExecutionPrompt(
+        `No projeto ${projectName}, continue direto e execute os proximos 2 blocos completos em sequencia, sem parar entre eles. So avance para o bloco seguinte quando o atual estiver realmente fechado com veredito honesto. Estado atual: bloco fechado ${latestClosedBlock}; proximo bloco ${nextBlock}.`
+      )
     },
     {
-      label: "Continuar bloco",
+      label: "3 sprints + reuniao",
       intent: "continue",
       selector: "builtin:1",
+      group: "Execucao",
       source: "builtin",
-      prompt: `Continue o trabalho do projeto ${projectName} a partir do estado vivo atual. Priorize o proximo bloco elegivel ${nextBlock}, sem replanejar do zero e sem reabrir frentes ja fechadas.`
+      prompt: buildExecutionPrompt(
+        `No projeto ${projectName}, execute os proximos 3 sprints. Faça uma reuniao curta de alinhamento quando necessario, aplique ajustes finos e siga direto sem me interromper.`
+      )
     },
     {
-      label: "Cadeia canonica",
-      intent: "implementation",
+      label: "12 sprints seguidos",
+      intent: "continue",
       selector: "builtin:2",
+      group: "Execucao",
       source: "builtin",
-      prompt: `Rerode a cadeia canonica do projeto ${projectName}: auditoria recorrente, confidence report e executive summary, nessa ordem, e me devolva so o veredito final com os pontos fortes e os riscos abertos.`
+      prompt: buildExecutionPrompt(
+        `No projeto ${projectName}, execute os proximos 12 sprints seguidos, mantendo foco no bloco atual e sem abrir frentes paralelas desnecessarias.`
+      )
     },
     {
-      label: "Prompt retomada",
-      intent: "planning",
+      label: "Seguir proximo passo",
+      intent: "continue",
       selector: "builtin:3",
+      group: "Execucao",
       source: "builtin",
-      prompt: `Monte um prompt maximo de retomada para uma nova conversa do projeto ${projectName}, citando ACTIVE.md, HANDOFF.md, MEMORY.ndjson, o bloco fechado ${latestClosedBlock}, o proximo bloco ${nextBlock} e a regra de nao inventar backlog.`
+      featured: true,
+      prompt: buildExecutionPrompt(
+        `No projeto ${projectName}, siga direto para o proximo passo do plano atual, sem reabrir discussao ja resolvida.`
+      )
     },
     {
-      label: "Contar blocos",
-      intent: "status",
+      label: "Continuar sem pausa",
+      intent: "continue",
       selector: "builtin:4",
+      group: "Execucao",
       source: "builtin",
-      prompt: `Me diga falta quantos blocos no projeto ${projectName} ate o limite formalmente planejado, usando o estado canonico atual e sem inventar backlog para manter momentum.`
+      prompt: buildExecutionPrompt(
+        `No projeto ${projectName}, continue direto a execucao a partir do ponto atual, mantendo o mesmo padrao de qualidade e governanca.`
+      )
     },
     {
-      label: "Ler protocolo",
-      intent: "status",
+      label: "Fechar bloco inteiro",
+      intent: "continue",
       selector: "builtin:5",
+      group: "Execucao",
       source: "builtin",
-      prompt: `Leia ACTIVE.md, HANDOFF.md e MEMORY.ndjson do projeto ${projectName} e me devolva somente o protocolo curto de retomada, em formato direto para uso no telefone.`
+      featured: true,
+      prompt: buildExecutionPrompt(
+        `No projeto ${projectName}, execute todo este bloco ate o final. So considere concluido quando houver prova, validacao e veredito honesto.`
+      )
+    },
+    {
+      label: "Fechar e emendar",
+      intent: "continue",
+      selector: "builtin:6",
+      group: "Execucao",
+      source: "builtin",
+      featured: true,
+      prompt: buildExecutionPrompt(
+        `No projeto ${projectName}, feche completamente o bloco atual e, se ele terminar limpo, ja emende no proximo bloco sem esperar nova autorizacao.`
+      )
+    },
+    {
+      label: "Progresso percentual",
+      intent: "continue",
+      selector: "builtin:7",
+      group: "Execucao",
+      source: "builtin",
+      prompt: buildExecutionPrompt(
+        `No projeto ${projectName}, continue a execucao normalmente e, no final de cada sprint ou bloco, informe o progresso real em escala de 0 a 100%.`
+      )
+    },
+    {
+      label: "3 sprints + progresso",
+      intent: "continue",
+      selector: "builtin:8",
+      group: "Execucao",
+      source: "builtin",
+      prompt: buildExecutionPrompt(
+        `No projeto ${projectName}, execute os proximos 3 sprints. No final, me informe o progresso real de 0 a 100% e o estado do bloco.`
+      )
+    },
+    {
+      label: "Execucao maxima",
+      intent: "continue",
+      selector: "builtin:9",
+      group: "Execucao",
+      source: "builtin",
+      prompt: buildExecutionPrompt(
+        `No projeto ${projectName}, siga ate o final do bloco atual sem parar, tratando achados laterais como estacionamento e mantendo o foco principal.`
+      )
+    },
+    {
+      label: "2 blocos com rigor",
+      intent: "continue",
+      selector: "builtin:10",
+      group: "Execucao",
+      source: "builtin",
+      prompt: buildExecutionPrompt(
+        `No projeto ${projectName}, execute os proximos 2 blocos continuamente. Preserve a regra de so abrir o segundo quando o primeiro estiver realmente concluido.`
+      )
+    },
+    {
+      label: "Rodada com governanca",
+      intent: "continue",
+      selector: "builtin:11",
+      group: "Execucao",
+      source: "builtin",
+      prompt: buildExecutionPrompt(
+        `No projeto ${projectName}, faca uma rodada maior de trabalho, mas preserve governanca: um eixo por vez, um residual forte por lote e validacao no final.`
+      )
+    },
+    {
+      label: "Mesa especialistas",
+      intent: "planning",
+      selector: "builtin:12",
+      group: "Reuniao",
+      source: "builtin",
+      featured: true,
+      prompt: buildMeetingPrompt(
+        `No projeto ${projectName}, faça uma reuniao com a mesa de especialistas para analisar o estado atual, identificar tensoes reais e sair com encaminhamento claro.`
+      )
+    },
+    {
+      label: "Reuniao auditoria",
+      intent: "planning",
+      selector: "builtin:13",
+      group: "Reuniao",
+      source: "builtin",
+      prompt: buildMeetingPrompt(
+        `No projeto ${projectName}, faça uma reuniao rapida de auditoria e alinhamento para revisar o estado atual, confirmar riscos e ajustar o rumo antes de seguir.`
+      )
+    },
+    {
+      label: "Reuniao planejamento",
+      intent: "planning",
+      selector: "builtin:14",
+      group: "Reuniao",
+      source: "builtin",
+      prompt: buildMeetingPrompt(
+        `No projeto ${projectName}, gere uma reuniao com foco em planejamento maior, consolidando achados atuais, riscos, prioridades e a proxima sequencia de sprints.`
+      )
+    },
+    {
+      label: "Mesa guiada por skill",
+      intent: "planning",
+      selector: "builtin:15",
+      group: "Reuniao",
+      source: "builtin",
+      prompt: buildMeetingPrompt(
+        `No projeto ${projectName}, conduza a discussao com a skill mais apropriada como linha mestra, mantendo foco, objetividade e decisoes acionaveis.`
+      )
+    },
+    {
+      label: "Plano do proximo bloco",
+      intent: "planning",
+      selector: "builtin:16",
+      group: "Planejamento",
+      source: "builtin",
+      featured: true,
+      prompt: buildPlanningPrompt(
+        `No projeto ${projectName}, consolide o proximo bloco como um plano executavel: objetivo, frente principal, risco principal, criterio de pronto e sequencia de execucao. Estado atual: bloco fechado ${latestClosedBlock}; proximo bloco ${nextBlock}.`
+      )
+    },
+    {
+      label: "Bateria completa",
+      intent: "implementation",
+      selector: "builtin:17",
+      group: "Testes",
+      source: "builtin",
+      featured: true,
+      prompt: buildExecutionPrompt(
+        `No projeto ${projectName}, monte e execute uma bateria de testes completa, cobrindo o fluxo principal e os casos criticos, com validacao real e relatorio final.`
+      )
+    },
+    {
+      label: "Teste tentando quebrar",
+      intent: "implementation",
+      selector: "builtin:18",
+      group: "Testes",
+      source: "builtin",
+      prompt: buildExecutionPrompt(
+        `No projeto ${projectName}, faça testes tentando quebrar o sistema de verdade. Procure falhas de fluxo, estado, persistencia, contrato, UI e comportamento real.`
+      )
+    },
+    {
+      label: "Teste ponta a ponta",
+      intent: "implementation",
+      selector: "builtin:19",
+      group: "Testes",
+      source: "builtin",
+      prompt: buildExecutionPrompt(
+        `No projeto ${projectName}, faça um teste ponta a ponta real: iniciar, orientar, marcar, confirmar, consultar, remarcar, consultar de novo, cancelar e verificar limpeza correta.`
+      )
+    },
+    {
+      label: "Bateria visual ao vivo",
+      intent: "implementation",
+      selector: "builtin:20",
+      group: "Testes",
+      source: "builtin",
+      prompt: buildExecutionPrompt(
+        `No projeto ${projectName}, faça uma bateria de testes visuais ao vivo, validando cada superficie relevante em navegador real e registrando os artefatos mais importantes.`
+      )
+    },
+    {
+      label: "Especialistas ao vivo",
+      intent: "planning",
+      selector: "builtin:21",
+      group: "Reuniao",
+      source: "builtin",
+      prompt: buildMeetingPrompt(
+        `No projeto ${projectName}, use os especialistas ao vivo apenas para gerar sugestoes realmente uteis a operacao real, sem inflar contexto e sem duplicar autoridade.`
+      )
+    },
+    {
+      label: "Avaliacao honesta",
+      intent: "status",
+      selector: "builtin:22",
+      group: "Analise",
+      source: "builtin",
+      featured: true,
+      prompt: buildPlanningPrompt(
+        `No projeto ${projectName}, faça uma avaliacao honesta do progresso atual, sem inflar numeros. Diga claramente o que esta forte, o que esta fragil e o que ainda bloqueia avanco.`
+      )
+    },
+    {
+      label: "Auditoria clean code",
+      intent: "planning",
+      selector: "builtin:23",
+      group: "Testes",
+      source: "builtin",
+      prompt: buildPlanningPrompt(
+        `No projeto ${projectName}, faça uma auditoria para verificar se nossa resolucao esta seguindo padrao de organizacao, arquitetura e clean code, sem maquiagem.`
+      )
+    },
+    {
+      label: "Jogar no estacionamento",
+      intent: "implementation",
+      selector: "builtin:24",
+      group: "Organizacao",
+      source: "builtin",
+      prompt: buildExecutionPrompt(
+        `No projeto ${projectName}, anote os achados laterais e ajustes futuros no estacionamento, sem desviar o foco do bloco principal em execucao.`
+      )
+    },
+    {
+      label: "Reuniao ao surgir barata",
+      intent: "planning",
+      selector: "builtin:25",
+      group: "Reuniao",
+      source: "builtin",
+      prompt: buildMeetingPrompt(
+        `No projeto ${projectName}, sempre que aparecer artefato estranho, indicio de barata, conflito de decisao ou tensao estrutural, abra uma reuniao curta e registre o encaminhamento.`
+      )
+    },
+    {
+      label: "Planejar proximo bloco",
+      intent: "planning",
+      selector: "builtin:26",
+      group: "Planejamento",
+      source: "builtin",
+      prompt: buildPlanningPrompt(
+        `No projeto ${projectName}, planeje a frente do proximo bloco de trabalho a partir do estado real atual, preservando a governanca conquistada e sem redesenhar tudo do zero. Proximo bloco elegivel: ${nextBlock}.`
+      )
+    },
+    {
+      label: "Extrair sistema de design",
+      intent: "implementation",
+      selector: "builtin:27",
+      group: "Testes",
+      source: "builtin",
+      prompt: buildExecutionPrompt(
+        `Use designer-extract no projeto ${projectName} para ler a UI existente, identificar padroes dominantes e consolidar um sistema oficial reutilizavel.`
+      )
+    },
+    {
+      label: "Prompt de retomada",
+      intent: "planning",
+      selector: "builtin:28",
+      group: "Retomada",
+      source: "builtin",
+      featured: true,
+      prompt: buildPlanningPrompt(
+        `No projeto ${projectName}, monte um prompt de retomada para nova conversa usando memoria viva, confirmando o estado real no workspace e so depois planejando o proximo bloco. Cite ACTIVE.md, HANDOFF.md, MEMORY.ndjson, o bloco fechado ${latestClosedBlock} e o proximo bloco ${nextBlock}.`
+      )
+    },
+    {
+      label: "Retomada maxima",
+      intent: "planning",
+      selector: "builtin:29",
+      group: "Retomada",
+      source: "builtin",
+      featured: true,
+      prompt: buildPlanningPrompt(
+        `No projeto ${projectName}, retome exatamente do ponto onde a outra janela parou, usando memoria viva como fonte principal, confirmando o estado real, resumindo o que esta provado e planejando o proximo bloco antes de executar.`
+      )
     }
   ];
 
@@ -139,6 +510,7 @@ export function buildProjectPromptPresets(
     prompt: preset.prompt,
     intent: preset.intent,
     selector: `custom:${preset.id}`,
+    group: "Custom",
     source: "custom",
     removable: true
   }));
@@ -150,7 +522,9 @@ function buildPromptButtons(
   contract: ProjectUnderstandingContract,
   customPrompts: StoredProjectPrompt[] = []
 ): ProjectStatusButton[][] {
-  const buttons = buildProjectPromptPresets(contract, customPrompts).map((preset) => ({
+  const buttons = pickQuickPromptPresets(
+    buildProjectPromptPresets(contract, customPrompts)
+  ).map((preset) => ({
     text: preset.label,
     callbackData: `project_status:prompt:${preset.selector.replace(/:/g, "~")}`
   }));
@@ -249,6 +623,16 @@ function buildButtons(
         text: "HANDOFF",
         callbackData: "memory:view:handoff"
       }
+    ],
+    [
+      {
+        text: "INDEX",
+        callbackData: "memory:view:index"
+      },
+      {
+        text: "PROJECT",
+        callbackData: "memory:view:project"
+      }
     ]
   ];
 }
@@ -263,7 +647,10 @@ function buildPromptsVariantButtons(
   contract: ProjectUnderstandingContract,
   customPrompts: StoredProjectPrompt[] = []
 ): ProjectStatusButton[][] {
-  return [...buildPromptButtons(contract, customPrompts), ...buildButtons("prompts")];
+  return [
+    ...buildPromptButtons(contract, customPrompts),
+    ...buildButtons("prompts")
+  ];
 }
 
 function buildSourcesLines(
@@ -279,7 +666,9 @@ function buildSourcesLines(
   });
 }
 
-function buildMissingSectionNotice(contract: ProjectUnderstandingContract): string[] {
+function buildMissingSectionNotice(
+  contract: ProjectUnderstandingContract
+): string[] {
   if (!contract.renderHints.missingSections.length) {
     return [];
   }
@@ -311,7 +700,9 @@ function buildMemoryDisclosure(
     const sources = contract.memorySources
       .slice(0, 3)
       .map((source) => toProjectRelativePath(workdir, source))
-      .map((source) => `\`${source.replace(/\\/g, "\\\\").replace(/`/g, "\\`")}\``)
+      .map(
+        (source) => `\`${source.replace(/\\/g, "\\\\").replace(/`/g, "\\`")}\``
+      )
       .join(", ");
     lines.push(`\u{1F4CE} *Memory sources:* ${sources}`);
   }
@@ -329,7 +720,10 @@ function buildMemoryDisclosure(
 }
 
 function buildSkillReuseDisclosure(skillStatus: ProjectSkillStatus): string[] {
-  if (!skillStatus.recentSkills.length && !skillStatus.pendingCandidates.length) {
+  if (
+    !skillStatus.recentSkills.length &&
+    !skillStatus.pendingCandidates.length
+  ) {
     return [];
   }
 
@@ -347,7 +741,7 @@ function buildSkillReuseDisclosure(skillStatus: ProjectSkillStatus): string[] {
 
   if (skillStatus.pendingCandidates.length) {
     lines.push(
-      `\u{23F3} *Skills pendentes:* ${escapeMarkdownV2(
+      `\u{23F3} *Candidates de skill sob revisao:* ${escapeMarkdownV2(
         skillStatus.pendingCandidates
           .map(
             (candidate) =>
@@ -363,6 +757,51 @@ function buildSkillReuseDisclosure(skillStatus: ProjectSkillStatus): string[] {
       `\u{1F449} *Melhor proximo passo:* ${escapeMarkdownV2(
         skillStatus.suggestedAction
       )}`
+    );
+  }
+
+  return lines;
+}
+
+function buildCurrentBlockCardLines(
+  contract: ProjectUnderstandingContract
+): string[] {
+  const block = contract.currentBlockStatus;
+  if (!block) {
+    return [];
+  }
+
+  const lines = ["", "\u{1F4CB} *Current block status*"];
+
+  if (block.name) {
+    lines.push(`\u{1F3AF} *Bloco atual:* ${escapeMarkdownV2(block.name)}`);
+  }
+  if (block.conclusion) {
+    lines.push(`\u{2705} *Conclusao:* ${escapeMarkdownV2(block.conclusion)}`);
+  }
+  if (block.planPosition) {
+    lines.push(
+      `\u{1F522} *Posicao no plano:* ${escapeMarkdownV2(block.planPosition)}`
+    );
+  }
+  if (block.currentObjective) {
+    lines.push(
+      `\u{1F9ED} *Objetivo atual:* ${escapeMarkdownV2(block.currentObjective)}`
+    );
+  }
+  if (block.nextStep) {
+    lines.push(
+      `\u{23ED}\u{FE0F} *Proximo passo indicado:* ${escapeMarkdownV2(block.nextStep)}`
+    );
+  }
+  if (block.fallbackPath) {
+    lines.push(
+      `\u{21A9}\u{FE0F} *Retrocesso padrao:* ${escapeMarkdownV2(block.fallbackPath)}`
+    );
+  }
+  if (block.evidence.length) {
+    lines.push(
+      `\u{1F4CE} *Evidencia:* ${formatInlineMarkdown(block.evidence[0])}`
     );
   }
 
@@ -414,6 +853,10 @@ function renderContract(
   }
 
   if (variant === "executive") {
+    const focus =
+      contract.currentBlockStatus?.currentObjective ||
+      contract.currentStatus.primaryFocus ||
+      "nao identificada";
     return {
       parseMode: "markdown",
       text: [
@@ -423,14 +866,14 @@ function renderContract(
           contract.currentStatus.latestClosedBlock || "nao identificado"
         )}`,
         `\u{23ED}\u{FE0F} *Proximo bloco elegivel:* ${escapeMarkdownV2(
-          contract.currentStatus.nextEligibleBlock || "nao identificado"
+          contract.currentBlockStatus?.nextStep ||
+            contract.currentStatus.nextEligibleBlock ||
+            "nao identificado"
         )}`,
         `\u{1F7E1} *Execucao formal:* ${escapeMarkdownV2(
           contract.currentStatus.executionFormal || "Nao confirmado"
         )}`,
-        `\u{1F9ED} *Frente principal:* ${escapeMarkdownV2(
-          contract.currentStatus.primaryFocus || "nao identificada"
-        )}`,
+        `\u{1F9ED} *Frente principal:* ${escapeMarkdownV2(focus)}`,
         ...(contract.progressSummary.length
           ? [
               `\u{1F4AF} *Progresso forte:* ${formatInlineMarkdown(
@@ -443,6 +886,7 @@ function renderContract(
               contract.openRisks[0]
             )}`
           : "\u{1F50E} *Ponto de atencao:* nenhum loop aberto forte identificado",
+        ...buildCurrentBlockCardLines(contract),
         ...buildSkillReuseDisclosure(skillStatus),
         ...buildMemoryDisclosure(contract, workdir),
         ...buildMissingSectionNotice(contract)
@@ -458,11 +902,20 @@ function renderContract(
         "\u{23ED}\u{FE0F} *Proximo Bloco*",
         "",
         `*Bloco elegivel:* ${escapeMarkdownV2(
-          contract.currentStatus.nextEligibleBlock || "nao identificado"
+          contract.currentBlockStatus?.nextStep ||
+            contract.currentStatus.nextEligibleBlock ||
+            "nao identificado"
         )}`,
         `*Estado formal:* ${escapeMarkdownV2(
           contract.currentStatus.executionFormal || "Nao confirmado"
         )}`,
+        ...(contract.currentBlockStatus?.fallbackPath
+          ? [
+              `*Retrocesso padrao:* ${escapeMarkdownV2(
+                contract.currentBlockStatus.fallbackPath
+              )}`
+            ]
+          : []),
         contract.currentStatus.liveEvidence
           ? `*Base de confianca:* ${escapeMarkdownV2(
               contract.currentStatus.liveEvidence
@@ -488,7 +941,11 @@ function renderContract(
         "",
         ...buildSourcesLines(workdir, contract.canonicalSources, 6),
         ...(contract.memorySources.length
-          ? ["", "\u{1F9E0} *Memory ledger used:*", ...buildSourcesLines(workdir, contract.memorySources, 3)]
+          ? [
+              "",
+              "\u{1F9E0} *Memory ledger used:*",
+              ...buildSourcesLines(workdir, contract.memorySources, 3)
+            ]
           : []),
         "",
         "Esses arquivos sao a base que o bot deve consultar antes de improvisar um status\\."
@@ -511,8 +968,8 @@ function renderContract(
       text: [
         "\u{1FA9C} *Primeiros Passos*",
         "",
-        ...contract.nextStepSummary.map((line) =>
-          `- ${formatInlineMarkdown(line.replace(/^- /, ""))}`
+        ...contract.nextStepSummary.map(
+          (line) => `- ${formatInlineMarkdown(line.replace(/^- /, ""))}`
         ),
         "",
         "Use este bloco como protocolo curto de retomada antes de abrir o proximo eixo\\.",
@@ -536,8 +993,8 @@ function renderContract(
       text: [
         "\u{2328}\u{FE0F} *Comandos Sugeridos*",
         "",
-        ...contract.suggestedCommands.map((line) =>
-          `- ${formatInlineMarkdown(line.replace(/^- /, ""))}`
+        ...contract.suggestedCommands.map(
+          (line) => `- ${formatInlineMarkdown(line.replace(/^- /, ""))}`
         ),
         "",
         "Toque em um dos atalhos abaixo para mandar esse protocolo ao Codex sem precisar digitar\\.",
@@ -578,18 +1035,26 @@ function renderContract(
 
   if (variant === "prompts") {
     const presets = buildProjectPromptPresets(contract, customPrompts);
+    const grouped = groupPromptPresets(presets);
+    let offset = 0;
+    const sections = grouped.flatMap((group) => {
+      const lines = formatPromptPresetSection(
+        group.title,
+        group.presets,
+        offset
+      );
+      offset += group.presets.length;
+      return lines;
+    });
 
     return {
       parseMode: "markdown",
       text: [
         "\u{1F9E9} *Prompts Prontos*",
         "",
-        ...presets.map(
-          (preset, index) =>
-            `*${index + 1}. ${escapeMarkdownV2(preset.label)}*` +
-            `\n${escapeMarkdownV2(preset.prompt)}` +
-            `\n_${escapeMarkdownV2(preset.source === "custom" ? "custom" : "builtin")}_`
-        ),
+        "Atalhos reutilizaveis para executar pedidos frequentes sem redigitar tudo\\.",
+        "",
+        ...sections,
         "",
         "Toque em um dos atalhos abaixo para enviar esse prompt direto ao Codex sem precisar digitar\\.",
         "Para gerenciar a biblioteca, use `/prompts`\\.",
@@ -604,18 +1069,24 @@ function renderContract(
     "",
     `\u{1F4C1} *Projeto:* ${escapeMarkdownV2(contract.currentStatus.projectName)}`,
     `\u{1F9ED} *Frente principal:* ${escapeMarkdownV2(
-      contract.currentStatus.primaryFocus || "nao identificada"
+      contract.currentBlockStatus?.currentObjective ||
+        contract.currentStatus.primaryFocus ||
+        "nao identificada"
     )}`,
     `\u{2705} *Ultimo bloco fechado:* ${escapeMarkdownV2(
       contract.currentStatus.latestClosedBlock || "nao identificado"
     )}`,
     `\u{23ED}\u{FE0F} *Proximo bloco elegivel:* ${escapeMarkdownV2(
-      contract.currentStatus.nextEligibleBlock || "nao identificado"
+      contract.currentBlockStatus?.nextStep ||
+        contract.currentStatus.nextEligibleBlock ||
+        "nao identificado"
     )}`,
     `\u{1F7E1} *Sprint em execucao formal:* ${escapeMarkdownV2(
       contract.currentStatus.executionFormal || "Nao confirmado"
     )}`
   ];
+
+  lines.push(...buildCurrentBlockCardLines(contract));
 
   if (contract.currentStatus.publicEvidence) {
     lines.push(
@@ -691,12 +1162,10 @@ export class ProjectStatusSkill {
       variant
     });
     const resolvedVariant = variant || contract.renderHints.variant;
-    const customPrompts = await this.promptLibraryService.listPrompts(
-      resolvedWorkdir
-    );
-    const skillStatus = await this.memoryService.getProjectSkillStatus(
-      resolvedWorkdir
-    );
+    const customPrompts =
+      await this.promptLibraryService.listPrompts(resolvedWorkdir);
+    const skillStatus =
+      await this.memoryService.getProjectSkillStatus(resolvedWorkdir);
 
     return renderContract(
       contract,

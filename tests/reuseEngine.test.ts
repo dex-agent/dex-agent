@@ -35,13 +35,16 @@ test("reuse engine prepares prompt packets with relevant skill context", async (
     tags: ["restart", "windows", "dex-agent"],
     assessment: {
       destination: "project_skill",
-      explicitSignals: ["Operator explicitly asked for reusable skill promotion."],
+      explicitSignals: [
+        "Operator explicitly asked for reusable skill promotion."
+      ],
       structuralSignals: [
         "The workflow contains three or more explicit steps.",
         "The workflow references commands, files, or contracts that are likely reusable."
       ],
       shouldSuggestSkill: true,
       shouldAutoPromote: true,
+      score: 90,
       rationale: ["Strong reusable project workflow."]
     }
   });
@@ -55,7 +58,10 @@ test("reuse engine prepares prompt packets with relevant skill context", async (
   });
 
   assert.equal(prepared.relevantSkills.length, 1);
-  assert.match(prepared.promptWithSkills, /Reusable project skills likely relevant:/);
+  assert.match(
+    prepared.promptWithSkills,
+    /Project skills available for direct reuse:/
+  );
   assert.match(
     prepared.disclosure || "",
     /Reusing project skill context: restart-dex-agent-hidden-on-windows/
@@ -74,7 +80,10 @@ test("reuse engine delegates finalized response capture through the shared memor
     text: `Passos:
 1. abrir scripts/restart-dex-agent-hidden.vbs
 2. validar scripts/restart-dex-agent-hidden.ps1
-3. conferir .runtime/restart-bootstrap.log`
+3. conferir .runtime/restart-bootstrap.log
+4. metodo padrao recorrente: usar o launcher oculto do dex-agent no windows
+5. contrato: os scripts oficiais e o restart-bootstrap.log sao a fonte de verdade
+6. vamos usar isso de novo sempre que o restart oculto falhar neste projeto`
   });
 
   assert.match(result.message || "", /Aprendi um novo procedimento de projeto/);
@@ -86,4 +95,39 @@ test("reuse engine delegates finalized response capture through the shared memor
   );
   const skillStatus = await engine.getProjectSkillStatus(workdir);
   assert.ok(skillStatus.recentSkills.length >= 1);
+});
+
+test("reuse engine promotion sanitizes injected skill packets from prompt text", async () => {
+  const workdir = await createWorkdir("reuse-engine-sanitized-prompt");
+  const engine = new ProjectReuseEngine(new ProjectMemoryService());
+
+  const result = await engine.captureFinalizedResponse({
+    chatId: 1,
+    workdir,
+    promptText: [
+      "Project skills available for direct reuse:",
+      "- bloqueio-ativo (.agents/skills/bloqueio-ativo/SKILL.md)",
+      "",
+      "Use one of these only if it directly matches the request.",
+      "",
+      "Request:",
+      "isso tem que virar skill de projeto: usar o launcher oculto do dex-agent no windows"
+    ].join("\n"),
+    text: `Passos:
+1. abrir scripts/restart-dex-agent-hidden.vbs
+2. validar scripts/restart-dex-agent-hidden.ps1
+3. conferir .runtime/restart-bootstrap.log
+4. metodo padrao recorrente: usar o launcher oculto do dex-agent no windows
+5. contrato: os scripts oficiais e o restart-bootstrap.log sao a fonte de verdade
+6. vamos usar isso de novo sempre que o restart oculto falhar neste projeto`
+  });
+
+  assert.ok(result.promotionResult);
+  const contextPath = result.promotionResult?.createdPaths.find((createdPath) =>
+    createdPath.endsWith(`${path.sep}PROMPT_AGENTE_CODEX_CONTEXTO.md`)
+  );
+  assert.ok(contextPath);
+  const content = await fs.readFile(contextPath!, "utf8");
+  assert.doesNotMatch(content, /Project skills available for direct reuse:/i);
+  assert.match(content, /usar o launcher oculto do dex-agent no windows/i);
 });

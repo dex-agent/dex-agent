@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildAudioSummary, normalizeTextForSpeech } from "../src/lib/audioTts.js";
+import {
+  buildAudioSummary,
+  buildAudioVoiceDirectionPlan,
+  normalizeTextForSpeech
+} from "../src/lib/audioTts.js";
 
 test("normalizeTextForSpeech removes markdown and rewrites technical tokens", () => {
   const normalized = normalizeTextForSpeech(
@@ -66,4 +70,45 @@ test("buildAudioSummary prefers useful status content over infrastructure noise"
   assert.doesNotMatch(summary, /Unauthorized/i);
   assert.match(summary, /Status atual do projeto/i);
   assert.match(summary, /609 a 620/);
+});
+
+test("buildAudioVoiceDirectionPlan codifies the audio-direction contract before TTS", () => {
+  const concise = buildAudioVoiceDirectionPlan(
+    {
+      enabled: true,
+      provider: "edge",
+      voice: "pt-BR-FranciscaNeural",
+      rate: "+0%",
+      pitch: "+0Hz",
+      pythonCommand: "python",
+      ffmpegCommand: "ffmpeg",
+      offerMinChars: 900,
+      summaryMaxChars: 650,
+      cacheTtlMs: 1800000
+    },
+    "concise"
+  );
+  const detailed = buildAudioVoiceDirectionPlan(
+    {
+      enabled: true,
+      provider: "edge",
+      voice: "pt-BR-FranciscaNeural",
+      rate: "+0%",
+      pitch: "+0Hz",
+      pythonCommand: "python",
+      ffmpegCommand: "ffmpeg",
+      offerMinChars: 900,
+      summaryMaxChars: 650,
+      cacheTtlMs: 1800000
+    },
+    "detailed"
+  );
+
+  assert.equal(concise.objective, "telegram_short_summary");
+  assert.equal(concise.density, "enxuta");
+  assert.equal(concise.maxUnits, 5);
+  assert.equal(detailed.objective, "telegram_detailed_summary");
+  assert.equal(detailed.density, "detalhada");
+  assert.equal(detailed.maxUnits, 10);
+  assert.equal(detailed.maxChars >= 1400, true);
 });

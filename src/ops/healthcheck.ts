@@ -84,12 +84,13 @@ export function resolveCommandPath(
   const raw = String(command || "").trim();
   if (!raw) return "";
 
-  const pathExt = process.platform === "win32"
-    ? String(env.PATHEXT || ".COM;.EXE;.BAT;.CMD")
-        .split(";")
-        .map((entry) => entry.trim())
-        .filter(Boolean)
-    : [""];
+  const pathExt =
+    process.platform === "win32"
+      ? String(env.PATHEXT || ".COM;.EXE;.BAT;.CMD")
+          .split(";")
+          .map((entry) => entry.trim())
+          .filter(Boolean)
+      : [""];
 
   const candidatesFor = (basePath: string): string[] => {
     if (process.platform !== "win32") {
@@ -171,7 +172,9 @@ function checkLegacyPathDrift(
   targetPath: string | undefined,
   strict: boolean
 ): HealthcheckCheck | null {
-  const normalized = String(targetPath || "").trim().toLowerCase();
+  const normalized = String(targetPath || "")
+    .trim()
+    .toLowerCase();
   if (!normalized) {
     return null;
   }
@@ -372,7 +375,12 @@ export async function runHealthcheck(
   }
 
   for (const canonicalCheck of [
-    checkCanonicalRepoDrift("runner workdir", config.runner.cwd, repoRoot, strict),
+    checkCanonicalRepoDrift(
+      "runner workdir",
+      config.runner.cwd,
+      repoRoot,
+      strict
+    ),
     checkCanonicalRepoDrift(
       "github workdir",
       config.github.defaultWorkdir,

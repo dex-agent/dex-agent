@@ -478,7 +478,9 @@ function clonePromptOptionsForQueue(
 }
 
 function isLocale(value: string): value is Locale {
-  return value === "pt-BR" || value === "en" || value === "zh" || value === "zh-HK";
+  return (
+    value === "pt-BR" || value === "en" || value === "zh" || value === "zh-HK"
+  );
 }
 
 function toLocale(value: string): Locale {
@@ -501,12 +503,32 @@ function extractUserRequestFromMemoryPacket(text: string): string | null {
   return extracted || null;
 }
 
+function extractUserRequestFromReusePacket(text: string): string | null {
+  const source = String(text || "").trim();
+  if (!source.startsWith("Project skills available for direct reuse:")) {
+    return null;
+  }
+
+  const marker = "\nRequest:\n";
+  const markerIndex = source.indexOf(marker);
+  if (markerIndex < 0) {
+    return null;
+  }
+
+  const extracted = source.slice(markerIndex + marker.length).trim();
+  return extracted || null;
+}
+
 function normalizeDeferredPromptInput(prompt: PromptInput): PromptInput {
   if (typeof prompt !== "string") {
     return prompt;
   }
 
-  return extractUserRequestFromMemoryPacket(prompt) || prompt;
+  return (
+    extractUserRequestFromMemoryPacket(prompt) ||
+    extractUserRequestFromReusePacket(prompt) ||
+    prompt
+  );
 }
 
 function toPromptSnapshotText(prompt: PromptInput): string {
@@ -541,6 +563,33 @@ function compactSnapshotText(
   return compact.length <= limit
     ? compact
     : `${compact.slice(0, limit - 3).trimEnd()}...`;
+}
+
+function summarizeOperationalResultSnapshot(
+  value: string | null | undefined,
+  limit = 420
+): string | null {
+  const lines = String(value || "")
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => {
+      const normalized = line
+        .normalize("NFD")
+        .replace(/\p{Diacritic}/gu, "")
+        .toLowerCase();
+      return !/^(validacao|validation|o que sobra depois|what remains|fontes|sources|logs?)\s*:?$/i.test(
+        normalized
+      );
+    });
+
+  if (!lines.length) {
+    return null;
+  }
+
+  const summary = lines.slice(0, 4).join(" ");
+  return compactSnapshotText(summary, limit);
 }
 
 function isWorkflowPhase(value: unknown): value is WorkflowPhase {
@@ -1172,7 +1221,9 @@ export class PtyManager {
     item: QueuedPromptRequest,
     index: number
   ): PromptQueueItemSummary {
-    const text = this.stringifyPromptInput(normalizeDeferredPromptInput(item.prompt))
+    const text = this.stringifyPromptInput(
+      normalizeDeferredPromptInput(item.prompt)
+    )
       .replace(/\s+/g, " ")
       .trim();
 
@@ -1657,10 +1708,8 @@ export class PtyManager {
     }
 
     const finalResponseText = this.extractFinalResponseText(session);
-    projectState.lastFinalResponseText = compactSnapshotText(
-      finalResponseText,
-      1800
-    );
+    projectState.lastFinalResponseText =
+      summarizeOperationalResultSnapshot(finalResponseText);
     projectState.lastFinalizedAt = new Date().toISOString();
     const finalRendered = session.silentOutput
       ? finalResponseText
@@ -1762,13 +1811,19 @@ export class PtyManager {
       return null;
     }
 
-    const items: Array<{ type: "text"; text: string } | { type: "local_image"; path: string }> = [];
+    const items: Array<
+      { type: "text"; text: string } | { type: "local_image"; path: string }
+    > = [];
     for (const item of raw) {
       if (!item || typeof item !== "object") {
         return null;
       }
 
-      const candidate = item as { type?: unknown; text?: unknown; path?: unknown };
+      const candidate = item as {
+        type?: unknown;
+        text?: unknown;
+        path?: unknown;
+      };
       if (candidate.type === "text" && typeof candidate.text === "string") {
         items.push({
           type: "text",
@@ -2421,10 +2476,14 @@ export class PtyManager {
     state.pendingPrompt = null;
 
     try {
-      const result = await this.sendPrompt(ctx, normalizeDeferredPromptInput(pending.prompt), {
-        ...pending.options,
-        allowWorkspaceConflict: true
-      });
+      const result = await this.sendPrompt(
+        ctx,
+        normalizeDeferredPromptInput(pending.prompt),
+        {
+          ...pending.options,
+          allowWorkspaceConflict: true
+        }
+      );
 
       if (!result.started) {
         state.pendingPrompt = pending;
@@ -2561,9 +2620,7 @@ export class PtyManager {
               createdAt: item.createdAt
             };
           })
-          .filter(
-            (item): item is StoredQueuedPromptRequest => item !== null
-          ),
+          .filter((item): item is StoredQueuedPromptRequest => item !== null),
         projects
       };
     }

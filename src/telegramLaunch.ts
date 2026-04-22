@@ -27,7 +27,9 @@ export function isTelegramPollingConflict(error: unknown): boolean {
   };
 
   const errorCode = Number(candidate.response?.error_code);
-  const description = String(candidate.response?.description || candidate.message || "");
+  const description = String(
+    candidate.response?.description || candidate.message || ""
+  );
 
   return (
     errorCode === 409 ||

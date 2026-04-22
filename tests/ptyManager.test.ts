@@ -223,10 +223,38 @@ test("pty manager strips memory packet wrappers before storing queued prompts", 
   const added = manager.enqueuePrompt(1, wrappedPrompt, process.cwd());
 
   assert.equal(added.ok, true);
-  assert.match(manager.listPromptQueue(1)[0].text, /continue de onde voce parou/i);
+  assert.match(
+    manager.listPromptQueue(1)[0].text,
+    /continue de onde voce parou/i
+  );
   assert.doesNotMatch(
     manager.listPromptQueue(1)[0].text,
     /Authoritative project memory packet/i
+  );
+});
+
+test("pty manager strips reusable skill wrappers before storing queued prompts", () => {
+  const manager = createManager();
+  const wrappedPrompt = [
+    "Project skills available for direct reuse:",
+    "- dex-agent-windows-restart (.agents/skills/dex-agent-windows-restart/SKILL.md): hidden restart flow",
+    "",
+    "Use one of these only if it directly matches the request.",
+    "",
+    "Request:",
+    "continue do ponto certo do backend"
+  ].join("\n");
+
+  const added = manager.enqueuePrompt(1, wrappedPrompt, process.cwd());
+
+  assert.equal(added.ok, true);
+  assert.match(
+    manager.listPromptQueue(1)[0].text,
+    /continue do ponto certo do backend/i
+  );
+  assert.doesNotMatch(
+    manager.listPromptQueue(1)[0].text,
+    /Project skills available for direct reuse/i
   );
 });
 
@@ -303,7 +331,9 @@ test("pty manager auto-queues same-chat prompts while sdk is running and drains 
   assert.equal(manager.listPromptQueue(5).length, 0);
   assert.deepEqual(inputs, ["first task", "second task"]);
   assert.equal(calls.length, 2);
-  assert.ok(sentMessages.some((message) => /Executando item da fila/.test(message.text)));
+  assert.ok(
+    sentMessages.some((message) => /Executando item da fila/.test(message.text))
+  );
 });
 
 test("pty manager replays queued prompts in the workdir where they were enqueued", async () => {
@@ -707,7 +737,10 @@ test("pty manager tracks and restores operational continuation snapshots", () =>
   });
   restored.restoreState(manager.exportState());
 
-  const restoredSnapshot = restored.getOperationalContinuationState(5, projectA);
+  const restoredSnapshot = restored.getOperationalContinuationState(
+    5,
+    projectA
+  );
   assert.match(restoredSnapshot.lastPromptText || "", /continue a bateria/i);
   assert.match(restoredSnapshot.lastFinalResponseText || "", /bateria viva/i);
   assert.equal(restoredSnapshot.queuedItems.length, 1);
@@ -737,17 +770,14 @@ test("pty manager interrupt force-closes a stuck session after a grace period", 
   const manager = createManager();
   let interrupted = 0;
 
-  manager.sessions.set(
-    "42",
-    {
-      ...createExecFallbackSession("42", process.cwd(), "sdk"),
-      throttledFlush: { cancel() {} },
-      close: () => {},
-      interrupt: () => {
-        interrupted += 1;
-      }
-    } as ReturnType<PtyManager["startExecSessionWithOptions"]>
-  );
+  manager.sessions.set("42", {
+    ...createExecFallbackSession("42", process.cwd(), "sdk"),
+    throttledFlush: { cancel() {} },
+    close: () => {},
+    interrupt: () => {
+      interrupted += 1;
+    }
+  } as ReturnType<PtyManager["startExecSessionWithOptions"]>);
 
   const ok = manager.interrupt(42);
 
@@ -768,7 +798,10 @@ test("pty manager keeps direct pty prompts immediate instead of queueing them", 
     }
   } as ReturnType<PtyManager["startExecSessionWithOptions"]>);
 
-  const result = await manager.sendPrompt({ chat: { id: 77 } }, "continue daqui");
+  const result = await manager.sendPrompt(
+    { chat: { id: 77 } },
+    "continue daqui"
+  );
 
   assert.deepEqual(result, {
     started: true,
@@ -1086,6 +1119,57 @@ test("pty manager sends unescaped final text to post-response hooks", async () =
 
   assert.equal(finalized.length, 1);
   assert.equal(finalized[0], "Print salvo em C:/tmp/frontend-agenda_v2.png");
+});
+
+test("pty manager stores a compact finalized snapshot instead of the full narrated response", async () => {
+  const manager = createManager({
+    backend: "sdk",
+    codexClientFactory: createFakeCodexClient([
+      {
+        events: async function* () {
+          yield {
+            type: "item.completed",
+            item: {
+              id: "item-finalized-snapshot",
+              type: "agent_message",
+              text: [
+                "Fechei o recorte principal do backend.",
+                "",
+                "Validação:",
+                "- npm run check passou",
+                "- npm test passou",
+                "",
+                "O que sobra depois:",
+                "- revisar residual final"
+              ].join("\n")
+            }
+          };
+          yield {
+            type: "turn.completed",
+            usage: {
+              input_tokens: 1,
+              cached_input_tokens: 0,
+              output_tokens: 1
+            }
+          };
+        }
+      }
+    ])
+  });
+
+  await manager.sendPrompt({ chat: { id: 182 } }, "continue do ponto certo");
+  await waitFor(() => !manager.getStatus(182).active);
+
+  const projectState = manager.getProjectState(182, process.cwd());
+  assert.match(
+    projectState.lastFinalResponseText || "",
+    /Fechei o recorte principal do backend/i
+  );
+  assert.doesNotMatch(projectState.lastFinalResponseText || "", /Validação:/i);
+  assert.doesNotMatch(
+    projectState.lastFinalResponseText || "",
+    /O que sobra depois:/i
+  );
 });
 
 test("pty manager can suppress sdk streaming and send only the final response text", async () => {

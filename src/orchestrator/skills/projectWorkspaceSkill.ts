@@ -27,7 +27,9 @@ interface WorkspaceSkillResult {
 interface WorkspaceResolver {
   listProjects(): WorkspaceProjectEntry[];
   getRecentProjects(chatId: string | number): WorkspaceProjectHistoryEntry[];
-  getCurrentProject(chatId: string | number): WorkspaceProjectHistoryEntry | null;
+  getCurrentProject(
+    chatId: string | number
+  ): WorkspaceProjectHistoryEntry | null;
 }
 
 interface ExecuteInput {
@@ -77,7 +79,10 @@ function extractProjectQuery(normalizedText: string): string | null {
     )
     .replace(/\b(agora|para|pro|pra|to|the|now|please)\b/g, " ")
     .replace(/\b(o|a|os|as|do|da|dos|das)\b/g, " ")
-    .replace(/\b(projeto|projetos|repo|repositorio|repositorios|repository|repositories)\b/g, " ")
+    .replace(
+      /\b(projeto|projetos|repo|repositorio|repositorios|repository|repositories)\b/g,
+      " "
+    )
     .replace(/\s+/g, " ")
     .trim();
 
@@ -173,7 +178,9 @@ function scoreProjectMatch(
     normalizeWorkspaceQuery(project.name),
     normalizeWorkspaceQuery(project.relativePath)
   ];
-  const collapsedCandidates = candidateValues.map((value) => collapseValue(value));
+  const collapsedCandidates = candidateValues.map((value) =>
+    collapseValue(value)
+  );
 
   let score = 0;
 
@@ -228,12 +235,15 @@ function formatProjectLines(
   currentRelativePath: string | null
 ): string[] {
   return projects.map((project) => {
-    const marker = project.relativePath === currentRelativePath ? " _(atual)_" : "";
+    const marker =
+      project.relativePath === currentRelativePath ? " _(atual)_" : "";
     return `- \`${project.relativePath}\`${marker}`;
   });
 }
 
-function buildSwitchResult(project: WorkspaceProjectEntry): WorkspaceSkillResult {
+function buildSwitchResult(
+  project: WorkspaceProjectEntry
+): WorkspaceSkillResult {
   return {
     parseMode: "markdown",
     text: [
@@ -246,7 +256,9 @@ function buildSwitchResult(project: WorkspaceProjectEntry): WorkspaceSkillResult
   };
 }
 
-function buildLocateResult(project: WorkspaceProjectEntry): WorkspaceSkillResult {
+function buildLocateResult(
+  project: WorkspaceProjectEntry
+): WorkspaceSkillResult {
   return {
     parseMode: "markdown",
     text: [
@@ -270,7 +282,10 @@ export class ProjectWorkspaceSkill {
     return Boolean(resolution.family) && resolution.confidence !== "low";
   }
 
-  async execute({ text, chatId = "" }: ExecuteInput): Promise<WorkspaceSkillResult> {
+  async execute({
+    text,
+    chatId = ""
+  }: ExecuteInput): Promise<WorkspaceSkillResult> {
     const resolution = resolveWorkspaceIntent(text);
     const currentProject = this.workspace.getCurrentProject(chatId);
 
@@ -307,7 +322,10 @@ export class ProjectWorkspaceSkill {
         text: [
           "*Projetos recentes*",
           "",
-          ...formatProjectLines(recentProjects, currentProject?.relativePath || null)
+          ...formatProjectLines(
+            recentProjects,
+            currentProject?.relativePath || null
+          )
         ].join("\n")
       };
     }
@@ -357,7 +375,10 @@ export class ProjectWorkspaceSkill {
         text: [
           "*Encontrei mais de um projeto possivel*",
           "",
-          ...formatProjectLines(matches.slice(0, 5), currentProject?.relativePath || null),
+          ...formatProjectLines(
+            matches.slice(0, 5),
+            currentProject?.relativePath || null
+          ),
           "",
           "Me diga qual deles voce quer usar."
         ].join("\n")

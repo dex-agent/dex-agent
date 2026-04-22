@@ -169,6 +169,8 @@ Telegram text/audio/image
   -> Telegram sendMessage/editMessageText
 ```
 
+Finalized responses can also surface a compact follow-up block with explicit quick actions: `run next step`, `request review`, `open inbox`, plus optional audio summary buttons when TTS is enabled.
+
 Core modules:
 
 - `src/index.ts`: bootstrap and lifecycle
@@ -181,6 +183,35 @@ Core modules:
 Enterprise target architecture: [docs/enterprise-architecture.md](docs/enterprise-architecture.md)
 Enterprise Phase 1 roadmap: [docs/phase-1-roadmap.md](docs/phase-1-roadmap.md)
 Project memory system v1: [docs/memory-system/README.md](docs/memory-system/README.md)
+
+## Recovery And Governance
+
+If you are using this repository as the dedicated workspace of the bot, the canonical recovery path is:
+
+1. open [INDEX.md](INDEX.md)
+2. follow the surfaced pointer into `.agents/PROJECT.md`, `.agents/ACTIVE.md`, `.agents/HANDOFF.md`, or `.codex/napkin.md`
+3. only then open deeper docs, sprint notes, skills, or archives
+
+Current operational rules:
+
+- the local autostart validated on this machine is the Windows Startup folder, not Task Scheduler
+- `/project` now reads `INDEX.md`, `.agents/PROJECT.md`, and `.agents/HANDOFF.md -> Current block status` as primary recovery surfaces instead of relying only on `ACTIVE/HANDOFF`
+- `.agents/HANDOFF.md -> Current block status` is the canonical place to answer what just closed, how much is complete, what comes next, which specialists are suggested for the live session, and how to fall back if review or replanning is needed
+- `skills/README.md` is the authoritative inventory for local skills versus mirrored global skills
+
+Governance principle:
+
+- every action or event should point to a method
+- every method should be guided by a contract
+- if a recurring flow still has no clear method or no explicit contract, it should not be treated as a stable standard yet
+- each working phase should have a named specialist assisting by default:
+  - `pensamento` -> `questionador`
+  - `planejamento` -> `sprinter`
+  - `construir` -> `mapeador-implementacao`
+  - `revisar` -> `revisor-codigo` (`Renata Review`)
+  - `testar` -> `tio-testador`
+  - `veredito` -> `validador-pronto` (`Vera Veredito`)
+- when a phase uses its specialist, the close-out should explicitly credit the collaboration of that specialist
 
 ## Deterministic Control Plane
 
@@ -218,6 +249,23 @@ What changes in practice:
 - `/inbox` remains the review surface for candidates and proposals
 - `/memory` remains the technical inspection surface
 - `/project` now exposes a `Reuso Rapido` block with recent promoted skills and pending skill candidates
+- finalized runtime closeouts, verdict wrappers, meeting wrappers, and phase-labelled narration are now filtered before they can become `skill_candidate`
+
+## Skill Governance
+
+`skills/README.md` is the authoritative inventory for how this repository classifies reusable skills.
+
+Current rule of the repo:
+
+- `dex-agent-audio-summary` is the canonical global skill for summary and explanatory audio via `Dex Agent`; the reusable home lives in the machine-wide vault and this repo keeps a faithful mirror under `skills/`
+- `refinador-intencao` is a local product skill for weak or ambiguous captures before deciding between durable memory, local skill, global skill, or live state only
+- `promocao-memoria-para-skill` is a faithful mirror of the canonical global skill and must stay aligned with the machine-wide vault contract
+- when the local-vs-global decision is obvious and strong, the agent should update the canonical home plus the repo mirror directly and only report what changed; user consultation becomes the exception for materially ambiguous cases
+
+Practical consequence:
+
+- if a repo-specific workflow diverges from the canonical audio-skill contract, give it a new local name instead of changing the mirrored global skill in place
+- when a capture is still vague, refine it first through `refinador-intencao` instead of forcing `/remember` or a premature skill promotion
 
 ## Commands
 
@@ -226,7 +274,7 @@ General:
 - `/start` - bootstrap message
 - `/menu` - deterministic dashboard with clickable shortcuts
 - `/help` - command summary
-- `/status` - show current chat status, active runner mode, workdir, model override, MCP servers, and the internal superpowers workflow phase
+- `/status` - show current chat status, active runner mode, workdir, model override, MCP servers, the internal superpowers workflow phase, and the derived operational posture (`working`, `queued`, `awaiting closeout`, `prolonged silence`, etc.)
 - `/pwd` - show the current project directory for this chat
 - `/repo` - list switchable git projects under `WORKSPACE_ROOT`
 - `/repo <name>` - switch the current chat to another project
@@ -235,10 +283,10 @@ General:
 - `/repo recent` - show recent projects for the current chat
 - `/repo -` - switch back to the previous project
 - `/project` - show the current project card with deterministic action buttons
-- `/project [default|executive|next|sources|steps|commands|prompts|queue]` - open a specific project card variant; the default card now includes `Reuso Rapido`
+- `/project [default|executive|next|sources|steps|commands|prompts|queue]` - open a specific project card variant; the card now reads `INDEX`, `PROJECT`, and `Current block status`, and exposes direct buttons for `INDEX`, `PROJECT`, `ACTIVE`, and `HANDOFF`
 - `/inbox` - show the durable memory inbox for the current project, including `skill_candidate`
 - `/inbox [candidates|proposals|promote|discard|why|confirm|cancel|help]` - review and promote durable memory or reusable-skill candidates
-- `/memory` - inspect project memory usage, operational memory state, and why something stayed memory vs reusable skill
+- `/memory` - inspect project memory usage, operational memory state, and the surfaced files `INDEX`, `PROJECT`, `ACTIVE`, `HANDOFF`, `napkin`, or `ledger`
 - `/memory [show|help|candidates|promote|discard|why|remember <text>]` - technical memory surface backed by the same inbox
 - `/new` - clear the saved Codex conversation for the current project and start fresh on the next message
 - `/exec <task>` - force a one-off Codex run without saving project context
@@ -294,7 +342,7 @@ Telegram adaptation notes:
 - `/new` is implemented by the bot and resets the current chat session
 - `/new` only clears the current project's saved Codex conversation slot
 - `/status` is implemented by the bot and reports local runtime state
-- `/status` also surfaces the internal `superpowers` workflow system and the last detected workflow phase for the current chat/project session
+- `/status` also surfaces the internal `superpowers` workflow system, the last detected workflow phase, and observability hints from the live operational continuation state so the bot can distinguish active work, queue, waiting, and prolonged silence more honestly
 - `/repo` is implemented by the bot and switches the per-chat working directory inside `WORKSPACE_ROOT`
 - `/skill` is implemented by the bot and keeps per-chat skill switches in runtime state
 - `/skill` only lists toggleable bot skills; `superpowers` is shown as an internal workflow, not a toggleable skill

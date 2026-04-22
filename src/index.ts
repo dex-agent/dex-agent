@@ -141,7 +141,9 @@ ptyManager = new PtyManager({
       promptText
     });
     if (captureResult.message) {
-      await bot.telegram.sendMessage(chatId, captureResult.message).catch(() => {});
+      await bot.telegram
+        .sendMessage(chatId, captureResult.message)
+        .catch(() => {});
     }
     await imageAttachmentManager.sendReferencedImages({
       chatId,

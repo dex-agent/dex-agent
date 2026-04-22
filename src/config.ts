@@ -150,10 +150,7 @@ function parseNumber(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function parseSizeInMb(
-  value: string | undefined,
-  fallbackMb: number
-): number {
+function parseSizeInMb(value: string | undefined, fallbackMb: number): number {
   const parsed = Number.parseFloat(value ?? "");
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return fallbackMb * 1024 * 1024;
@@ -345,12 +342,8 @@ export function loadConfig(): AppConfig {
     process.env.GITHUB_DEFAULT_WORKDIR,
     "GITHUB_DEFAULT_WORKDIR"
   );
-  const runnerApiKey = String(
-    process.env.CODEX_API_KEY || ""
-  ).trim();
-  const runnerBaseUrl = String(
-    process.env.CODEX_BASE_URL || ""
-  )
+  const runnerApiKey = String(process.env.CODEX_API_KEY || "").trim();
+  const runnerBaseUrl = String(process.env.CODEX_BASE_URL || "")
     .trim()
     .replace(/\/+$/, "");
   const audioTranscriptionApiKey = String(
@@ -462,10 +455,7 @@ export function loadConfig(): AppConfig {
       tts: {
         enabled: parseBoolean(process.env.TTS_ENABLED, false),
         provider: audioTtsProvider,
-        voice: parseText(
-          process.env.TTS_EDGE_VOICE,
-          "pt-BR-FranciscaNeural"
-        ),
+        voice: parseText(process.env.TTS_EDGE_VOICE, "pt-BR-FranciscaNeural"),
         rate: parseText(process.env.TTS_EDGE_RATE, "+0%"),
         pitch: parseText(process.env.TTS_EDGE_PITCH, "+0Hz"),
         pythonCommand: parseText(process.env.TTS_PYTHON_COMMAND, "python"),

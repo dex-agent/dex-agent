@@ -14,8 +14,13 @@ const HIDDEN_TELEGRAM_SECTION_HEADERS = [
   "Knowledge base source labels"
 ] as const;
 
-function stripNamedSections(raw = "", sectionHeaders: readonly string[]): string {
-  const lines = String(raw || "").replace(/\r/g, "").split("\n");
+function stripNamedSections(
+  raw = "",
+  sectionHeaders: readonly string[]
+): string {
+  const lines = String(raw || "")
+    .replace(/\r/g, "")
+    .split("\n");
   const output: string[] = [];
   let skipSection = false;
 

@@ -23,7 +23,10 @@ test("languageLabel resolves localized language names", () => {
 });
 
 test("t falls back through locale catalogs in the documented order", () => {
-  assert.equal(t("pt-BR", "usageLanguage"), "Uso: /language [pt-BR|en|zh|zh-HK]");
+  assert.equal(
+    t("pt-BR", "usageLanguage"),
+    "Uso: /language [pt-BR|en|zh|zh-HK]"
+  );
   assert.equal(t("zh-HK", "usagePlan"), "用法: /plan <task>");
   assert.deepEqual(t("zh-HK", "startLines"), [
     "Dex Agent 已就绪。",

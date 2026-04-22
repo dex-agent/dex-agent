@@ -253,7 +253,10 @@ test("loadConfig keeps Codex auth isolated from audio transcription credentials"
   assert.equal(config.runner.apiKey, "");
   assert.equal(config.runner.baseUrl, "");
   assert.equal(config.audio.transcription.apiKey, "sk-or-fallback");
-  assert.equal(config.audio.transcription.baseUrl, "https://openrouter.ai/api/v1");
+  assert.equal(
+    config.audio.transcription.baseUrl,
+    "https://openrouter.ai/api/v1"
+  );
 });
 
 test("loadConfig parses edge TTS settings separately from transcription", () => {

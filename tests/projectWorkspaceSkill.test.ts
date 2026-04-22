@@ -40,7 +40,10 @@ function createSkill() {
 test("project workspace skill recognizes standard project navigation intents", () => {
   const skill = createSkill();
 
-  assert.equal(skill.supports("Mude agora para o projeto Controle Pessoal."), true);
+  assert.equal(
+    skill.supports("Mude agora para o projeto Controle Pessoal."),
+    true
+  );
   assert.equal(
     skill.supports("Pesquise aonde fica o projeto controle pessoal."),
     true

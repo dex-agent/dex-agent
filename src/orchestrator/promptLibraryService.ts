@@ -25,7 +25,9 @@ interface AddProjectPromptInput {
 const MAX_CUSTOM_PROMPTS = 24;
 
 function normalizeWhitespace(value: string): string {
-  return String(value || "").replace(/\r/g, "").trim();
+  return String(value || "")
+    .replace(/\r/g, "")
+    .trim();
 }
 
 function promptsFilePath(workdir: string): string {

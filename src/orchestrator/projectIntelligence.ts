@@ -32,6 +32,18 @@ export interface ProjectCurrentStatus {
   publicEvidence: string | null;
 }
 
+export interface ProjectCurrentBlockStatus {
+  type: string | null;
+  name: string | null;
+  conclusion: string | null;
+  planPosition: string | null;
+  objectiveConcluded: string | null;
+  currentObjective: string | null;
+  nextStep: string | null;
+  fallbackPath: string | null;
+  evidence: string[];
+}
+
 export interface ProjectRenderHints {
   variant: ProjectStatusVariant;
   safeFallbackReason?: string;
@@ -44,6 +56,7 @@ export interface ProjectUnderstandingContract {
   canonicalSources: string[];
   memorySources: string[];
   currentStatus: ProjectCurrentStatus;
+  currentBlockStatus: ProjectCurrentBlockStatus | null;
   progressSummary: string[];
   nextStepSummary: string[];
   nextQueue: string[];
@@ -62,6 +75,8 @@ export interface BuildProjectUnderstandingInput {
 }
 
 interface CanonicalFileSet {
+  indexPath: string;
+  projectPath: string;
   activePath: string;
   handoffPath: string;
   memoryPath: string;
@@ -70,6 +85,7 @@ interface CanonicalFileSet {
 
 interface MemoriaVivaProfileData {
   currentStatus: ProjectCurrentStatus;
+  currentBlockStatus: ProjectCurrentBlockStatus | null;
   progressSummary: string[];
   nextStepSummary: string[];
   nextQueue: string[];
@@ -123,16 +139,73 @@ function normalizeAscii(value: string): string {
     .toLowerCase();
 }
 
-function extractBulletValue(lines: string[], prefix: string): string | null {
-  const normalizedPrefix = normalizeAscii(prefix.trim());
+function extractBulletValue(
+  lines: string[],
+  prefix: string | string[]
+): string | null {
+  const prefixes = Array.isArray(prefix) ? prefix : [prefix];
+  const normalizedPrefixes = prefixes.map((item) => ({
+    raw: item,
+    normalized: normalizeAscii(item.trim())
+  }));
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed.startsWith("- ")) continue;
     const body = trimmed.slice(2).trim();
-    if (!normalizeAscii(body).startsWith(normalizedPrefix)) continue;
-    return body.slice(prefix.length).trim().replace(/\.$/, "") || null;
+    const bodyProbe = normalizeAscii(body);
+    const matched = normalizedPrefixes.find((item) =>
+      bodyProbe.startsWith(item.normalized)
+    );
+    if (!matched) continue;
+    return body.slice(matched.raw.length).trim().replace(/\.$/, "") || null;
   }
   return null;
+}
+
+function extractSectionFallbackValue(lines: string[]): string | null {
+  const compact = compactSectionLines(lines)
+    .map((line) => line.replace(/^- /, "").trim())
+    .filter(Boolean);
+  return compact[0] || null;
+}
+
+function extractFirstUsefulLine(lines: string[]): string | null {
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const withoutBullet = trimmed.replace(/^- /, "").trim();
+    if (!withoutBullet) continue;
+    return withoutBullet.replace(/\.$/, "") || null;
+  }
+  return null;
+}
+
+function extractNestedBulletValues(lines: string[], prefix: string): string[] {
+  const normalizedPrefix = normalizeAscii(prefix.trim());
+  const evidenceIndex = lines.findIndex((line) => {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("- ")) return false;
+    return normalizeAscii(trimmed.slice(2).trim()).startsWith(normalizedPrefix);
+  });
+
+  if (evidenceIndex === -1) {
+    return [];
+  }
+
+  const values: string[] = [];
+  for (let index = evidenceIndex + 1; index < lines.length; index += 1) {
+    const trimmed = lines[index]?.trim() || "";
+    if (!trimmed.startsWith("- ")) {
+      continue;
+    }
+    const body = trimmed.slice(2).trim();
+    if (/^[a-z_]+:/i.test(body)) {
+      break;
+    }
+    values.push(body.replace(/\.$/, ""));
+  }
+
+  return values;
 }
 
 function extractBlocksFromLines(lines: string[]): string[] {
@@ -158,8 +231,14 @@ function extractLatestClosedBlock(
   activeContent: string,
   handoffContent: string
 ): string | null {
-  const activeObjective = extractSectionLines(activeContent, "Current objective");
-  const latestCompleted = extractSectionLines(handoffContent, "Latest completed");
+  const activeObjective = extractSectionLines(
+    activeContent,
+    "Current objective"
+  );
+  const latestCompleted = extractSectionLines(
+    handoffContent,
+    "Latest completed"
+  );
   const currentProof = extractSectionLines(activeContent, "Current proof");
   const blocks = [
     ...extractBlocksFromLines(activeObjective),
@@ -186,7 +265,10 @@ function extractNextEligibleBlock(markdown: string): string | null {
   return null;
 }
 
-function extractEvidenceLine(lines: string[], patterns: RegExp[]): string | null {
+function extractEvidenceLine(
+  lines: string[],
+  patterns: RegExp[]
+): string | null {
   for (const line of lines) {
     const trimmed = line.trim().replace(/^- /, "");
     if (patterns.some((pattern) => pattern.test(trimmed))) {
@@ -203,6 +285,52 @@ function extractProgressSnapshot(markdown: string): string[] {
     .slice(0, 4);
 }
 
+function extractProjectName(
+  workdir: string,
+  projectContent: string,
+  indexContent: string
+): string {
+  const fromProject = extractFirstUsefulLine(
+    extractSectionLines(projectContent, "Name")
+  );
+  if (fromProject) {
+    return fromProject;
+  }
+
+  const fromIndex = extractBulletValue(
+    extractSectionLines(indexContent, "Agora"),
+    "Projeto atual:"
+  );
+  if (fromIndex) {
+    return fromIndex;
+  }
+
+  return path.basename(workdir);
+}
+
+function extractCurrentBlockStatus(
+  handoffContent: string
+): ProjectCurrentBlockStatus | null {
+  const lines = compactSectionLines(
+    extractSectionLines(handoffContent, "Current block status")
+  );
+  if (!lines.length) {
+    return null;
+  }
+
+  return {
+    type: extractBulletValue(lines, "tipo:"),
+    name: extractBulletValue(lines, "nome:"),
+    conclusion: extractBulletValue(lines, "conclusao:"),
+    planPosition: extractBulletValue(lines, "posicao_no_plano:"),
+    objectiveConcluded: extractBulletValue(lines, "objetivo_concluido:"),
+    currentObjective: extractBulletValue(lines, "objetivo_atual:"),
+    nextStep: extractBulletValue(lines, "proximo_passo_indicado:"),
+    fallbackPath: extractBulletValue(lines, "retrocesso_padrao:"),
+    evidence: extractNestedBulletValues(lines, "evidencia:")
+  };
+}
+
 async function pathExists(targetPath: string): Promise<boolean> {
   try {
     await fs.access(targetPath);
@@ -214,6 +342,8 @@ async function pathExists(targetPath: string): Promise<boolean> {
 
 function buildCanonicalPaths(workdir: string): CanonicalFileSet {
   return {
+    indexPath: path.join(workdir, "INDEX.md"),
+    projectPath: path.join(workdir, ".agents", "PROJECT.md"),
     activePath: path.join(workdir, ".agents", "ACTIVE.md"),
     handoffPath: path.join(workdir, ".agents", "HANDOFF.md"),
     memoryPath: path.join(workdir, ".agents", "MEMORY.ndjson"),
@@ -231,7 +361,8 @@ async function pickLatestMemoryFiles(workdir: string): Promise<string[]> {
       entries
         .filter(
           (entry) =>
-            entry.isFile() && /^(SPRINT_|PLANO_|RUNBOOK_).+\.md$/i.test(entry.name)
+            entry.isFile() &&
+            /^(SPRINT_|PLANO_|RUNBOOK_).+\.md$/i.test(entry.name)
         )
         .map(async (entry) => {
           const absolutePath = path.join(memoryDir, entry.name);
@@ -256,15 +387,30 @@ async function readMemoriaVivaProfile(
   workdir: string
 ): Promise<MemoriaVivaProfileData | null> {
   const paths = buildCanonicalPaths(workdir);
+  const hasIndex = await pathExists(paths.indexPath);
+  const hasProject = await pathExists(paths.projectPath);
   const hasActive = await pathExists(paths.activePath);
   const hasHandoff = await pathExists(paths.handoffPath);
   const hasMemory = await pathExists(paths.memoryPath);
   const hasNapkin = await pathExists(paths.napkinPath);
 
-  if (!hasActive && !hasHandoff && !hasMemory && !hasNapkin) {
+  if (
+    !hasIndex &&
+    !hasProject &&
+    !hasActive &&
+    !hasHandoff &&
+    !hasMemory &&
+    !hasNapkin
+  ) {
     return null;
   }
 
+  const indexContent = hasIndex
+    ? await fs.readFile(paths.indexPath, "utf8")
+    : "";
+  const projectContent = hasProject
+    ? await fs.readFile(paths.projectPath, "utf8")
+    : "";
   const activeContent = hasActive
     ? await fs.readFile(paths.activePath, "utf8")
     : "";
@@ -272,7 +418,10 @@ async function readMemoriaVivaProfile(
     ? await fs.readFile(paths.handoffPath, "utf8")
     : "";
 
-  const currentObjective = extractSectionLines(activeContent, "Current objective");
+  const currentObjectiveLines = extractSectionLines(
+    activeContent,
+    "Current objective"
+  );
   const currentState = extractSectionLines(activeContent, "Current state");
   const currentProof = extractSectionLines(activeContent, "Current proof");
   const openLoops = compactSectionLines(
@@ -292,9 +441,20 @@ async function readMemoriaVivaProfile(
   const firstSteps = compactSectionLines(
     extractSectionLines(handoffContent, "First steps if resuming now")
   );
-  const progressSummary = extractProgressSnapshot(handoffContent);
+  const currentBlockStatus = extractCurrentBlockStatus(handoffContent);
+  const legacyProgressSummary = extractProgressSnapshot(handoffContent);
+  const progressSummary = [
+    ...(currentBlockStatus?.conclusion
+      ? [
+          `${currentBlockStatus.name || "Bloco atual"}: ${currentBlockStatus.conclusion}`
+        ]
+      : []),
+    ...legacyProgressSummary
+  ].slice(0, 4);
   const latestMemoryFiles = await pickLatestMemoryFiles(workdir);
   const canonicalSources = [
+    ...(hasIndex ? [paths.indexPath] : []),
+    ...(hasProject ? [paths.projectPath] : []),
     ...(hasActive ? [paths.activePath] : []),
     ...(hasHandoff ? [paths.handoffPath] : []),
     ...(hasMemory ? [paths.memoryPath] : []),
@@ -302,8 +462,11 @@ async function readMemoriaVivaProfile(
     ...latestMemoryFiles
   ];
   const missingSections = [
+    ...(hasIndex ? [] : ["INDEX.md"]),
+    ...(hasProject ? [] : ["PROJECT.md"]),
     ...(hasActive ? [] : ["ACTIVE.md"]),
     ...(hasHandoff ? [] : ["HANDOFF.md"]),
+    ...(currentBlockStatus || !hasHandoff ? [] : ["Current block status"]),
     ...(progressSummary.length ? [] : ["Progress snapshot"]),
     ...(suggestedCommands.length ? [] : ["Suggested commands"]),
     ...(nextQueue.length ? [] : ["Next queue"]),
@@ -312,22 +475,44 @@ async function readMemoriaVivaProfile(
       : ["Restart protocol now"])
   ];
 
-  const latestClosedBlock = extractLatestClosedBlock(activeContent, handoffContent);
+  const latestClosedBlock = extractLatestClosedBlock(
+    activeContent,
+    handoffContent
+  );
   const nextEligibleBlock =
+    currentBlockStatus?.nextStep ||
     extractNextEligibleBlock(activeContent) ||
-    extractNextEligibleBlock(handoffContent);
+    extractNextEligibleBlock(handoffContent) ||
+    extractBulletValue(
+      extractSectionLines(indexContent, "Agora"),
+      "Proximo passo indicado:"
+    );
   const executionFormal = nextEligibleBlock
-    ? `Nao encontrei abertura formal do bloco ${nextEligibleBlock}`
+    ? currentBlockStatus?.conclusion ||
+      `Nao encontrei abertura formal do bloco ${nextEligibleBlock}`
     : "Nao confirmado";
+  const currentObjective =
+    currentBlockStatus?.currentObjective ||
+    extractBulletValue(currentObjectiveLines, [
+      "Frente principal atual:",
+      "Frente ativa:",
+      "Objetivo atual:"
+    ]) ||
+    extractSectionFallbackValue(currentObjectiveLines) ||
+    extractBulletValue(
+      extractSectionLines(indexContent, "Agora"),
+      "Objetivo atual:"
+    );
+  const nextStepSummary = [
+    ...(currentBlockStatus?.nextStep ? [currentBlockStatus.nextStep] : []),
+    ...(firstSteps.length ? firstSteps : restartProtocol)
+  ].slice(0, 6);
 
   return {
     currentStatus: {
-      projectName: path.basename(workdir),
-      primaryFocus: extractBulletValue(
-        currentObjective,
-        "Frente principal atual:"
-      ),
-      latestClosedBlock,
+      projectName: extractProjectName(workdir, projectContent, indexContent),
+      primaryFocus: currentObjective,
+      latestClosedBlock: currentBlockStatus?.name || latestClosedBlock,
       nextEligibleBlock,
       executionFormal,
       liveEvidence: extractEvidenceLine(
@@ -349,8 +534,9 @@ async function readMemoriaVivaProfile(
         ]
       )
     },
+    currentBlockStatus,
     progressSummary,
-    nextStepSummary: (firstSteps.length ? firstSteps : restartProtocol).slice(0, 6),
+    nextStepSummary,
     nextQueue: nextQueue.slice(0, 8),
     suggestedCommands: suggestedCommands.slice(0, 8),
     openRisks: openLoops.slice(0, 5),
@@ -378,6 +564,7 @@ function createSafeFallbackContract(
       liveEvidence: null,
       publicEvidence: null
     },
+    currentBlockStatus: null,
     progressSummary: [],
     nextStepSummary: [],
     nextQueue: [],
@@ -441,6 +628,7 @@ export async function buildProjectUnderstanding({
     canonicalSources: profileData.canonicalSources,
     memorySources: memoryQuery.sources,
     currentStatus: profileData.currentStatus,
+    currentBlockStatus: profileData.currentBlockStatus,
     progressSummary: profileData.progressSummary,
     nextStepSummary: profileData.nextStepSummary,
     nextQueue: profileData.nextQueue,

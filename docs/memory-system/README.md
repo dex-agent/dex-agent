@@ -12,6 +12,51 @@ Objetivo do v1:
 
 O alvo nao e "aprender sozinho". O alvo e ser auditavel, rastreavel e confiavel.
 
+## Governanca operacional
+
+Regra estrutural deste sistema:
+
+- toda acao ou evento relevante deve apontar para um metodo
+- todo metodo recorrente deve apontar para um contrato
+- se ainda nao houver metodo claro, isso continua sendo observacao, tentativa ou caso isolado
+- se ainda nao houver contrato claro, o metodo nao deve ser tratado como padrao estavel
+
+Consequencia pratica:
+
+- memoria viva pode registrar sinais e observacoes
+- `napkin`, `HANDOFF`, skills e docs canonicas guardam apenas metodo e contrato quando eles ficarem claros
+- metodo padrao nao some sozinho; ele so muda por correcao, melhora forte ou autorizacao explicita
+- sugestao marcada como `sugestao` no meio de um fluxo nao disputa a prioridade atual; ela deve ser estacionada e reavaliada no fechamento do corte
+- pedido expresso para `tornar metodo padrao` passa a ser governanca global por definicao e so entra em vigor depois de revisao de ambiguidade, conflito, lacuna e informacao inconclusiva
+- ao comunicar uma fase ativa, o cabecalho deve mostrar a fase junto do agente responsavel por ela
+- quando houver colaboracao efetiva de especialistas numa etapa, o fechamento deve creditar essa colaboracao de forma breve e clara
+
+## Fases e especialistas auxiliares
+
+Quando o trabalho cair numa fase reconhecivel, o repo passa a tratar um especialista nomeado como apoio padrao dessa fase.
+
+Mapa padrao:
+
+- `pensamento` -> `questionador`
+- `planejamento` -> `sprinter`
+- `construir` -> `mapeador-implementacao`
+- `revisar` -> `revisor-codigo` (`Renata Review`)
+- `testar` -> `tio-testador`
+- `veredito` -> `validador-pronto` (`Vera Veredito`)
+
+Regras:
+
+- o especialista da fase auxilia o corte, a qualidade e a verificacao; ele nao substitui a execucao principal
+- se a fase mudar, o especialista auxiliar padrao tambem muda
+- quando a colaboracao do especialista entrar de fato no fluxo, a resposta de fechamento deve trazer credito explicito a esse agente especializado
+- o marcador de fase deve preferir o formato `Fase | agente-responsavel`
+- se a fase for trivial ou o especialista nao tiver contribuido materialmente, nao inventar colaboracao ficticia
+
+Formato minimo de credito:
+
+- `Creditos da fase:`
+- `- <nome do especialista>: <como ajudou de verdade>`
+
 ## Decisoes operacionais fortes
 
 Algumas decisoes viram pre-requisito para a confiabilidade da memoria porque afetam restart, retomada e recuperacao do estado.
@@ -50,25 +95,146 @@ Ele nao tenta resolver:
 
 ## Camadas
 
-O sistema agora tem tres camadas explicitas.
+O sistema agora precisa ser lido por dois eixos diferentes.
 
-### 1. Camada operacional
+O primeiro eixo e de recuperacao humana entre repositorios.
+O segundo eixo e de armazenamento operacional do runtime.
 
-Arquivos usados para estado vivo e retomada:
+Eles se complementam, mas nao sao a mesma coisa.
+
+### Eixo A - Camadas de recuperacao
+
+Estas sao as camadas que um humano ou outro agente deve usar para retomar contexto.
+
+#### 1. Camada de superficie
+
+Arquivo canonico:
+
+- `INDEX.md`
+
+Papel:
+
+- ser a primeira porta de entrada do repositorio
+- dizer onde estou, qual e o estado atual e por onde recomecar
+- expor entradas surfacadas com ponteiros para camadas mais profundas
+- reduzir dependencia de leitura cega de varios arquivos logo no primeiro passo
+
+Contrato minimo:
+
+- `updated_at` no topo
+- `surface_version`
+- mapa curto das camadas
+- entradas ativas com `entry_id`, `summary`, `status`, `updated_at` e ponteiros explicitos
+
+Regra:
+
+- o `INDEX.md` e o metodo padrao de localizacao
+- busca textual vira fallback, nao entrypoint principal
+
+#### 2. Camada de contexto de uso
+
+Arquivos canonicos:
+
+- `.agents/PROJECT.md`
+- `.agents/ACTIVE.md`
+- `.agents/HANDOFF.md`
+- `.codex/napkin.md`
+
+Papel:
+
+- `PROJECT.md`: identidade, escopo e restricoes estaveis
+- `ACTIVE.md`: objetivo atual, loops abertos, bloqueios e notas vivas
+- `HANDOFF.md`: protocolo de retomada e proximo bloco
+- `napkin.md`: runbook tatico do repositorio
+
+Regra:
+
+- esses arquivos continuam vivos
+- eles nao deixam de existir com a chegada do `INDEX.md`
+- eles saem da posicao de primeira porta obrigatoria e passam a ser camada 2
+
+Contrato canonico da camada 2:
+
+- `PROJECT.md` define identidade, escopo, referencias principais e restricoes estaveis
+- `ACTIVE.md` define objetivo atual, loops abertos, proximas acoes, blockers e notas vivas
+- `HANDOFF.md` define protocolo de retomada, fila seguinte, snapshot de progresso e o cartao canonico do bloco atual
+- `.codex/napkin.md` guarda apenas metodo recorrente, runbook curto e regra taticamente reutilizavel
+
+Regra de leitura:
+
+- abrir apenas o arquivo da camada 2 que o `INDEX.md` apontar
+- se a duvida for "onde estou e o que faco agora", priorizar `HANDOFF.md`
+- se a duvida for "qual e o objetivo e o que continua aberto", priorizar `ACTIVE.md`
+- se a duvida for "o que nunca devo esquecer sobre este repo", priorizar `.codex/napkin.md`
+- se a duvida for "qual e a identidade estavel do projeto", priorizar `PROJECT.md`
+
+Regra de manutencao:
+
+- camada 2 nao deve virar dump historico
+- quando uma explicacao ficar grande, tutorializada ou dependente de exemplo, ela deve descer para a camada 3
+- a camada 2 deve responder retomada, uso e decisao imediata sem obrigar leitura profunda
+
+#### Fechamento padrao de sprint ou bloco
+
+Quando um sprint ou bloco fechar, o metodo padrao passa a ser atualizar um cartao canonico em `HANDOFF.md` e refletir o mesmo quadro no fechamento ao usuario.
+
+Campos obrigatorios do cartao:
+
+- `tipo`: `sprint`, `bloco` ou equivalente
+- `nome`: identificador humano do corte fechado
+- `conclusao`: percentual concluido real
+- `posicao_no_plano`: ex. `2/3`; se o total nao estiver fechado, declarar isso explicitamente em vez de inventar
+- `objetivo_concluido`: o que acabou de ser entregue
+- `objetivo_atual`: o objetivo vivo do repo depois do fechamento
+- `proximo_passo_indicado`: qual e o proximo sprint ou bloco sugerido
+- `sugestao_especialistas_sessao`: um ou mais especialistas sugeridos para entrar na sessao viva atual, de acordo com o proximo corte
+- `retrocesso_padrao`: caminho padrao se for necessario rever, replanejar ou refazer
+- `evidencia`: arquivos, testes, metricas ou artefatos que sustentam o fechamento
+
+Regras:
+
+- esse cartao vive de forma canonica em `HANDOFF.md`
+- `ACTIVE.md` continua focado em objetivo vivo e loops abertos; ele pode referenciar o cartao, mas nao deve competir com ele
+- toda resposta final de fechamento deve trazer esse mesmo quadro de forma curta
+- metodo padrao nao deve desaparecer silenciosamente; para mudar, precisa de pedido ou aprovacao explicita
+
+#### 3. Camada profunda
+
+Exemplos:
+
+- `docs/`
+- `skills/`
+- `.agents/sprints/`
+- `.agents/archive/`
+- relatórios, artefatos e tutoriais mais densos
+
+Papel:
+
+- explicacao detalhada
+- tutorial passo a passo
+- notas de sprint
+- contratos de skill
+- historico mais profundo
+
+Regra:
+
+- so abrir quando a camada 1 e a camada 2 nao bastarem
+
+### Eixo B - Camadas de armazenamento operacional
+
+Estas sao as camadas que o runtime usa para capturar, revisar e persistir memoria.
+
+#### 1. Camada operacional
+
+Arquivos:
 
 - `.agents/ACTIVE.md`
 - `.agents/HANDOFF.md`
 - `.codex/napkin.md`
 
-Funcao de cada um:
+#### 2. Camada de inbox
 
-- `ACTIVE.md`: objetivo e estado atual
-- `HANDOFF.md`: retomada e proximo bloco
-- `napkin.md`: runbook tatico do repositorio
-
-### 2. Camada de inbox
-
-Arquivos usados para revisao persistente antes da promocao:
+Arquivos:
 
 - `.agents/INBOX/candidates.ndjson`
 - `.agents/INBOX/proposals.ndjson`
@@ -81,8 +247,10 @@ Regras:
 - a inbox e revisavel; ela nao substitui o ledger final
 - `MemoryCandidate.kind` pode ser memoria comum ou `skill_candidate`
 - `MemoryWriteProposal.destination` explicita se o destino final e `memory`, `project_skill` ou `global_skill`
+- resposta finalizada com cara de fechamento, veredito, reuniao, plano ou cabecalho de fase deve ser descartada antes da inbox; isso nao conta como `skill_candidate`
+- candidate que sobreviver a esse filtro pode seguir por este caminho: `refinador-intencao` quando ainda estiver ambiguo, `garimpeiro` quando houver ruido, `avaliador-memory-candidate` para revisao profunda, e `promocao-memoria-para-skill` quando a promocao ja estiver madura
 
-### 3. Camada duravel
+#### 3. Camada duravel
 
 Arquivo canonico:
 
@@ -94,6 +262,36 @@ Regras:
 - sem reescrita silenciosa
 - `supersedes` substitui memoria antiga sem apagar historico
 - entradas sem evidencia nao entram pelo fluxo normal de promocao
+
+## Localizacao e ids canonicos
+
+O sistema nao deve exigir uma copia fisica obrigatoria em todas as camadas para cada item.
+
+Regra de localizacao:
+
+- a navegacao primaria acontece por `INDEX.md`
+- cada entrada surfacada no `INDEX.md` recebe um `entry_id`
+- esse `entry_id` precisa ser nominal, curto, humano e estavel
+- `hash` e fallback tecnico, nao formato canonico de leitura humana
+- ids puramente numericos nao sao o formato preferido para este v1
+
+Exemplos de boa forma:
+
+- `resume.current-state`
+- `memory.layered-recall`
+- `audio.explicativo`
+
+Regra de presenca:
+
+- `entry_id` e obrigatorio na entrada surfacada do `INDEX.md`
+- ele so aparece na camada 2 ou na camada 3 quando houver artefato correspondente
+- se nao existir camada 2 ou 3 para aquele item, nao criar placeholder vazio
+
+Objetivo:
+
+- localizar rapido por ponteiro explicito
+- evitar cartorio de metadados
+- impedir drift por obrigacao de sincronizar arquivos vazios
 
 ## Arquitetura de codigo
 
@@ -115,6 +313,8 @@ Responsabilidades:
 - aplicar promocao confirmada
 - auto-promover skill quando o sinal for forte e claro
 - ler arquivos operacionais
+- usar `INDEX.md` e `.agents/PROJECT.md` como superficies operacionais de leitura rapida
+- preferir `.agents/HANDOFF.md -> Current block status` quando o objetivo for descobrir frente atual e proximo passo
 
 Principais tipos:
 
@@ -133,6 +333,7 @@ Responsabilidades:
 
 - classificar destino `memory | project_skill | global_skill`
 - detectar sinais explicitos e estruturais de repeticao forte
+- exigir sinal explicito de `metodo` e de `contrato` antes de permitir auto-promocao
 - gerar `SkillDraft`
 - criar `SKILL.md`, `README.md` e `PROMPT_AGENTE_CODEX_CONTEXTO.md` quando aplicavel
 - evitar duplicatas por identidade funcional
@@ -158,6 +359,8 @@ Principais metodos:
 
 Compoe o entendimento do projeto usando:
 
+- `INDEX.md` como camada 1
+- `.agents/PROJECT.md` como identidade estavel
 - camada operacional
 - ledger duravel
 - heuristica lexical leve para recall
@@ -168,6 +371,7 @@ Expõe:
 - `memorySources`
 - `memoryConfidence`
 - `usedOperationalState`
+- `currentBlockStatus`
 
 Tambem distingue:
 
@@ -182,9 +386,12 @@ O card de projeto agora mostra:
 
 - panorama do projeto
 - botoes operacionais
+- `Current block status` como cartao canonico de progresso quando existir
 - linha de memoria com:
   - `Inbox`
   - `Memoria`
+  - `INDEX`
+  - `PROJECT`
   - `ACTIVE`
   - `HANDOFF`
 
@@ -248,6 +455,7 @@ Importante:
 
 - `/memory` usa o mesmo backend da inbox
 - `/memory remember` cria candidate duravel na inbox
+- os atalhos de memoria no bot tambem podem abrir `INDEX`, `PROJECT`, `ACTIVE`, `HANDOFF`, `napkin` e `ledger`
 - `/inbox` e a UX principal de revisao
 - `/memory` e a UX principal de inspeção
 
@@ -383,6 +591,21 @@ Excecao controlada:
 - e o sinal for forte e claro
 - o sistema pode auto-promover para skill
 - mesmo assim, a promocao continua auditavel porque skill e ledger sao gravados em arquivo
+
+### Refinamento antes da promocao
+
+Quando a captura ainda estiver frouxa, curta demais ou ambigua:
+
+- nao force escrita direta em memoria duravel
+- nao force promocao de skill cedo demais
+- use `skills/refinador-intencao/SKILL.md` como trilho local para decidir entre `memory`, `project_skill`, `global_skill` ou apenas `estado vivo`
+
+Regra de classificacao do repo:
+
+- `skills/README.md` e o inventario autoritativo entre skill local e skill espelhada
+- `dex-agent-audio-summary` e skill global canonica com espelho fiel no repo
+- `refinador-intencao` e skill local do produto
+- `promocao-memoria-para-skill` e espelho fiel da skill global canonica
 
 ## Como usar no Telegram
 

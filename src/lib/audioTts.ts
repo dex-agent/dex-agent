@@ -12,6 +12,18 @@ export interface AudioTtsArtifact {
   cleanup(): Promise<void>;
 }
 
+export type AudioSummaryMode = "concise" | "detailed";
+
+export interface AudioVoiceDirectionPlan {
+  objective: "telegram_short_summary" | "telegram_detailed_summary";
+  voice: string;
+  tone: string;
+  rhythm: "medio";
+  density: "enxuta" | "detalhada";
+  maxChars: number;
+  maxUnits: number;
+}
+
 type AudioTtsConfig = AppConfig["audio"]["tts"];
 const AUDIO_NOISE_PATTERNS: RegExp[] = [
   /(\[error\]\s*)?in-process app-server event stream lagged; dropped \d+ events?/gi,
@@ -109,7 +121,15 @@ export function normalizeTextForSpeech(input: string): string {
   return normalized;
 }
 
-export function buildAudioSummary(input: string, maxChars: number): string {
+export function buildAudioSummary(
+  input: string,
+  maxChars: number,
+  {
+    maxUnits = 5
+  }: {
+    maxUnits?: number;
+  } = {}
+): string {
   const normalized = normalizeTextForSpeech(input);
   if (!normalized) {
     return "Nao encontrei conteudo suficiente para resumir em audio.";
@@ -125,7 +145,7 @@ export function buildAudioSummary(input: string, maxChars: number): string {
     }
 
     selected.push(unit);
-    if (selected.length >= 5 || candidate.length >= maxChars) {
+    if (selected.length >= maxUnits || candidate.length >= maxChars) {
       break;
     }
   }
@@ -137,6 +157,33 @@ export function buildAudioSummary(input: string, maxChars: number): string {
   return summary.length > maxChars
     ? `${summary.slice(0, Math.max(0, maxChars - 1)).trimEnd()}.`
     : summary;
+}
+
+export function buildAudioVoiceDirectionPlan(
+  config: AudioTtsConfig,
+  mode: AudioSummaryMode = "concise"
+): AudioVoiceDirectionPlan {
+  if (mode === "detailed") {
+    return {
+      objective: "telegram_detailed_summary",
+      voice: config.voice,
+      tone: "calmo e confiante",
+      rhythm: "medio",
+      density: "detalhada",
+      maxChars: Math.max(config.summaryMaxChars * 2, 1400),
+      maxUnits: 10
+    };
+  }
+
+  return {
+    objective: "telegram_short_summary",
+    voice: config.voice,
+    tone: "calmo e confiante",
+    rhythm: "medio",
+    density: "enxuta",
+    maxChars: config.summaryMaxChars,
+    maxUnits: 5
+  };
 }
 
 export class AudioTts {
@@ -151,11 +198,17 @@ export class AudioTts {
   }
 
   shouldOfferSummary(text: string): boolean {
-    return this.isEnabled() && normalizeTextForSpeech(text).length >= this.config.offerMinChars;
+    return (
+      this.isEnabled() &&
+      normalizeTextForSpeech(text).length >= this.config.offerMinChars
+    );
   }
 
-  summarize(text: string): string {
-    return buildAudioSummary(text, this.config.summaryMaxChars);
+  summarize(text: string, mode: AudioSummaryMode = "concise"): string {
+    const direction = buildAudioVoiceDirectionPlan(this.config, mode);
+    return buildAudioSummary(text, direction.maxChars, {
+      maxUnits: direction.maxUnits
+    });
   }
 
   async synthesize(text: string): Promise<AudioTtsArtifact> {
@@ -198,7 +251,10 @@ export class AudioTts {
     }
   }
 
-  private async runEdgeTts(inputPath: string, outputPath: string): Promise<void> {
+  private async runEdgeTts(
+    inputPath: string,
+    outputPath: string
+  ): Promise<void> {
     await new Promise<void>((resolve, reject) => {
       const args = [
         "-m",
@@ -237,7 +293,9 @@ export class AudioTts {
           return;
         }
 
-        const detail = [stderr.trim(), stdout.trim()].filter(Boolean).join("\n");
+        const detail = [stderr.trim(), stdout.trim()]
+          .filter(Boolean)
+          .join("\n");
         reject(
           new Error(
             detail
@@ -278,9 +336,7 @@ export class AudioTts {
         stderr += String(chunk || "");
       });
       child.once("error", (error) => {
-        reject(
-          new Error(`Failed to launch ffmpeg: ${toErrorMessage(error)}`)
-        );
+        reject(new Error(`Failed to launch ffmpeg: ${toErrorMessage(error)}`));
       });
       child.once("close", (code) => {
         if (code === 0) {
@@ -288,7 +344,9 @@ export class AudioTts {
           return;
         }
 
-        const detail = [stderr.trim(), stdout.trim()].filter(Boolean).join("\n");
+        const detail = [stderr.trim(), stdout.trim()]
+          .filter(Boolean)
+          .join("\n");
         reject(
           new Error(
             detail

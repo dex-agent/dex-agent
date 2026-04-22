@@ -1,5 +1,12 @@
 # [001] Handoff de Contexto - Dex Agent
 
+## Papel no sistema novo
+
+- camada: `camada 3 - contexto profundo`
+- status de superficie: `nao surfacar na camada 1`
+- quando abrir: use apenas quando a retomada precisar da historia da separacao entre `ConfiguracoesWindows` e o repo proprio `dex-agent`
+- regra: este arquivo nao compete com `INDEX.md`, `.agents/ACTIVE.md` ou `.agents/HANDOFF.md`; ele so explica a origem do arranjo atual
+
 ## Resumo executivo do estado atual
 
 O `Dex Agent` deixou de ser apenas um assunto dentro de `ConfiguracoesWindows` e passou a ter um pacote proprio de continuidade dentro do seu repositorio. O baseline atual do produto ja inclui controle deterministico do bot, memoria de projeto com inbox duravel, cards operacionais no Telegram, prompts frequentes por projeto, audio de resumo, fila estruturada e autostart local validado por Startup folder no Windows.

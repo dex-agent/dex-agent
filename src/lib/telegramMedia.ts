@@ -122,7 +122,9 @@ export async function downloadTelegramMediaToTemp({
   });
 
   if (fileResponse.statusCode < 200 || fileResponse.statusCode >= 300) {
-    throw new Error(`Telegram file download failed: HTTP ${fileResponse.statusCode}`);
+    throw new Error(
+      `Telegram file download failed: HTTP ${fileResponse.statusCode}`
+    );
   }
 
   const tempDir = path.join(os.tmpdir(), "dex-agent-telegram-media");

@@ -116,7 +116,12 @@ function createDependencies(
       resolveRequest(
         chatId: string | number,
         requestId: string
-      ): { chatId: string; text: string; workdir?: string; createdAt: number } | null;
+      ): {
+        chatId: string;
+        text: string;
+        workdir?: string;
+        createdAt: number;
+      } | null;
       offerForContext(
         ctx: TestContext,
         text: string,
@@ -472,9 +477,11 @@ test("menu command renders dashboard with inline buttons", async () => {
   await handler!(ctx);
 
   assert.match(ctx.replies[0].text, /Menu deterministico/i);
-  const inlineKeyboard = (ctx.replies[0].options?.reply_markup as {
-    inline_keyboard?: Array<Array<{ callback_data?: string }>>;
-  })?.inline_keyboard;
+  const inlineKeyboard = (
+    ctx.replies[0].options?.reply_markup as {
+      inline_keyboard?: Array<Array<{ callback_data?: string }>>;
+    }
+  )?.inline_keyboard;
   assert.equal(inlineKeyboard?.[0]?.[0]?.callback_data, "menu:project");
 });
 
@@ -555,16 +562,34 @@ test("continue-style free text prioritizes live operational state before canonic
   assert.ok(handler);
   await handler!(ctx);
 
-  assert.match(prompts[0] || "", /Operational continuation state for this chat/i);
-  assert.match(prompts[0] || "", /last live result: Estou no bloco da bateria viva do backend/i);
-  assert.match(prompts[0] || "", /Canonical memoria-viva fallback:/i);
+  assert.match(
+    prompts[0] || "",
+    /Operational continuation state for this chat/i
+  );
+  assert.match(
+    prompts[0] || "",
+    /live cut: continue a bateria de testes ao vivo/i
+  );
+  assert.doesNotMatch(prompts[0] || "", /last live result:/i);
+  assert.doesNotMatch(prompts[0] || "", /active session:/i);
+  assert.match(
+    prompts[0] || "",
+    /Durable memoria-viva fallback only if needed:/i
+  );
   assert.match(prompts[0] || "", /current objective: front-end/i);
+  assert.match(prompts[0] || "", /next eligible block: 777-788/i);
+  assert.match(prompts[0] || "", /tactical note: repo still says front-end/i);
+  assert.doesNotMatch(prompts[0] || "", /latest closed block:/i);
   assert.match(prompts[0] || "", /prefer the operational continuation state/i);
+  assert.match(
+    prompts[0] || "",
+    /Do not treat prior assistant narration as verified live state/i
+  );
 });
 
 test("operational status question returns runtime status instead of sending a prompt", async () => {
   const prompts: string[] = [];
-  const { bot } = createDependencies({
+  const deps = createDependencies({
     sendPrompt: async (_ctx: unknown, prompt: string) => {
       prompts.push(prompt);
       return {
@@ -582,15 +607,42 @@ test("operational status question returns runtime status instead of sending a pr
       }
     ]
   });
+  const { bot: operationalBot, ptyManager } = deps;
+  (ptyManager.getOperationalContinuationState as any) = () => ({
+    active: false,
+    activeMode: null,
+    workflowPhase: "none",
+    workdir: process.cwd(),
+    relativeWorkdir: ".",
+    pendingPromptText: null,
+    queuedItems: [
+      {
+        id: "queue-1",
+        index: 1,
+        text: "continue a bateria",
+        workdir: process.cwd(),
+        relativeWorkdir: "AgendadorConsultasOticas",
+        createdAt: new Date().toISOString()
+      }
+    ],
+    lastPromptText: "continue a bateria",
+    lastPromptAt: new Date().toISOString(),
+    lastFinalResponseText: null,
+    lastFinalizedAt: null
+  });
   const ctx = createContext("o que esta fazendo?");
-  const handler = bot.events.get("text");
+  const handler = operationalBot.events.get("text");
 
   assert.ok(handler);
   await handler!(ctx);
 
   assert.deepEqual(prompts, []);
   assert.match(ctx.replies[0]?.text || "", /Estado operacional atual/i);
-  assert.match(ctx.replies[0]?.text || "", /queued items: 1/i);
+  assert.match(ctx.replies[0]?.text || "", /queue: 1 pending/i);
+  assert.match(
+    ctx.replies[0]?.text || "",
+    /runtime posture: queued work pending/i
+  );
 });
 
 test("status command is localized to pt-BR and shows whether the bot is working", async () => {
@@ -616,6 +668,19 @@ test("status command is localized to pt-BR and shows whether the bot is working"
     workflowSystem: "superpowers",
     workflowPhase: "working"
   });
+  (ptyManager.getOperationalContinuationState as any) = () => ({
+    active: true,
+    activeMode: "sdk",
+    workflowPhase: "working",
+    workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
+    relativeWorkdir: "AgendadorConsultasOticas",
+    pendingPromptText: null,
+    queuedItems: [],
+    lastPromptText: "continue a bateria viva",
+    lastPromptAt: new Date(Date.now() - 30_000).toISOString(),
+    lastFinalResponseText: null,
+    lastFinalizedAt: null
+  });
   (ptyManager.getRecentProjects as any) = () => [
     {
       relativePath: "AgendadorConsultasOticas",
@@ -633,6 +698,123 @@ test("status command is localized to pt-BR and shows whether the bot is working"
   assert.match(ctx.replies[0]?.text || "", /ativo: sim/i);
   assert.match(ctx.replies[0]?.text || "", /modo ativo: sdk/i);
   assert.match(ctx.replies[0]?.text || "", /fase do workflow: working/i);
+  assert.match(
+    ctx.replies[0]?.text || "",
+    /postura operacional: trabalhando agora/i
+  );
+});
+
+test("status command surfaces queued work before silence heuristics", async () => {
+  const { bot, ptyManager } = createDependencies();
+  (ptyManager.getLanguage as any) = () => "pt-BR";
+  (ptyManager.getStatus as any) = () => ({
+    backend: "sdk",
+    active: false,
+    activeMode: null,
+    lastMode: "sdk",
+    lastExitCode: 0,
+    lastExitSignal: null,
+    projectSessionId: "session-1",
+    preferredModel: null,
+    language: "pt-BR",
+    verboseOutput: false,
+    ptySupported: null,
+    workdir: "C:/CodexProjetos/dex-agent",
+    relativeWorkdir: "dex-agent",
+    workspaceRoot: "C:/CodexProjetos",
+    command: "codex",
+    mcpServers: [],
+    workflowSystem: "superpowers",
+    workflowPhase: "none"
+  });
+  (ptyManager.getOperationalContinuationState as any) = () => ({
+    active: false,
+    activeMode: null,
+    workflowPhase: "none",
+    workdir: "C:/CodexProjetos/dex-agent",
+    relativeWorkdir: "dex-agent",
+    pendingPromptText: null,
+    queuedItems: [
+      {
+        id: "queue-1",
+        index: 1,
+        text: "continuar o proximo passo",
+        workdir: "C:/CodexProjetos/dex-agent",
+        relativeWorkdir: "dex-agent",
+        createdAt: new Date().toISOString()
+      }
+    ],
+    lastPromptText: "continuar o proximo passo",
+    lastPromptAt: new Date(Date.now() - 10 * 60_000).toISOString(),
+    lastFinalResponseText: "sprint anterior encerrado",
+    lastFinalizedAt: new Date(Date.now() - 8 * 60 * 60_000).toISOString()
+  });
+
+  const ctx = createContext("/status");
+  const handler = bot.commands.get("status");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.match(
+    ctx.replies[0]?.text || "",
+    /postura operacional: fila pendente/i
+  );
+  assert.match(ctx.replies[0]?.text || "", /fila viva: 1 pendente/i);
+  assert.match(
+    ctx.replies[0]?.text || "",
+    /proximo: continuar o proximo passo/i
+  );
+});
+
+test("status command flags prolonged silence when no work is pending", async () => {
+  const { bot, ptyManager } = createDependencies();
+  (ptyManager.getLanguage as any) = () => "pt-BR";
+  (ptyManager.getStatus as any) = () => ({
+    backend: "sdk",
+    active: false,
+    activeMode: null,
+    lastMode: "sdk",
+    lastExitCode: 0,
+    lastExitSignal: null,
+    projectSessionId: "session-1",
+    preferredModel: null,
+    language: "pt-BR",
+    verboseOutput: false,
+    ptySupported: null,
+    workdir: "C:/CodexProjetos/dex-agent",
+    relativeWorkdir: "dex-agent",
+    workspaceRoot: "C:/CodexProjetos",
+    command: "codex",
+    mcpServers: [],
+    workflowSystem: "superpowers",
+    workflowPhase: "none"
+  });
+  (ptyManager.getOperationalContinuationState as any) = () => ({
+    active: false,
+    activeMode: null,
+    workflowPhase: "none",
+    workdir: "C:/CodexProjetos/dex-agent",
+    relativeWorkdir: "dex-agent",
+    pendingPromptText: null,
+    queuedItems: [],
+    lastPromptText: "fechar o sprint anterior",
+    lastPromptAt: new Date(Date.now() - 9 * 60 * 60_000).toISOString(),
+    lastFinalResponseText: "sprint anterior encerrado",
+    lastFinalizedAt: new Date(Date.now() - 9 * 60 * 60_000).toISOString()
+  });
+
+  const ctx = createContext("/status");
+  const handler = bot.commands.get("status");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.match(
+    ctx.replies[0]?.text || "",
+    /postura operacional: silencio prolongado/i
+  );
+  assert.match(ctx.replies[0]?.text || "", /ultimo fechamento:/i);
 });
 
 test("interrupt shows queue state with actionable buttons when items remain pending", async () => {
@@ -654,18 +836,25 @@ test("interrupt shows queue state with actionable buttons when items remain pend
   await handler!(ctx);
 
   assert.equal(ctx.replies.length, 2);
-  assert.match(ctx.replies[0]?.text || "", /Interrupted the active Codex run|Interromp/i);
+  assert.match(
+    ctx.replies[0]?.text || "",
+    /Interrupted the active Codex run|Interromp/i
+  );
   assert.match(ctx.replies[1]?.text || "", /Estado atual da fila|queue state/i);
 
-  const inlineKeyboard = (ctx.replies[1]?.options?.reply_markup as {
-    inline_keyboard?: Array<Array<{ callback_data?: string }>>;
-  })?.inline_keyboard;
+  const inlineKeyboard = (
+    ctx.replies[1]?.options?.reply_markup as {
+      inline_keyboard?: Array<Array<{ callback_data?: string }>>;
+    }
+  )?.inline_keyboard;
 
   assert.equal(inlineKeyboard?.[0]?.[0]?.callback_data, "queue:run");
 });
 
 test("memory command lists pending candidates and can promote one", async () => {
-  const workdir = await fs.mkdtemp(path.join(os.tmpdir(), "dex-agent-memory-handler-"));
+  const workdir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "dex-agent-memory-handler-")
+  );
   const memoryService = new ProjectMemoryService();
   await memoryService.captureCandidate({
     workdir,
@@ -694,11 +883,16 @@ test("memory command lists pending candidates and can promote one", async () => 
 
   const promoteCtx = createContext("/memory promote 0");
   await memoryHandler!(promoteCtx);
-  assert.match(promoteCtx.replies.at(-1)?.text || "", /Memory Promotion Proposal/i);
+  assert.match(
+    promoteCtx.replies.at(-1)?.text || "",
+    /Proposal ready for review/i
+  );
 });
 
 test("menu callback inbox opens the inbox dashboard", async () => {
-  const workdir = await fs.mkdtemp(path.join(os.tmpdir(), "dex-agent-menu-inbox-"));
+  const workdir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "dex-agent-menu-inbox-")
+  );
   const memoryService = new ProjectMemoryService();
   await memoryService.captureCandidate({
     workdir,
@@ -738,13 +932,216 @@ test("memory help shows the memory system guide entrypoint", async () => {
   assert.ok(handler);
   await handler!(ctx);
 
-  assert.match(ctx.replies.at(-1)?.text || "", /Sistema de memoria do Dex Agent/i);
+  assert.match(
+    ctx.replies.at(-1)?.text || "",
+    /Sistema de memoria do Dex Agent/i
+  );
+  assert.match(ctx.replies.at(-1)?.text || "", /INDEX/i);
+  assert.match(ctx.replies.at(-1)?.text || "", /PROJECT/i);
   assert.match(ctx.replies.at(-1)?.text || "", /memory\\-system/i);
   assert.match(ctx.replies.at(-1)?.text || "", /README\\.md/i);
 });
 
+test("memory remember returns a proposal ready for review", async () => {
+  const workdir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "dex-agent-memory-remember-")
+  );
+  const memoryService = new ProjectMemoryService();
+  const { bot } = createDependencies({
+    workdir,
+    memoryService
+  });
+  const handler = bot.commands.get("memory");
+
+  assert.ok(handler);
+
+  const ctx = createContext(
+    "/memory remember rule: keep durable memory proposal-first"
+  );
+  await handler!(ctx);
+
+  const replyText = ctx.replies.at(-1)?.text || "";
+  assert.match(replyText, /Proposal ready for review/i);
+  const inlineKeyboard = (
+    ctx.replies.at(-1)?.options?.reply_markup as {
+      inline_keyboard?: Array<Array<{ callback_data?: string }>>;
+    }
+  )?.inline_keyboard;
+  assert.ok(
+    inlineKeyboard
+      ?.flat()
+      .some((button) => /inbox:confirm:/i.test(button.callback_data || ""))
+  );
+});
+
+test("remember command is a short alias for memory remember", async () => {
+  const workdir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "dex-agent-remember-alias-")
+  );
+  const memoryService = new ProjectMemoryService();
+  const { bot } = createDependencies({
+    workdir,
+    memoryService
+  });
+  const handler = bot.commands.get("remember");
+
+  assert.ok(handler);
+
+  const ctx = createContext(
+    "/remember decision: use proposal-first writes for durable memory"
+  );
+  await handler!(ctx);
+
+  const replyText = ctx.replies.at(-1)?.text || "";
+  assert.match(replyText, /Proposal ready for review/i);
+});
+
+test("remember command preserves explicit skill intent and opens a project skill proposal", async () => {
+  const workdir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "dex-agent-remember-skill-")
+  );
+  const memoryService = new ProjectMemoryService();
+  const { bot } = createDependencies({
+    workdir,
+    memoryService
+  });
+  const handler = bot.commands.get("remember");
+
+  assert.ok(handler);
+
+  const ctx = createContext(
+    "/remember isso tem que virar skill de projeto: Use este prompt de retomada em uma nova conversa: Projeto: Dex Agent"
+  );
+  await handler!(ctx);
+
+  const replyText = ctx.replies.at(-1)?.text || "";
+  assert.match(replyText, /Proposal ready for review/i);
+  assert.match(replyText, /Project skill/i);
+});
+
+test("weak remember capture returns a refinement guide instead of a dead end", async () => {
+  const workdir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "dex-agent-remember-refine-")
+  );
+  const memoryService = new ProjectMemoryService();
+  const { bot } = createDependencies({
+    workdir,
+    memoryService
+  });
+  const handler = bot.commands.get("remember");
+
+  assert.ok(handler);
+
+  const ctx = createContext("/remember ok");
+  await handler!(ctx);
+
+  const replyText = ctx.replies.at(-1)?.text || "";
+  assert.match(replyText, /still too weak to become a memory candidate/i);
+  assert.match(replyText, /refinador\\-intencao/i);
+  assert.match(
+    replyText,
+    /1\\\. destino: memoria \\| skill deste repo \\| skill global \\| estado vivo/i
+  );
+});
+
+test("refinar command exposes the guided refinement path explicitly", async () => {
+  const { bot } = createDependencies();
+  const handler = bot.commands.get("refinar");
+
+  assert.ok(handler);
+
+  const ctx = createContext("/refinar guarda isso");
+  await handler!(ctx);
+
+  const replyText = ctx.replies.at(-1)?.text || "";
+  assert.match(replyText, /refinador\\-intencao/i);
+  assert.match(
+    replyText,
+    /repo alvo: dex-agent raiz \\| repo filho \\| ainda nao sei/i
+  );
+});
+
+test("refinar command without payload shows usage and the refinement guide", async () => {
+  const { bot } = createDependencies();
+  const handler = bot.commands.get("refinar");
+
+  assert.ok(handler);
+
+  const ctx = createContext("/refinar");
+  await handler!(ctx);
+
+  const replyText = ctx.replies.at(-1)?.text || "";
+  assert.match(replyText, /Uso: \/refinar <texto\\?>/i);
+  assert.match(replyText, /still too weak to become a memory candidate/i);
+});
+
+test("explicit free-text remember shortcut creates a proposal instead of sending a Codex prompt", async () => {
+  const prompts: string[] = [];
+  const workdir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "dex-agent-remember-shortcut-")
+  );
+  const memoryService = new ProjectMemoryService();
+  const { bot } = createDependencies({
+    workdir,
+    memoryService,
+    sendPrompt: async (_ctx: unknown, prompt: string) => {
+      prompts.push(prompt);
+      return {
+        started: true,
+        mode: "sdk"
+      };
+    }
+  });
+  const handler = bot.events.get("text");
+
+  assert.ok(handler);
+
+  const ctx = createContext(
+    "guarda isso: rule: durable memory should stay proposal-first"
+  );
+  await handler!(ctx);
+
+  assert.deepEqual(prompts, []);
+  const replyText = ctx.replies.at(-1)?.text || "";
+  assert.match(replyText, /Proposal ready for review/i);
+});
+
+test("explicit free-text skill shortcut preserves the skill destination", async () => {
+  const prompts: string[] = [];
+  const workdir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "dex-agent-skill-shortcut-")
+  );
+  const memoryService = new ProjectMemoryService();
+  const { bot } = createDependencies({
+    workdir,
+    memoryService,
+    sendPrompt: async (_ctx: unknown, prompt: string) => {
+      prompts.push(prompt);
+      return {
+        started: true,
+        mode: "sdk"
+      };
+    }
+  });
+  const handler = bot.events.get("text");
+
+  assert.ok(handler);
+
+  const ctx = createContext(
+    "guarda isso como skill de projeto: Use este prompt de retomada em uma nova conversa: Projeto: Dex Agent"
+  );
+  await handler!(ctx);
+
+  assert.deepEqual(prompts, []);
+  const replyText = ctx.replies.at(-1)?.text || "";
+  assert.match(replyText, /Proposal ready for review/i);
+  assert.match(replyText, /Project skill/i);
+});
+
 test("memory callback confirm writes durable memory", async () => {
-  const workdir = await fs.mkdtemp(path.join(os.tmpdir(), "dex-agent-memory-callback-"));
+  const workdir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "dex-agent-memory-callback-")
+  );
   const memoryService = new ProjectMemoryService();
   await memoryService.captureCandidate({
     workdir,
@@ -782,7 +1179,9 @@ test("memory callback confirm writes durable memory", async () => {
 });
 
 test("inbox command lists persisted candidates and proposals", async () => {
-  const workdir = await fs.mkdtemp(path.join(os.tmpdir(), "dex-agent-inbox-handler-"));
+  const workdir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "dex-agent-inbox-handler-")
+  );
   const memoryService = new ProjectMemoryService();
   await memoryService.captureCandidate({
     workdir,
@@ -811,10 +1210,143 @@ test("inbox command lists persisted candidates and proposals", async () => {
   assert.match(overviewCtx.replies.at(-1)?.text || "", /Memory inbox/i);
   assert.match(overviewCtx.replies.at(-1)?.text || "", /candidates: 1/i);
   assert.match(overviewCtx.replies.at(-1)?.text || "", /proposals: 1/i);
+  assert.match(overviewCtx.replies.at(-1)?.text || "", /recent context: 0/i);
+  assert.match(overviewCtx.replies.at(-1)?.text || "", /durable memory: 1/i);
+  assert.match(overviewCtx.replies.at(-1)?.text || "", /skill candidates: 0/i);
 
   const proposalsCtx = createContext("/inbox proposals");
   await handler!(proposalsCtx);
   assert.match(proposalsCtx.replies.at(-1)?.text || "", /Inbox Proposals/i);
+});
+
+test("inbox overview hides absolute local paths and raw abs path targets", async () => {
+  const workdir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "dex-agent-inbox-path-noise-")
+  );
+  const memoryService = new ProjectMemoryService();
+  await memoryService.captureCandidate({
+    workdir,
+    text: "Procedimento: use [HANDOFF.md](/abs/path/C:/CodexProjetos/dex-agent/.agents/HANDOFF.md:24) e revise C:/CodexProjetos/dex-agent/src/orchestrator/memoryService.ts:569 antes de continuar.",
+    source: {
+      type: "operator",
+      detail: "test"
+    },
+    evidence: {
+      type: "operator",
+      value: "ui path noise"
+    }
+  });
+
+  const { bot } = createDependencies({
+    workdir,
+    memoryService
+  });
+  const handler = bot.commands.get("inbox");
+
+  assert.ok(handler);
+
+  const overviewCtx = createContext("/inbox");
+  await handler!(overviewCtx);
+
+  const text = overviewCtx.replies.at(-1)?.text || "";
+  assert.match(text, /HANDOFF\\\.md/i);
+  assert.doesNotMatch(text, /\/abs\/path\//i);
+  assert.doesNotMatch(text, /C:\/CodexProjetos\//i);
+  assert.doesNotMatch(text, /C:\\CodexProjetos\\/i);
+});
+
+test("inbox candidates and why keep manual-review items humanized without forcing skill stage", async () => {
+  const workdir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "dex-agent-inbox-humanized-")
+  );
+  const memoryService = new ProjectMemoryService();
+  await memoryService.captureCandidate({
+    workdir,
+    text: "Use este prompt de retomada em uma nova conversa: ```text Projeto: AgendadorConsultasOticas Quero retomar exatamente do estado vivo deste projeto.```",
+    promptText: "isso tem que virar skill de projeto",
+    source: {
+      type: "operator",
+      detail: "test"
+    },
+    evidence: {
+      type: "assistant",
+      value: "finalized:AgendadorConsultasOticas"
+    }
+  });
+
+  const { bot } = createDependencies({
+    workdir,
+    memoryService
+  });
+  const inboxHandler = bot.commands.get("inbox");
+  const callbackHandler = bot.events.get("callback_query");
+
+  assert.ok(inboxHandler);
+  assert.ok(callbackHandler);
+
+  const candidatesCtx = createContext("/inbox candidates");
+  await inboxHandler!(candidatesCtx);
+  assert.match(
+    candidatesCtx.replies.at(-1)?.text || "",
+    /Pending memory candidates/i
+  );
+  assert.match(
+    candidatesCtx.replies.at(-1)?.text || "",
+    /Project resumption prompt/i
+  );
+  assert.match(candidatesCtx.replies.at(-1)?.text || "", /Fact/i);
+  assert.doesNotMatch(
+    candidatesCtx.replies.at(-1)?.text || "",
+    /Skill candidate/i
+  );
+
+  const whyCtx = createContext("", 1, { text: undefined });
+  whyCtx.callbackQuery = {
+    data: "inbox:why:0"
+  };
+  await callbackHandler!(whyCtx);
+
+  const whyText = whyCtx.replies.at(-1)?.text || "";
+  assert.match(whyText, /Candidate details/i);
+  assert.match(whyText, /why review this/i);
+  assert.match(whyText, /stage: Durable memory/i);
+  assert.doesNotMatch(whyText, /why it matters/i);
+});
+
+test("inbox promote shows proposal copy with humanized destination", async () => {
+  const workdir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "dex-agent-proposal-humanized-")
+  );
+  const memoryService = new ProjectMemoryService();
+  await memoryService.captureCandidate({
+    workdir,
+    text: "Use este prompt de retomada em uma nova conversa: ```text Projeto: AgendadorConsultasOticas Quero retomar exatamente do estado vivo deste projeto.```",
+    promptText: "isso tem que virar skill de projeto",
+    source: {
+      type: "operator",
+      detail: "test"
+    },
+    evidence: {
+      type: "assistant",
+      value: "finalized:AgendadorConsultasOticas"
+    }
+  });
+
+  const { bot } = createDependencies({
+    workdir,
+    memoryService
+  });
+  const handler = bot.commands.get("inbox");
+
+  assert.ok(handler);
+
+  const promoteCtx = createContext("/inbox promote 0");
+  await handler!(promoteCtx);
+
+  const proposalText = promoteCtx.replies.at(-1)?.text || "";
+  assert.match(proposalText, /Proposal ready for review/i);
+  assert.match(proposalText, /Project skill/i);
+  assert.doesNotMatch(proposalText, /finalized_codex_response/i);
 });
 
 test("project command renders structured project status", async () => {
@@ -848,7 +1380,9 @@ test("project command accepts prompts variant explicitly", async () => {
 });
 
 test("free text prompt injects relevant skill context before sending to Codex", async () => {
-  const workdir = await fs.mkdtemp(path.join(os.tmpdir(), "dex-agent-skill-prompt-"));
+  const workdir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "dex-agent-skill-prompt-")
+  );
 
   const { bot, promptCalls } = createDependencies({
     workdir,
@@ -942,7 +1476,10 @@ test("repo command confirms when the project really changed", async () => {
   await handler!(ctx);
 
   assert.match(ctx.replies[0].text, /Project switched successfully/i);
-  assert.match(ctx.replies[0].text, /active project: AgendadorConsultasOticas/i);
+  assert.match(
+    ctx.replies[0].text,
+    /active project: AgendadorConsultasOticas/i
+  );
 });
 
 test("repo command lists clickable shortcuts for available projects", async () => {
@@ -996,9 +1533,11 @@ test("repo command lists clickable shortcuts for available projects", async () =
   assert.ok(handler);
   await handler!(ctx);
 
-  const inlineKeyboard = (ctx.replies[0].options?.reply_markup as {
-    inline_keyboard?: Array<Array<{ callback_data?: string }>>;
-  })?.inline_keyboard;
+  const inlineKeyboard = (
+    ctx.replies[0].options?.reply_markup as {
+      inline_keyboard?: Array<Array<{ callback_data?: string }>>;
+    }
+  )?.inline_keyboard;
   assert.equal(
     inlineKeyboard?.[0]?.[0]?.callback_data,
     "repo:switch:AgendadorConsultasOticas"
@@ -1050,7 +1589,10 @@ test("repo command says when the requested project is already active", async () 
   await handler!(ctx);
 
   assert.match(ctx.replies[0].text, /already active/i);
-  assert.match(ctx.replies[0].text, /active project: AgendadorConsultasOticas/i);
+  assert.match(
+    ctx.replies[0].text,
+    /active project: AgendadorConsultasOticas/i
+  );
 });
 
 test("project status callback routes the selected variant through the skill", async () => {
@@ -1112,7 +1654,10 @@ test("repo callback switches the project explicitly", async () => {
   assert.ok(handler);
   await handler!(ctx);
 
-  assert.match(ctx.replies.at(-1)?.text || "", /Project switched successfully/i);
+  assert.match(
+    ctx.replies.at(-1)?.text || "",
+    /Project switched successfully/i
+  );
 });
 
 test("project commands callback sends the selected preset to Codex", async () => {
@@ -1158,7 +1703,7 @@ test("project prompts callback sends the selected ready-made prompt to Codex", a
   assert.ok(handler);
   await handler!(ctx);
 
-  assert.match(prompts[0] || "", /panorama executivo honesto/i);
+  assert.match(prompts[0] || "", /2 blocos completos em sequencia/i);
   assert.ok(
     ctx.replies.some((reply) => reply.text.includes("Pedido enviado ao Codex"))
   );
@@ -1166,7 +1711,9 @@ test("project prompts callback sends the selected ready-made prompt to Codex", a
 
 test("prompts command can add, list, run, and remove custom prompts", async () => {
   const prompts: string[] = [];
-  const workdir = await fs.mkdtemp(path.join(os.tmpdir(), "dex-agent-prompts-handler-"));
+  const workdir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "dex-agent-prompts-handler-")
+  );
   const promptLibraryService = new PromptLibraryService();
   const { bot } = createDependencies({
     workdir,
@@ -1191,8 +1738,18 @@ test("prompts command can add, list, run, and remove custom prompts", async () =
 
   const listCtx = createContext("/prompts");
   await handler!(listCtx);
-  assert.match(listCtx.replies.at(-1)?.text || "", /Biblioteca de Prompts/i);
-  assert.match(listCtx.replies.at(-1)?.text || "", /Sprint implementacao/i);
+  const promptLibraryText = listCtx.replies
+    .map((reply) => reply.text || "")
+    .join("\n");
+  assert.match(promptLibraryText, /Biblioteca de Prompts/i);
+  assert.match(promptLibraryText, /Execucao/i);
+  assert.match(promptLibraryText, /Custom/i);
+  assert.match(promptLibraryText, /Sprint implementacao/i);
+  assert.match(promptLibraryText, /2 blocos seguidos/i);
+  assert.match(promptLibraryText, /tipo: Planejamento/i);
+  assert.doesNotMatch(promptLibraryText, /selector:/i);
+  assert.doesNotMatch(promptLibraryText, /source:/i);
+  assert.doesNotMatch(promptLibraryText, /intent:/i);
 
   const stored = await promptLibraryService.listPrompts(workdir);
   assert.equal(stored.length, 1);
@@ -1203,6 +1760,10 @@ test("prompts command can add, list, run, and remove custom prompts", async () =
     prompts[0] || "",
     /crie os sprint de planejamento de implementacao usando \$sprinter/i
   );
+
+  const runBuiltinByIndexCtx = createContext("/prompts run 1");
+  await handler!(runBuiltinByIndexCtx);
+  assert.match(prompts[1] || "", /2 blocos completos em sequencia/i);
 
   const removeCtx = createContext(`/prompts remove custom:${stored[0]!.id}`);
   await handler!(removeCtx);
@@ -1278,7 +1839,7 @@ test("final action plan callback sends a planning prompt from the finalized resu
   );
 });
 
-test("final action continue callback sends an approval prompt from the finalized result", async () => {
+test("final action execute callback sends an approval prompt from the finalized result", async () => {
   const prompts: string[] = [];
   const { bot } = createDependencies({
     sendPrompt: async (_ctx: unknown, prompt: string) => {
@@ -1305,17 +1866,113 @@ test("final action continue callback sends an approval prompt from the finalized
   });
   const ctx = createContext("", 1, { text: undefined });
   ctx.callbackQuery = {
-    data: "final_action:continue:req-1"
+    data: "final_action:execute:req-1"
   };
   const handler = bot.events.get("callback_query");
 
   assert.ok(handler);
   await handler!(ctx);
 
-  assert.match(prompts[0] || "", /Considere a conclusao abaixo como aprovada/i);
+  assert.match(
+    prompts[0] || "",
+    /approval for exactly one follow-up execution scoped to the finalized conclusion/i
+  );
+  assert.match(
+    prompts[0] || "",
+    /Do not reinterpret this click as blanket approval for unrelated work, a new meeting, or a full replan/i
+  );
+  assert.match(
+    prompts[0] || "",
+    /Execute only the next eligible block or next concrete implementation step/i
+  );
   assert.match(prompts[0] || "", /Implementacao aprovada e sprint encerrado/i);
   assert.ok(
     ctx.replies.some((reply) => reply.text.includes("Pedido enviado ao Codex"))
+  );
+});
+
+test("final action review callback sends a specialist review prompt from the finalized result", async () => {
+  const prompts: string[] = [];
+  const { bot } = createDependencies({
+    sendPrompt: async (_ctx: unknown, prompt: string) => {
+      prompts.push(prompt);
+      return {
+        started: true,
+        mode: "sdk"
+      };
+    },
+    audioSummaryManager: {
+      isEnabled: () => true,
+      createSummaryRequest: () => "req-1",
+      resolveRequest: () => ({
+        chatId: "1",
+        text: "Existe tensao de governanca entre candidate e skill real.",
+        workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
+        createdAt: Date.now()
+      }),
+      offerForContext: async () => false,
+      offerFinalActionsForChat: async () => false,
+      sendSummaryForChat: async () => false,
+      handleCallback: async () => false
+    }
+  });
+  const ctx = createContext("", 1, { text: undefined });
+  ctx.callbackQuery = {
+    data: "final_action:review:req-1"
+  };
+  const handler = bot.events.get("callback_query");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.match(prompts[0] || "", /Faca uma reuniao com especialistas/i);
+  assert.match(prompts[0] || "", /Existe tensao de governanca/i);
+});
+
+test("final action organize callback opens the inbox overview for the stored workdir", async () => {
+  const { bot } = createDependencies({
+    audioSummaryManager: {
+      isEnabled: () => true,
+      createSummaryRequest: () => "req-1",
+      resolveRequest: () => ({
+        chatId: "1",
+        text: "Implementacao aprovada e sprint encerrado.",
+        workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
+        createdAt: Date.now()
+      }),
+      offerForContext: async () => false,
+      offerFinalActionsForChat: async () => false,
+      sendSummaryForChat: async () => false,
+      handleCallback: async () => false
+    },
+    memoryService: {
+      buildMemoryPacket: async () => null,
+      renderMemoryPacket: (_packet: unknown, prompt: string) => prompt,
+      buildSourceDisclosure: () => "",
+      listCandidates: async () => [],
+      listProposals: async () => [],
+      proposePromotion: async () => null,
+      discardCandidate: async () => null,
+      explainCandidate: async () => null,
+      applyPromotion: async () => ({ ok: false, reason: "missing" }),
+      cancelProposal: async () => null,
+      readOperationalFile: async () => null,
+      captureCandidate: async () => null
+    } as any
+  });
+  const ctx = createContext("", 1, { text: undefined });
+  ctx.callbackQuery = {
+    data: "final_action:organize:req-1"
+  };
+  const handler = bot.events.get("callback_query");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.ok(
+    ctx.replies.some((reply) =>
+      /No pending memory candidates or proposals|Nenhum/i.test(reply.text || "")
+    )
   );
 });
 
@@ -1361,11 +2018,15 @@ test("queue command lists the current queue", async () => {
 
   assert.match(ctx.replies[0].text, /revisar email/i);
   assert.match(ctx.replies[0].text, /ControlePessoal/i);
-  // @ts-expect-error reply_markup is loosely typed in the test stub.
-  assert.deepEqual(ctx.replies[0].options?.reply_markup?.inline_keyboard?.[0]?.map((button: any) => button.text), [
-    "▶️ Rodar proximo",
-    "🔄 Atualizar"
-  ]);
+  const inlineKeyboard = (
+    ctx.replies[0].options?.reply_markup as {
+      inline_keyboard?: Array<Array<{ text?: string }>>;
+    }
+  )?.inline_keyboard;
+  assert.deepEqual(
+    inlineKeyboard?.[0]?.map((button) => button.text),
+    ["▶️ Rodar proximo", "🔄 Atualizar"]
+  );
 });
 
 test("queue run executes the next queued item", async () => {
@@ -1402,7 +2063,10 @@ test("queue callback run executes the next queued item", async () => {
 
   assert.equal(ctx.replies.length, 2);
   assert.match(ctx.replies[0].text, /Status refreshed/i);
-  assert.match(ctx.replies[1].text, /Queued item sent to Codex|Item da fila enviado ao Codex/i);
+  assert.match(
+    ctx.replies[1].text,
+    /Queued item sent to Codex|Item da fila enviado ao Codex/i
+  );
 });
 
 test("queue callback remove deletes an item and refreshes the queue", async () => {
@@ -1484,5 +2148,8 @@ test("image handler forwards images to Codex even without caption", async () => 
   assert.equal(Array.isArray(promptPayloads[0]), true);
   const payload = promptPayloads[0] as Array<{ type: string; text?: string }>;
   assert.equal(payload[0]?.type, "text");
-  assert.match(payload[0]?.text || "", /Analise esta imagem enviada no Telegram/i);
+  assert.match(
+    payload[0]?.text || "",
+    /Analise esta imagem enviada no Telegram/i
+  );
 });

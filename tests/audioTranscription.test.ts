@@ -84,7 +84,10 @@ test("AudioTranscriber downloads Telegram audio and returns the transcript", asy
     "https://api.telegram.org/file/bot123456:abcDEF/voice/file_123.ogg"
   );
   assert.equal(fetchCalls.length, 1);
-  assert.equal(fetchCalls[0].input, "https://api.openai.com/v1/audio/transcriptions");
+  assert.equal(
+    fetchCalls[0].input,
+    "https://api.openai.com/v1/audio/transcriptions"
+  );
   assert.equal(fetchCalls[0].method, "POST");
   assert.equal(fetchCalls[0].authorization, "Bearer sk-test");
   assert.equal(fetchCalls[0].bodyType, "FormData");

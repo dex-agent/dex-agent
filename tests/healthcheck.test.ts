@@ -142,7 +142,8 @@ test("runHealthcheck warns on legacy path drift in non-strict mode", async () =>
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "claws-health-"));
   const config = createConfig(root);
   config.runner.cwd = "C:/CodexProjetos/ConfiguracoesWindows/DexAgent";
-  config.github.defaultWorkdir = "C:/CodexProjetos/ConfiguracoesWindows/DexAgent";
+  config.github.defaultWorkdir =
+    "C:/CodexProjetos/ConfiguracoesWindows/DexAgent";
   config.app.stateFile =
     "C:/CodexProjetos/ConfiguracoesWindows/DexAgent/.codex-telegram-claws-state.json";
 
