@@ -1,7 +1,7 @@
 # Dex Agent Index
 
-Atualizado em: `2026-04-22T10:16:48-03:00`
-Surface version: `8`
+Atualizado em: `2026-04-22T10:57:00-03:00`
+Surface version: `9`
 Papel: `camada 1 - superficie canonica de retomada`
 
 ## Agora
@@ -9,9 +9,9 @@ Papel: `camada 1 - superficie canonica de retomada`
 - Projeto atual: `Dex Agent`
 - Objetivo atual: usar este workspace como projeto dedicado do bot, com continuidade propria e retomada sem depender da thread de `ConfiguracoesWindows`
 - Estado do runtime: bot validado nesta maquina; confirmar por `scripts/status-dex-agent.ps1` quando a retomada exigir prova viva
-- Bloco mais recente: `publicacao GitHub`
+- Bloco mais recente: `varredura final de docs marginais`
 - Status do bloco mais recente: `100% concluido`
-- Proximo passo indicado: `triagem de docs/audio-exemplos`
+- Proximo passo indicado: `operacao normal por demanda`
 
 ## Como usar este arquivo
 
@@ -171,6 +171,18 @@ Papel: `camada 1 - superficie canonica de retomada`
   - `.agents/sprints/2026-04-22-ux-telegram-acoes-finais-claras.md`
   - `.agents/sprints/2026-04-22-ux-telegram-poluicao-visual-residual.md`
   - `.agents/sprints/2026-04-22-ux-telegram-semantica-deterministica-dos-botoes.md`
+
+### `docs.publication-hygiene`
+
+- updated_at: `2026-04-22T10:57:00-03:00`
+- status: `concluido`
+- resumo: `docs/audio-exemplos/` ficou fora do baseline por `.gitignore`, o commit `a7b071a` foi publicado e a varredura final nao encontrou novo drift relevante nos docs rastreados
+- camada 2:
+  - `.agents/ACTIVE.md`
+  - `.agents/HANDOFF.md`
+- camada 3:
+  - `.agents/sprints/2026-04-22-publicacao-github-baseline.md`
+  - `.agents/sprints/2026-04-22-varredura-final-de-docs-marginais.md`
 
 ### `skills.governance`
 
