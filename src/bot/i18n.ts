@@ -196,6 +196,12 @@ const MESSAGES: Record<string, TranslationCatalog> = {
         `workdir: ${workdir}`
       ]),
     repoSwitchFailed: ({ error }) => `Project switch failed: ${error}`,
+    instanceRepoSwitchBlocked: ({ project }) =>
+      joinLines([
+        "This Dex Agent instance is fixed to one project.",
+        `fixed project: ${project}`,
+        "Repository switching is blocked in instance mode."
+      ]),
     skillList: ({ skillLines }) =>
       joinLines([
         "Skills:",
@@ -1216,6 +1222,12 @@ const MESSAGES: Record<string, TranslationCatalog> = {
 
 MESSAGES["pt-BR"] = {
   ...MESSAGES.en,
+  instanceRepoSwitchBlocked: ({ project }) =>
+    joinLines([
+      "Esta instancia do Dex Agent e fixa em um projeto.",
+      `projeto fixo: ${project}`,
+      "Troca de repositorio esta bloqueada no modo instance."
+    ]),
   startLines: () => [
     "Dex Agent pronto.",
     "Mensagens, áudios e tarefas de código vão para o Codex.",

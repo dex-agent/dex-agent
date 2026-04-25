@@ -15,25 +15,92 @@ function Get-DexAgentProcesses {
       $_.Name -in @("node.exe", "cmd.exe", "powershell.exe") -and
       $_.CommandLine -and
       $_.CommandLine -match $repoPattern -and
-      $_.CommandLine -match "src/index\\.ts"
+      $_.CommandLine -match 'src/index\.ts' -and
+      $_.CommandLine -notmatch '--dex-instance-id='
     }
 }
 
-function Resolve-DexAgentProcess {
-  $candidates = @(Get-DexAgentProcesses | Sort-Object CreationDate -Descending)
+function Get-DexAgentInstances {
+  $candidates = @(Get-DexAgentProcesses)
   if (-not $candidates.Count) {
+    return @()
+  }
+
+  $processById = @{}
+  foreach ($candidate in $candidates) {
+    $processById[[string]$candidate.ProcessId] = $candidate
+  }
+
+  $grouped = @{}
+  foreach ($candidate in $candidates) {
+    $root = $candidate
+    while ($processById.ContainsKey([string]$root.ParentProcessId)) {
+      $root = $processById[[string]$root.ParentProcessId]
+    }
+
+    $instanceId = [string]$root.ProcessId
+    if (-not $grouped.ContainsKey($instanceId)) {
+      $grouped[$instanceId] = [System.Collections.ArrayList]::new()
+    }
+
+    [void]$grouped[$instanceId].Add($candidate)
+  }
+
+  return $grouped.Keys |
+    ForEach-Object {
+      $instanceProcesses = @($grouped[$_]) | Sort-Object CreationDate -Descending
+      $rootProcess = $processById[$_]
+      $preferred = $instanceProcesses | Where-Object {
+        $_.Name -eq "node.exe" -and $_.CommandLine -match 'loader\.mjs'
+      } | Select-Object -First 1
+
+      if (-not $preferred) {
+        $preferred = $instanceProcesses | Select-Object -First 1
+      }
+
+      [pscustomobject]@{
+        InstanceId     = $_
+        RootProcess    = $rootProcess
+        Representative = $preferred
+        Processes      = $instanceProcesses
+        StartedAt      = $preferred.CreationDate
+      }
+    } |
+    Sort-Object StartedAt -Descending
+}
+
+function Resolve-DexAgentInstance {
+  $instances = @(Get-DexAgentInstances)
+  if (-not $instances.Count) {
     return $null
   }
 
-  $preferred = $candidates | Where-Object {
-    $_.Name -eq "node.exe" -and $_.CommandLine -match "loader\\.mjs"
-  } | Select-Object -First 1
+  return $instances | Select-Object -First 1
+}
 
-  if ($preferred) {
-    return $preferred
+function Stop-DexAgentProcesses {
+  $instances = @(Get-DexAgentInstances | Sort-Object StartedAt -Descending)
+  if (-not $instances.Count) {
+    return
   }
 
-  return $candidates | Select-Object -First 1
+  foreach ($instance in $instances) {
+    $rootPid = [string]$instance.RootProcess.ProcessId
+    & taskkill.exe /PID $rootPid /T /F *> $null
+    Stop-Process -Id $instance.RootProcess.ProcessId -Force -ErrorAction SilentlyContinue
+    foreach ($instanceProcess in @($instance.Processes)) {
+      Stop-Process -Id $instanceProcess.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+  }
+
+  for ($attempt = 0; $attempt -lt 20; $attempt += 1) {
+    if (-not @(Get-DexAgentInstances).Count) {
+      return
+    }
+    Start-Sleep -Milliseconds 250
+  }
+
+  throw "Nao consegui encerrar todas as instancias antigas do Dex Agent."
 }
 
 function Get-DotEnvValue {
@@ -82,9 +149,19 @@ if (Test-Path -LiteralPath $pidPath) {
   $existingPid = (Get-Content -LiteralPath $pidPath -Raw).Trim()
   if ($existingPid) {
     $existingProcess = Get-Process -Id $existingPid -ErrorAction SilentlyContinue
-    $matchedProcess = Resolve-DexAgentProcess
-    if ($existingProcess -and $matchedProcess -and $existingProcess.Id -eq $matchedProcess.ProcessId) {
-      Write-Output "Dex Agent ja esta em execucao. PID: $existingPid"
+    $matchedInstances = @(Get-DexAgentInstances)
+    $matchedInstance = Resolve-DexAgentInstance
+    if (
+      $matchedInstance -and
+      $matchedInstances.Count -eq 1 -and
+      (
+        ($existingProcess -and @($matchedInstance.Processes | Where-Object { $_.ProcessId -eq $existingProcess.Id }).Count -gt 0) -or
+        ($existingPid -eq [string]$matchedInstance.Representative.ProcessId)
+      )
+    ) {
+      $resolvedExistingPid = [string]$matchedInstance.Representative.ProcessId
+      Set-Content -LiteralPath $pidPath -Value $resolvedExistingPid
+      Write-Output "Dex Agent ja esta em execucao. PID: $resolvedExistingPid"
       Write-Output "Status: .\\scripts\\status-dex-agent.ps1"
       exit 0
     }
@@ -93,9 +170,11 @@ if (Test-Path -LiteralPath $pidPath) {
 
 Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue
 
-$staleProcesses = @(Get-DexAgentProcesses)
-foreach ($staleProcess in $staleProcesses) {
-  Stop-Process -Id $staleProcess.ProcessId -Force -ErrorAction SilentlyContinue
+$staleInstances = @(Get-DexAgentInstances)
+Write-Output "Instancias detectadas antes do cleanup: $($staleInstances.Count)"
+if ($staleInstances.Count) {
+  Write-Output "Limpando $($staleInstances.Count) instancia(s) antiga(s) do Dex Agent..."
+  Stop-DexAgentProcesses
 }
 
 $nodeCommand = Get-Command node -ErrorAction SilentlyContinue
@@ -133,9 +212,9 @@ for ($attempt = 0; $attempt -lt 20; $attempt += 1) {
     }
   }
 
-  $resolvedProcess = Resolve-DexAgentProcess
-  if ($resolvedProcess) {
-    $resolvedPid = $resolvedProcess.ProcessId
+  $resolvedInstance = Resolve-DexAgentInstance
+  if ($resolvedInstance) {
+    $resolvedPid = $resolvedInstance.Representative.ProcessId
     break
   }
 }

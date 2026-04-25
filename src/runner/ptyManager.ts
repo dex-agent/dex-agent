@@ -13,7 +13,7 @@ import {
 import pty from "node-pty";
 import throttle from "lodash.throttle";
 import stripAnsi from "strip-ansi";
-import type { AppConfig } from "../config.js";
+import type { AppConfig, CodexReasoningEffort } from "../config.js";
 import {
   escapeMarkdownV2,
   extractCodexExecResponse,
@@ -105,10 +105,17 @@ interface ProjectConversationState {
   lastFinalizedAt: string | null;
 }
 
+interface SpecialAutopilotState {
+  enabled: boolean;
+  remainingResponses: number;
+}
+
 interface ChatRuntimeState {
   preferredModel: string | null;
+  preferredReasoningEffort: CodexReasoningEffort | null;
   language: Locale;
   verboseOutput: boolean;
+  specialAutopilot: SpecialAutopilotState;
   currentWorkdir: string;
   recentWorkdirs: string[];
   ptySupported: boolean | null;
@@ -159,6 +166,7 @@ interface SendPromptOptions {
   fullAuto?: boolean;
   extraArgs?: string[];
   notice?: string;
+  queueLabel?: string;
   allowWorkspaceConflict?: boolean;
   silentOutput?: boolean;
   cleanupPaths?: string[];
@@ -245,8 +253,10 @@ interface StoredProjectConversationState {
 
 interface StoredChatRuntimeState {
   preferredModel?: unknown;
+  preferredReasoningEffort?: unknown;
   language?: unknown;
   verboseOutput?: unknown;
+  specialAutopilot?: unknown;
   currentWorkdir?: unknown;
   recentWorkdirs?: unknown;
   promptQueue?: unknown;
@@ -258,8 +268,10 @@ export interface PtyManagerSnapshot {
     string,
     {
       preferredModel: string | null;
+      preferredReasoningEffort: CodexReasoningEffort | null;
       language: Locale;
       verboseOutput: boolean;
+      specialAutopilot: SpecialAutopilotState;
       currentWorkdir: string;
       recentWorkdirs: string[];
       promptQueue?: StoredQueuedPromptRequest[];
@@ -290,8 +302,11 @@ export interface PtyManagerStatus {
   lastExitSignal: ExitSignal;
   projectSessionId: string | null;
   preferredModel: string | null;
+  preferredReasoningEffort: CodexReasoningEffort | null;
   language: Locale;
   verboseOutput: boolean;
+  specialAutopilotEnabled: boolean;
+  specialAutopilotRemainingResponses: number;
   ptySupported: boolean | null;
   workdir: string;
   relativeWorkdir: string;
@@ -351,7 +366,10 @@ export interface QueueMutationResult {
 
 interface PtyManagerOptions {
   bot: BotLike;
-  config: Pick<AppConfig, "runner" | "workspace" | "reasoning" | "mcp">;
+  config: Pick<
+    AppConfig,
+    "runner" | "workspace" | "reasoning" | "mcp" | "instance"
+  >;
   onChange?: (snapshot: PtyManagerSnapshot) => void;
   onResponseFinalized?: (payload: {
     chatId: string;
@@ -466,6 +484,9 @@ function clonePromptOptionsForQueue(
   }
   if (options.notice) {
     replayOptions.notice = options.notice;
+  }
+  if (options.queueLabel) {
+    replayOptions.queueLabel = options.queueLabel;
   }
   if (options.silentOutput) {
     replayOptions.silentOutput = true;
@@ -601,6 +622,27 @@ function isWorkflowPhase(value: unknown): value is WorkflowPhase {
   );
 }
 
+function isCodexReasoningEffort(value: unknown): value is CodexReasoningEffort {
+  return (
+    value === "minimal" ||
+    value === "low" ||
+    value === "medium" ||
+    value === "high" ||
+    value === "xhigh"
+  );
+}
+
+function appendReasoningEffortArg(
+  args: string[],
+  effort: CodexReasoningEffort | null | undefined
+): void {
+  if (!effort) {
+    return;
+  }
+
+  args.push("-c", `model_reasoning_effort=${effort}`);
+}
+
 function isAbortError(error: unknown): boolean {
   if (!error || typeof error !== "object") {
     return false;
@@ -726,7 +768,7 @@ export class PtyManager {
   readonly bot: BotLike;
   readonly config: Pick<
     AppConfig,
-    "runner" | "workspace" | "reasoning" | "mcp"
+    "runner" | "workspace" | "reasoning" | "mcp" | "instance"
   >;
   readonly sessions: Map<string, RunnerSession>;
   readonly chatState: Map<string, ChatRuntimeState>;
@@ -781,8 +823,13 @@ export class PtyManager {
 
     const state: ChatRuntimeState = {
       preferredModel: null,
+      preferredReasoningEffort: null,
       language: "pt-BR",
       verboseOutput: false,
+      specialAutopilot: {
+        enabled: false,
+        remainingResponses: 0
+      },
       currentWorkdir: this.config.runner.cwd,
       recentWorkdirs: [this.config.runner.cwd],
       ptySupported: null,
@@ -844,6 +891,7 @@ export class PtyManager {
     if (state.preferredModel) {
       args.push("-m", state.preferredModel);
     }
+    appendReasoningEffortArg(args, state.preferredReasoningEffort);
     return args;
   }
 
@@ -913,9 +961,8 @@ export class PtyManager {
     if (baseOptions.approvalPolicy) {
       threadOptions.approvalPolicy = baseOptions.approvalPolicy;
     }
-    if (baseOptions.modelReasoningEffort) {
-      threadOptions.modelReasoningEffort = baseOptions.modelReasoningEffort;
-    }
+    threadOptions.modelReasoningEffort =
+      state.preferredReasoningEffort || baseOptions.modelReasoningEffort;
     if (typeof baseOptions.networkAccessEnabled === "boolean") {
       threadOptions.networkAccessEnabled = baseOptions.networkAccessEnabled;
     }
@@ -1221,8 +1268,9 @@ export class PtyManager {
     item: QueuedPromptRequest,
     index: number
   ): PromptQueueItemSummary {
-    const text = this.stringifyPromptInput(
-      normalizeDeferredPromptInput(item.prompt)
+    const text = String(
+      item.options.queueLabel ||
+        this.stringifyPromptInput(normalizeDeferredPromptInput(item.prompt))
     )
       .replace(/\s+/g, " ")
       .trim();
@@ -1453,6 +1501,14 @@ export class PtyManager {
     targetName: string
   ): { workdir: string; relativePath: string } {
     const key = String(chatId);
+    if (this.config.instance?.contextMode === "instance") {
+      throw new Error(
+        t(this.getLanguage(key), "instanceRepoSwitchBlocked", {
+          project: this.config.instance.projectLabel
+        })
+      );
+    }
+
     const requested = String(targetName || "").trim();
     if (!requested) {
       throw new Error(t(this.getLanguage(key), "projectNameRequired"));
@@ -1502,6 +1558,14 @@ export class PtyManager {
     relativePath: string;
   } {
     const key = String(chatId);
+    if (this.config.instance?.contextMode === "instance") {
+      throw new Error(
+        t(this.getLanguage(key), "instanceRepoSwitchBlocked", {
+          project: this.config.instance.projectLabel
+        })
+      );
+    }
+
     const state = this.ensureChatState(key);
     const previous = (state.recentWorkdirs || []).find(
       (workdir) => workdir !== state.currentWorkdir
@@ -1529,6 +1593,7 @@ export class PtyManager {
     if (state.preferredModel) {
       args.push("-m", state.preferredModel);
     }
+    appendReasoningEffortArg(args, state.preferredReasoningEffort);
 
     if (Array.isArray(options.extraArgs) && options.extraArgs.length) {
       args.push(...options.extraArgs);
@@ -1547,7 +1612,11 @@ export class PtyManager {
     options: SessionOptions = {}
   ): string[] {
     const args = options.resumeSessionId
-      ? ["resume", options.resumeSessionId]
+      ? [
+          "resume",
+          ...this.getCommandArgsForSession(chatId),
+          options.resumeSessionId
+        ]
       : this.getCommandArgsForSession(chatId);
 
     if (options.resumeSessionId && options.initialPrompt) {
@@ -1728,6 +1797,11 @@ export class PtyManager {
         .catch(() => {});
     }
 
+    session.throttledFlush.cancel();
+    if (this.sessions.get(session.chatId) === session) {
+      this.sessions.delete(session.chatId);
+    }
+
     if (finalRendered && this.onResponseFinalized) {
       await this.onResponseFinalized({
         chatId: session.chatId,
@@ -1738,11 +1812,6 @@ export class PtyManager {
         exitCode,
         signal
       }).catch(() => {});
-    }
-
-    session.throttledFlush.cancel();
-    if (this.sessions.get(session.chatId) === session) {
-      this.sessions.delete(session.chatId);
     }
     if (session.cleanupPaths.length) {
       await Promise.all(
@@ -2599,8 +2668,16 @@ export class PtyManager {
 
       chats[chatId] = {
         preferredModel: state.preferredModel,
+        preferredReasoningEffort: state.preferredReasoningEffort,
         language: this.getLanguage(chatId),
         verboseOutput: Boolean(state.verboseOutput),
+        specialAutopilot: {
+          enabled: Boolean(state.specialAutopilot.enabled),
+          remainingResponses: Math.max(
+            0,
+            Number(state.specialAutopilot.remainingResponses) || 0
+          )
+        },
         currentWorkdir: this.serializeWorkdir(state.currentWorkdir),
         recentWorkdirs: (state.recentWorkdirs || []).map((workdir) =>
           this.serializeWorkdir(workdir)
@@ -2759,10 +2836,36 @@ export class PtyManager {
           rawState.preferredModel.trim()
             ? rawState.preferredModel.trim()
             : null,
+        preferredReasoningEffort: isCodexReasoningEffort(
+          rawState?.preferredReasoningEffort
+        )
+          ? rawState.preferredReasoningEffort
+          : null,
         language: toLocale(
           normalizeLanguage(String(rawState?.language || "")) || "pt-BR"
         ),
         verboseOutput: Boolean(rawState?.verboseOutput),
+        specialAutopilot:
+          rawState?.specialAutopilot &&
+          typeof rawState.specialAutopilot === "object"
+            ? {
+                enabled: Boolean(
+                  (rawState.specialAutopilot as Partial<SpecialAutopilotState>)
+                    .enabled
+                ),
+                remainingResponses: Math.max(
+                  0,
+                  Number(
+                    (
+                      rawState.specialAutopilot as Partial<SpecialAutopilotState>
+                    ).remainingResponses || 0
+                  )
+                )
+              }
+            : {
+                enabled: false,
+                remainingResponses: 0
+              },
         currentWorkdir,
         recentWorkdirs: [
           currentWorkdir,
@@ -2791,8 +2894,14 @@ export class PtyManager {
       lastExitSignal: projectState.lastExitSignal,
       projectSessionId: projectState.lastSessionId || null,
       preferredModel: state.preferredModel,
+      preferredReasoningEffort: state.preferredReasoningEffort,
       language: this.getLanguage(key),
       verboseOutput: Boolean(state.verboseOutput),
+      specialAutopilotEnabled: Boolean(state.specialAutopilot.enabled),
+      specialAutopilotRemainingResponses: Math.max(
+        0,
+        Number(state.specialAutopilot.remainingResponses) || 0
+      ),
       ptySupported:
         this.config.runner.backend === "sdk" ? null : state.ptySupported,
       workdir: this.getWorkdir(key),
@@ -2818,5 +2927,65 @@ export class PtyManager {
     const state = this.ensureChatState(chatId);
     state.preferredModel = null;
     this.onChange?.(this.exportState());
+  }
+
+  setPreferredReasoningEffort(
+    chatId: string | number,
+    effort: CodexReasoningEffort
+  ): CodexReasoningEffort {
+    const state = this.ensureChatState(chatId);
+    state.preferredReasoningEffort = effort;
+    this.onChange?.(this.exportState());
+    return state.preferredReasoningEffort;
+  }
+
+  clearPreferredReasoningEffort(chatId: string | number): void {
+    const state = this.ensureChatState(chatId);
+    state.preferredReasoningEffort = null;
+    this.onChange?.(this.exportState());
+  }
+
+  getSpecialAutopilotStatus(
+    chatId: string | number
+  ): Readonly<SpecialAutopilotState> {
+    const state = this.ensureChatState(chatId);
+    return {
+      enabled: Boolean(state.specialAutopilot.enabled),
+      remainingResponses: Math.max(
+        0,
+        Number(state.specialAutopilot.remainingResponses) || 0
+      )
+    };
+  }
+
+  setSpecialAutopilot(
+    chatId: string | number,
+    remainingResponses: number
+  ): Readonly<SpecialAutopilotState> {
+    const state = this.ensureChatState(chatId);
+    const normalizedRemaining = Math.max(0, Math.trunc(remainingResponses));
+    state.specialAutopilot = {
+      enabled: normalizedRemaining > 0,
+      remainingResponses: normalizedRemaining
+    };
+    this.onChange?.(this.exportState());
+    return this.getSpecialAutopilotStatus(chatId);
+  }
+
+  clearSpecialAutopilot(
+    chatId: string | number
+  ): Readonly<SpecialAutopilotState> {
+    return this.setSpecialAutopilot(chatId, 0);
+  }
+
+  consumeSpecialAutopilotStep(
+    chatId: string | number
+  ): Readonly<SpecialAutopilotState> {
+    const current = this.getSpecialAutopilotStatus(chatId);
+    if (!current.enabled || current.remainingResponses <= 0) {
+      return current;
+    }
+
+    return this.setSpecialAutopilot(chatId, current.remainingResponses - 1);
   }
 }

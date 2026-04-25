@@ -2,24 +2,16 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $runtimeDir = Join-Path $repoRoot ".runtime"
-$stdoutPath = Join-Path $runtimeDir "dex-agent.stdout.log"
-$stderrPath = Join-Path $runtimeDir "dex-agent.stderr.log"
-$tsxCliPath = Join-Path $repoRoot "node_modules\\tsx\\dist\\cli.mjs"
+$pidPath = Join-Path $runtimeDir "dex-agent.pid"
+$startScriptPath = Join-Path $PSScriptRoot "start-dex-agent.ps1"
 
-New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
-
-$nodeCommand = Get-Command node -ErrorAction Stop
-if (-not (Test-Path -LiteralPath $tsxCliPath)) {
-  throw "Nao encontrei o CLI do tsx em $tsxCliPath"
+if (-not (Test-Path -LiteralPath $startScriptPath)) {
+  throw "Nao encontrei o script de inicializacao em $startScriptPath"
 }
 
-Start-Process `
-  -FilePath $nodeCommand.Source `
-  -ArgumentList @(
-    $tsxCliPath,
-    "src/index.ts"
-  ) `
-  -WindowStyle Hidden `
-  -WorkingDirectory $repoRoot `
-  -RedirectStandardOutput $stdoutPath `
-  -RedirectStandardError $stderrPath | Out-Null
+# Remove the saved PID first so the canonical start flow actually cleans up the
+# previous instance instead of short-circuiting on the already-running check.
+Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue
+
+# Reuse the canonical start flow so restart inherits the same singleton cleanup.
+& $startScriptPath | Out-Null

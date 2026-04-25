@@ -38,6 +38,11 @@ function createConfig(root: string): AppConfig {
     workspace: {
       root
     },
+    instance: {
+      contextMode: "workspace",
+      id: "dex-agent",
+      projectLabel: path.basename(root)
+    },
     telegram: {
       botToken: "dummy-token",
       apiBase: "https://api.telegram.org",
@@ -134,6 +139,42 @@ test("runHealthcheck warns when the configured command is missing in non-strict 
   assert.equal(result.ok, true);
   assert.equal(
     result.checks.some((check) => check.status === "warn"),
+    true
+  );
+});
+
+test("runHealthcheck accepts fixed instance workdirs without canonical drift warnings", async () => {
+  const engineRoot = fs.mkdtempSync(path.join(os.tmpdir(), "claws-engine-"));
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "claws-instance-"));
+  const config = createConfig(projectRoot);
+  config.instance = {
+    contextMode: "instance",
+    id: "agendador-consultas-oticas",
+    projectLabel: "AgendadorConsultasOticas"
+  };
+  config.app.stateFile = path.join(
+    projectRoot,
+    "skills",
+    "dex-agent",
+    ".runtime",
+    "dex-agent-state.json"
+  );
+  fs.mkdirSync(path.dirname(config.app.stateFile), { recursive: true });
+
+  const result = await runHealthcheck(config, {
+    env: process.env,
+    canonicalRoot: engineRoot
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(
+    result.checks.some((check) => check.name.includes("canonical drift")),
+    false
+  );
+  assert.equal(
+    result.checks.some(
+      (check) => check.name === "instance mode" && check.status === "pass"
+    ),
     true
   );
 });

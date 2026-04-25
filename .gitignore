@@ -7,4 +7,5 @@ bot.log
 .runtime/
 .agents/
 .codex/
+.playwright-cli/
 docs/audio-exemplos/

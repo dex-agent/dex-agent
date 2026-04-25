@@ -11,7 +11,8 @@ function Get-DexAgentProcesses {
       $_.Name -in @("node.exe", "cmd.exe", "powershell.exe") -and
       $_.CommandLine -and
       $_.CommandLine -match $repoPattern -and
-      $_.CommandLine -match "src/index\\.ts"
+      $_.CommandLine -match "src/index\\.ts" -and
+      $_.CommandLine -notmatch "--dex-instance-id="
     }
 }
 

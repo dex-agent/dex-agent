@@ -29,6 +29,7 @@ export type CodexReasoningEffort =
   | "xhigh";
 export type CodexWebSearchMode = "disabled" | "cached" | "live";
 export type AudioTtsProvider = "edge";
+export type DexContextMode = "workspace" | "instance";
 export type CodexConfigValue =
   | string
   | number
@@ -74,6 +75,11 @@ export interface AppConfig {
   };
   workspace: {
     root: string;
+  };
+  instance: {
+    contextMode: DexContextMode;
+    id: string;
+    projectLabel: string;
   };
   telegram: {
     botToken: string;
@@ -268,6 +274,14 @@ function parseRunnerBackend(value: string | undefined): RunnerBackend {
     .toLowerCase() === "sdk"
     ? "sdk"
     : "cli";
+}
+
+function parseDexContextMode(value: string | undefined): DexContextMode {
+  return String(value || "")
+    .trim()
+    .toLowerCase() === "instance"
+    ? "instance"
+    : "workspace";
 }
 
 function normalizeEnvMap(raw: unknown): Record<string, string> {
@@ -470,6 +484,14 @@ export function loadConfig(): AppConfig {
     },
     workspace: {
       root: workspaceRoot
+    },
+    instance: {
+      contextMode: parseDexContextMode(process.env.DEX_CONTEXT_MODE),
+      id: parseText(process.env.DEX_INSTANCE_ID, "dex-agent"),
+      projectLabel: parseText(
+        process.env.DEX_INSTANCE_PROJECT_LABEL,
+        path.basename(runnerCwd)
+      )
     },
     telegram: {
       botToken: required("BOT_TOKEN"),

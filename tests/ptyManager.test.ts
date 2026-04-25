@@ -14,8 +14,12 @@ type CodexClientFactory = NonNullable<
 interface ManagerOverrides {
   runnerCwd?: string;
   workspaceRoot?: string;
+  instanceMode?: "workspace" | "instance";
   telegram?: TelegramStub;
   backend?: PtyManagerConstructorOptions["config"]["runner"]["backend"];
+  sdkThreadOptions?: Partial<
+    PtyManagerConstructorOptions["config"]["runner"]["sdkThreadOptions"]
+  >;
   codexClientFactory?: CodexClientFactory;
   onResponseFinalized?: PtyManagerConstructorOptions["onResponseFinalized"];
 }
@@ -62,11 +66,17 @@ function createManager(overrides: ManagerOverrides = {}) {
         sdkConfig: {},
         sdkThreadOptions: {
           skipGitRepoCheck: true,
-          additionalDirectories: []
+          additionalDirectories: [],
+          ...overrides.sdkThreadOptions
         }
       },
       workspace: {
         root: workspaceRoot
+      },
+      instance: {
+        contextMode: overrides.instanceMode || "workspace",
+        id: "dex-agent",
+        projectLabel: path.basename(runnerCwd)
       },
       reasoning: {
         mode: "spoiler"
@@ -182,6 +192,65 @@ test("pty manager stores model preference per chat", () => {
   assert.equal(manager.getStatus(123).preferredModel, null);
 });
 
+test("pty manager stores reasoning effort preference per chat", () => {
+  const manager = createManager();
+
+  manager.setPreferredReasoningEffort(123, "xhigh");
+  const status = manager.getStatus(123);
+
+  assert.equal(status.preferredReasoningEffort, "xhigh");
+
+  manager.clearPreferredReasoningEffort(123);
+  assert.equal(manager.getStatus(123).preferredReasoningEffort, null);
+});
+
+test("pty manager forwards reasoning effort to cli commands", () => {
+  const manager = createManager();
+
+  manager.setPreferredModel(123, "gpt-5.4");
+  manager.setPreferredReasoningEffort(123, "high");
+
+  assert.deepEqual(manager.getCommandArgsForSession(123), [
+    "-m",
+    "gpt-5.4",
+    "-c",
+    "model_reasoning_effort=high"
+  ]);
+  assert.deepEqual(manager.getExecArgs(123, "hello"), [
+    "exec",
+    "-m",
+    "gpt-5.4",
+    "-c",
+    "model_reasoning_effort=high",
+    "hello"
+  ]);
+  assert.deepEqual(
+    manager.getInteractiveArgs(123, { resumeSessionId: "sess-1" }),
+    ["resume", "-m", "gpt-5.4", "-c", "model_reasoning_effort=high", "sess-1"]
+  );
+});
+
+test("pty manager lets chat reasoning effort override sdk defaults", () => {
+  const manager = createManager({
+    backend: "sdk",
+    sdkThreadOptions: {
+      modelReasoningEffort: "low"
+    }
+  });
+
+  assert.equal(
+    manager.getSdkThreadOptions(55, process.cwd()).modelReasoningEffort,
+    "low"
+  );
+
+  manager.setPreferredReasoningEffort(55, "xhigh");
+
+  assert.equal(
+    manager.getSdkThreadOptions(55, process.cwd()).modelReasoningEffort,
+    "xhigh"
+  );
+});
+
 test("pty manager stores verbose preference per chat", () => {
   const manager = createManager();
 
@@ -189,6 +258,35 @@ test("pty manager stores verbose preference per chat", () => {
   manager.setVerbose(123, true);
   assert.equal(manager.isVerbose(123), true);
   assert.equal(manager.getStatus(123).verboseOutput, true);
+});
+
+test("pty manager stores the special autopilot state per chat", () => {
+  const manager = createManager();
+
+  assert.deepEqual(manager.getSpecialAutopilotStatus(123), {
+    enabled: false,
+    remainingResponses: 0
+  });
+
+  manager.setSpecialAutopilot(123, 5);
+  assert.deepEqual(manager.getSpecialAutopilotStatus(123), {
+    enabled: true,
+    remainingResponses: 5
+  });
+  assert.equal(manager.getStatus(123).specialAutopilotEnabled, true);
+  assert.equal(manager.getStatus(123).specialAutopilotRemainingResponses, 5);
+
+  manager.consumeSpecialAutopilotStep(123);
+  assert.deepEqual(manager.getSpecialAutopilotStatus(123), {
+    enabled: true,
+    remainingResponses: 4
+  });
+
+  manager.clearSpecialAutopilot(123);
+  assert.deepEqual(manager.getSpecialAutopilotStatus(123), {
+    enabled: false,
+    remainingResponses: 0
+  });
 });
 
 test("pty manager can add, list, remove, and clear queued prompts", () => {
@@ -334,6 +432,51 @@ test("pty manager auto-queues same-chat prompts while sdk is running and drains 
   assert.ok(
     sentMessages.some((message) => /Executando item da fila/.test(message.text))
   );
+});
+
+test("pty manager uses queueLabel when summarizing a queued prompt", async () => {
+  let releaseFirst: (() => void) | undefined;
+  const firstCanFinish = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  const calls: FakeCall[] = [];
+  const manager = createManager({
+    backend: "sdk",
+    codexClientFactory: createFakeCodexClient(
+      [
+        {
+          initialId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+          events: async function* () {
+            await firstCanFinish;
+            yield {
+              type: "item.completed",
+              item: {
+                id: "first",
+                type: "agent_message",
+                text: "first done"
+              }
+            };
+          }
+        }
+      ],
+      calls
+    )
+  });
+
+  const first = await manager.sendPrompt({ chat: { id: 55 } }, "first task");
+  const second = await manager.sendPrompt({ chat: { id: 55 } }, "second task", {
+    queueLabel: "Botao Executar proximo passo acionado"
+  });
+
+  assert.equal(first.started, true);
+  assert.equal(second.started, false);
+  assert.equal(second.reason, "queued");
+  if (!second.started && second.reason === "queued") {
+    assert.equal(second.item.text, "Botao Executar proximo passo acionado");
+  }
+
+  releaseFirst?.();
+  await waitFor(() => !manager.getStatus(55).active);
 });
 
 test("pty manager replays queued prompts in the workdir where they were enqueued", async () => {
@@ -606,6 +749,32 @@ test("pty manager switches workdir within workspace root and resets session", ()
   assert.equal(manager.getStatus(99).relativeWorkdir, "project-b");
 });
 
+test("pty manager blocks project switching in fixed instance mode", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "claws-fixed-"));
+  const projectA = path.join(root, "project-a");
+  const projectB = path.join(root, "project-b");
+  fs.mkdirSync(projectA, { recursive: true });
+  fs.mkdirSync(projectB, { recursive: true });
+  fs.mkdirSync(path.join(projectA, ".git"));
+  fs.mkdirSync(path.join(projectB, ".git"));
+
+  const manager = createManager({
+    workspaceRoot: root,
+    runnerCwd: projectA,
+    instanceMode: "instance"
+  });
+
+  assert.throws(
+    () => manager.switchWorkdir(99, "project-b"),
+    /fixa em um projeto|fixed to one project/i
+  );
+  assert.throws(
+    () => manager.switchToPreviousWorkdir(99),
+    /fixa em um projeto|fixed to one project/i
+  );
+  assert.equal(manager.getStatus(99).workdir, projectA);
+});
+
 test("pty manager tracks recent projects and can switch back to the previous workdir", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "claws-history-"));
   const projectA = path.join(root, "project-a");
@@ -754,6 +923,29 @@ test("pty manager exports and restores verbose preference", () => {
   restored.restoreState(manager.exportState());
 
   assert.equal(restored.isVerbose(42), true);
+});
+
+test("pty manager exports and restores the special autopilot state", () => {
+  const manager = createManager();
+  manager.setSpecialAutopilot(42, 6);
+
+  const restored = createManager();
+  restored.restoreState(manager.exportState());
+
+  assert.deepEqual(restored.getSpecialAutopilotStatus(42), {
+    enabled: true,
+    remainingResponses: 6
+  });
+});
+
+test("pty manager exports and restores reasoning effort preference", () => {
+  const manager = createManager();
+  manager.setPreferredReasoningEffort(42, "high");
+
+  const restored = createManager();
+  restored.restoreState(manager.exportState());
+
+  assert.equal(restored.getStatus(42).preferredReasoningEffort, "high");
 });
 
 test("pty manager exports and restores language preference", () => {
@@ -1089,6 +1281,76 @@ test("pty manager can emit a post-response hook after a finalized sdk reply", as
 
   assert.equal(finalized.length, 1);
   assert.match(finalized[0], /Long response for the audio summary hook/);
+});
+
+test("pty manager finalizes the session before the post-response hook runs", async () => {
+  let followUpStarted = false;
+  const manager = createManager({
+    backend: "sdk",
+    onResponseFinalized: async ({ chatId }) => {
+      if (followUpStarted) {
+        return;
+      }
+      const result = await manager.sendPrompt(
+        { chat: { id: chatId } },
+        "follow up immediately"
+      );
+      followUpStarted = result.started;
+    },
+    codexClientFactory: createFakeCodexClient([
+      {
+        events: async function* () {
+          yield {
+            type: "item.completed",
+            item: {
+              id: "item-finalized-followup",
+              type: "agent_message",
+              text: "Initial finalized response."
+            }
+          };
+          yield {
+            type: "turn.completed",
+            usage: {
+              input_tokens: 1,
+              cached_input_tokens: 0,
+              output_tokens: 1
+            }
+          };
+        }
+      },
+      {
+        events: async function* () {
+          yield {
+            type: "item.completed",
+            item: {
+              id: "item-followup",
+              type: "agent_message",
+              text: "Follow-up response."
+            }
+          };
+          yield {
+            type: "turn.completed",
+            usage: {
+              input_tokens: 1,
+              cached_input_tokens: 0,
+              output_tokens: 1
+            }
+          };
+        }
+      }
+    ])
+  });
+
+  await manager.sendPrompt({ chat: { id: 33 } }, "start chain");
+  await waitFor(() => !manager.getStatus(33).active);
+  await waitFor(() => followUpStarted);
+  await waitFor(() => !manager.getStatus(33).active);
+
+  assert.equal(followUpStarted, true);
+  assert.match(
+    manager.getProjectState(33, process.cwd()).lastFinalResponseText || "",
+    /Follow-up response/i
+  );
 });
 
 test("pty manager sends unescaped final text to post-response hooks", async () => {

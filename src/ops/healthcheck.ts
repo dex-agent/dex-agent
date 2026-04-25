@@ -348,6 +348,7 @@ export async function runHealthcheck(
   const env = options.env || process.env;
   const checks: HealthcheckCheck[] = [];
   const repoRoot = options.canonicalRoot || process.cwd();
+  const fixedInstanceMode = config.instance.contextMode === "instance";
 
   checks.push(checkDirectory("workspace root", config.workspace.root));
   checks.push(checkDirectory("runner workdir", config.runner.cwd));
@@ -374,28 +375,38 @@ export async function runHealthcheck(
     }
   }
 
-  for (const canonicalCheck of [
-    checkCanonicalRepoDrift(
-      "runner workdir",
-      config.runner.cwd,
-      repoRoot,
-      strict
-    ),
-    checkCanonicalRepoDrift(
-      "github workdir",
-      config.github.defaultWorkdir,
-      repoRoot,
-      strict
-    ),
-    checkCanonicalRepoDrift(
-      "state file",
-      path.dirname(config.app.stateFile),
-      repoRoot,
-      strict
-    )
-  ]) {
-    if (canonicalCheck) {
-      checks.push(canonicalCheck);
+  if (fixedInstanceMode) {
+    checks.push(
+      makeCheck(
+        "instance mode",
+        "pass",
+        `Fixed project instance ${config.instance.id}: ${config.instance.projectLabel}`
+      )
+    );
+  } else {
+    for (const canonicalCheck of [
+      checkCanonicalRepoDrift(
+        "runner workdir",
+        config.runner.cwd,
+        repoRoot,
+        strict
+      ),
+      checkCanonicalRepoDrift(
+        "github workdir",
+        config.github.defaultWorkdir,
+        repoRoot,
+        strict
+      ),
+      checkCanonicalRepoDrift(
+        "state file",
+        path.dirname(config.app.stateFile),
+        repoRoot,
+        strict
+      )
+    ]) {
+      if (canonicalCheck) {
+        checks.push(canonicalCheck);
+      }
     }
   }
 

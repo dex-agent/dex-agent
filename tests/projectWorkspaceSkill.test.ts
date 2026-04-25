@@ -37,6 +37,32 @@ function createSkill() {
   });
 }
 
+function createFixedInstanceSkill() {
+  return new ProjectWorkspaceSkill({
+    workspace: {
+      listProjects: () => projects,
+      getRecentProjects: () => [
+        {
+          path: projects[0].path,
+          relativePath: projects[0].relativePath
+        },
+        {
+          path: projects[1].path,
+          relativePath: projects[1].relativePath
+        }
+      ],
+      getCurrentProject: () => ({
+        path: projects[0].path,
+        relativePath: projects[0].relativePath
+      })
+    },
+    fixedInstance: {
+      enabled: true,
+      projectLabel: "AgendadorConsultasOticas"
+    }
+  });
+}
+
 test("project workspace skill recognizes standard project navigation intents", () => {
   const skill = createSkill();
 
@@ -92,4 +118,17 @@ test("project workspace skill lists recent projects and can return to the previo
 
   assert.match(recent.text, /Projetos recentes/i);
   assert.equal(previous.switchToRepo, "ControlePessoal");
+});
+
+test("project workspace skill blocks natural language switching in fixed instance mode", async () => {
+  const skill = createFixedInstanceSkill();
+
+  const result = await skill.execute({
+    text: "Mude agora para o projeto Controle Pessoal.",
+    chatId: 1
+  });
+
+  assert.equal(result.switchToRepo, undefined);
+  assert.match(result.text, /Instancia fixa/i);
+  assert.match(result.text, /AgendadorConsultasOticas/);
 });

@@ -37,6 +37,14 @@ interface ExecuteInput {
   chatId?: string | number;
 }
 
+interface ProjectWorkspaceSkillOptions {
+  workspace: WorkspaceResolver;
+  fixedInstance?: {
+    enabled: boolean;
+    projectLabel: string;
+  };
+}
+
 interface WorkspaceIntentResolution {
   family: WorkspaceQueryFamily | null;
   confidence: WorkspaceConfidence;
@@ -272,9 +280,11 @@ function buildLocateResult(
 
 export class ProjectWorkspaceSkill {
   private readonly workspace: WorkspaceResolver;
+  private readonly fixedInstance?: ProjectWorkspaceSkillOptions["fixedInstance"];
 
-  constructor({ workspace }: { workspace: WorkspaceResolver }) {
+  constructor({ workspace, fixedInstance }: ProjectWorkspaceSkillOptions) {
     this.workspace = workspace;
+    this.fixedInstance = fixedInstance;
   }
 
   supports(text: string): boolean {
@@ -293,6 +303,21 @@ export class ProjectWorkspaceSkill {
       return {
         parseMode: "markdown",
         text: "Nao encontrei uma acao clara de projeto nessa mensagem."
+      };
+    }
+
+    if (
+      this.fixedInstance?.enabled &&
+      (resolution.family === "switch" || resolution.family === "previous")
+    ) {
+      return {
+        parseMode: "markdown",
+        text: [
+          "*Instancia fixa*",
+          "",
+          `Esta instancia e fixa no projeto \`${this.fixedInstance.projectLabel}\`.`,
+          "Troca de repositorio foi bloqueada para manter o contexto operacional."
+        ].join("\n")
       };
     }
 

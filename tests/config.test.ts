@@ -12,6 +12,9 @@ const ENV_KEYS = [
   "ALLOWED_USER_IDS",
   "PROACTIVE_USER_IDS",
   "STATE_FILE",
+  "DEX_CONTEXT_MODE",
+  "DEX_INSTANCE_ID",
+  "DEX_INSTANCE_PROJECT_LABEL",
   "CODEX_BACKEND",
   "CODEX_COMMAND",
   "CODEX_ARGS",
@@ -121,6 +124,9 @@ test("loadConfig parses env values into runtime config", () => {
       ALLOWED_USER_IDS: "1, 2",
       PROACTIVE_USER_IDS: "2",
       STATE_FILE: stateFile,
+      DEX_CONTEXT_MODE: "instance",
+      DEX_INSTANCE_ID: "agendador-consultas-oticas",
+      DEX_INSTANCE_PROJECT_LABEL: "AgendadorConsultasOticas",
       CODEX_BACKEND: "sdk",
       CODEX_COMMAND: "codex",
       CODEX_ARGS: '--approval-mode auto "--model gpt-5"',
@@ -169,6 +175,9 @@ test("loadConfig parses env values into runtime config", () => {
   assert.equal(config.telegram.apiBase, "https://telegram.example/api");
   assert.equal(config.telegram.proxyUrl, "http://127.0.0.1:7890");
   assert.equal(config.app.stateFile, stateFile);
+  assert.equal(config.instance.contextMode, "instance");
+  assert.equal(config.instance.id, "agendador-consultas-oticas");
+  assert.equal(config.instance.projectLabel, "AgendadorConsultasOticas");
   assert.deepEqual(config.telegram.allowedUserIds, ["1", "2"]);
   assert.deepEqual(config.telegram.proactiveUserIds, ["2"]);
   assert.equal(config.runner.backend, "sdk");
