@@ -25,8 +25,13 @@ test("runtime state store saves and loads MCP and skill state", async () => {
       chats: {
         42: {
           preferredModel: null,
+          preferredReasoningEffort: "high",
           language: "zh-HK",
           verboseOutput: true,
+          specialAutopilot: {
+            enabled: true,
+            remainingResponses: 3
+          },
           currentWorkdir: "project-a",
           recentWorkdirs: ["project-a", "project-b"],
           projects: {
@@ -63,8 +68,13 @@ test("runtime state store saves and loads MCP and skill state", async () => {
     chats: {
       42: {
         preferredModel: null,
+        preferredReasoningEffort: "high",
         language: "zh-HK",
         verboseOutput: true,
+        specialAutopilot: {
+          enabled: true,
+          remainingResponses: 3
+        },
         currentWorkdir: "project-a",
         recentWorkdirs: ["project-a", "project-b"],
         projects: {
