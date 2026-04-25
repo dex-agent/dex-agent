@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   SkillPromotionService,
   type ProjectSkillStatus,
@@ -9,6 +10,12 @@ import {
   type SkillPromotionDestination,
   type SkillPromotionResult
 } from "./skillPromotionService.js";
+import { MemoryRecallEngine } from "./memoryRecallEngine.js";
+import {
+  buildRetrievalQuery as buildSharedRetrievalQuery,
+  extractStructuredMemoryLine,
+  hasExplicitMemoryCaptureIntent
+} from "./memoryContracts.js";
 
 export type MemoryKind =
   | "decision"
@@ -109,6 +116,12 @@ export interface MemoryQuery {
   prompt: string;
   intent?: MemoryIntent;
   maxEntries?: number;
+  operationalContext?: {
+    projectName?: string | null;
+    currentObjective?: string | null;
+    nextEligibleBlock?: string | null;
+    latestClosedBlock?: string | null;
+  } | null;
 }
 
 export interface MemoryPacket {
@@ -144,6 +157,10 @@ export interface MemoryQueryResult {
   entries: MemoryEntry[];
   sources: string[];
   confidence: MemoryConfidence;
+}
+
+interface ProjectMemoryServiceOptions {
+  globalMemoriesRoot?: string | null;
 }
 
 const STOPWORDS = new Set([
@@ -215,12 +232,8 @@ function firstSentence(value: string, maxLength = 96): string {
     : `${sentence.slice(0, maxLength - 3).trimEnd()}...`;
 }
 
-function compactPacketText(value: string, maxLength = 88): string {
-  const compact = normalizeWhitespace(value).replace(/\s+/g, " ");
-  if (!compact) return "";
-  return compact.length <= maxLength
-    ? compact
-    : `${compact.slice(0, maxLength - 3).trimEnd()}...`;
+function createDeterministicId(...parts: string[]): string {
+  return createHash("sha1").update(parts.join("\n")).digest("hex").slice(0, 16);
 }
 
 const MOJIBAKE_FRAGMENTS = [
@@ -269,14 +282,20 @@ function compactSectionLines(lines: string[]): string[] {
     .filter((line) => !line.startsWith("## "));
 }
 
-function extractSectionLines(markdown: string, heading: string): string[] {
+function extractHeadingLines(
+  markdown: string,
+  heading: string,
+  prefixes: string[] = ["##"]
+): string[] {
   const normalized = normalizeWhitespace(markdown);
   if (!normalized) return [];
 
   const lines = normalized.split("\n");
   const target = heading.trim().toLowerCase();
-  const startIndex = lines.findIndex(
-    (line) => line.trim().toLowerCase() === `## ${target}`
+  const startIndex = lines.findIndex((line) =>
+    prefixes.some(
+      (prefix) => line.trim().toLowerCase() === `${prefix} ${target}`
+    )
   );
   if (startIndex === -1) {
     return [];
@@ -285,13 +304,169 @@ function extractSectionLines(markdown: string, heading: string): string[] {
   const section: string[] = [];
   for (let index = startIndex + 1; index < lines.length; index += 1) {
     const line = lines[index];
-    if (line.startsWith("## ")) {
+    if (/^#{2,3}\s/.test(line)) {
       break;
     }
     section.push(line);
   }
 
   return section;
+}
+
+function extractSectionLines(markdown: string, heading: string): string[] {
+  return extractHeadingLines(markdown, heading, ["##"]);
+}
+
+function extractBulletItems(lines: string[]): string[] {
+  const items: string[] = [];
+  let current: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      if (current.length) {
+        items.push(current.join(" ").trim());
+        current = [];
+      }
+      continue;
+    }
+    if (/^#{2,3}\s/.test(trimmed)) {
+      if (current.length) {
+        items.push(current.join(" ").trim());
+        current = [];
+      }
+      continue;
+    }
+    if (trimmed.startsWith("- ")) {
+      if (current.length) {
+        items.push(current.join(" ").trim());
+      }
+      current = [trimmed.slice(2).trim()];
+      continue;
+    }
+    if (current.length) {
+      current.push(trimmed);
+    }
+  }
+
+  if (current.length) {
+    items.push(current.join(" ").trim());
+  }
+
+  return items.filter(Boolean);
+}
+
+function extractParagraphItems(lines: string[]): string[] {
+  const paragraphs: string[] = [];
+  let current: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      if (current.length) {
+        paragraphs.push(current.join(" ").trim());
+        current = [];
+      }
+      continue;
+    }
+    if (/^#{2,3}\s/.test(trimmed) || trimmed.startsWith("- ")) {
+      if (current.length) {
+        paragraphs.push(current.join(" ").trim());
+        current = [];
+      }
+      continue;
+    }
+    current.push(trimmed);
+  }
+
+  if (current.length) {
+    paragraphs.push(current.join(" ").trim());
+  }
+
+  return paragraphs.filter(Boolean);
+}
+
+function collectSubheadingBulletItems(
+  markdown: string,
+  heading: string
+): string[] {
+  const normalized = normalizeWhitespace(markdown);
+  if (!normalized) return [];
+
+  const lines = normalized.split("\n");
+  const items: string[] = [];
+  let insideTarget = false;
+  let buffer: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^###\s+/i.test(trimmed)) {
+      if (insideTarget && buffer.length) {
+        items.push(...extractBulletItems(buffer));
+        buffer = [];
+      }
+      insideTarget =
+        normalizeAscii(trimmed.replace(/^###\s+/, "").trim()) ===
+        normalizeAscii(heading);
+      continue;
+    }
+    if (insideTarget && /^##\s+/i.test(trimmed)) {
+      if (buffer.length) {
+        items.push(...extractBulletItems(buffer));
+        buffer = [];
+      }
+      insideTarget = false;
+      continue;
+    }
+    if (insideTarget) {
+      buffer.push(line);
+    }
+  }
+
+  if (insideTarget && buffer.length) {
+    items.push(...extractBulletItems(buffer));
+  }
+
+  return items;
+}
+
+function extractTaskGroups(markdown: string): Array<{
+  title: string;
+  content: string;
+}> {
+  const normalized = normalizeWhitespace(markdown);
+  if (!normalized) return [];
+
+  const lines = normalized.split("\n");
+  const groups: Array<{ title: string; content: string }> = [];
+  let currentTitle: string | null = null;
+  let currentLines: string[] = [];
+
+  for (const line of lines) {
+    if (line.startsWith("# Task Group:")) {
+      if (currentTitle) {
+        groups.push({
+          title: currentTitle,
+          content: currentLines.join("\n")
+        });
+      }
+      currentTitle = line.slice("# Task Group:".length).trim();
+      currentLines = [line];
+      continue;
+    }
+    if (currentTitle) {
+      currentLines.push(line);
+    }
+  }
+
+  if (currentTitle) {
+    groups.push({
+      title: currentTitle,
+      content: currentLines.join("\n")
+    });
+  }
+
+  return groups;
 }
 
 function extractBulletValue(
@@ -497,96 +672,6 @@ function inferTags(text: string, limit = 6): string[] {
   return tokenize(text).slice(0, limit);
 }
 
-function scoreKind(kind: MemoryKind, intent: MemoryIntent): number {
-  const matrix: Record<MemoryIntent, Partial<Record<MemoryKind, number>>> = {
-    auto: {
-      decision: 20,
-      rule: 18,
-      procedure: 16,
-      task_state: 16,
-      fact: 10,
-      exception: 12
-    },
-    status: {
-      task_state: 22,
-      decision: 14,
-      fact: 12,
-      rule: 8,
-      procedure: 6,
-      exception: 10
-    },
-    planning: {
-      decision: 20,
-      rule: 18,
-      procedure: 16,
-      task_state: 14,
-      exception: 12,
-      fact: 10
-    },
-    implementation: {
-      procedure: 20,
-      rule: 18,
-      decision: 16,
-      exception: 14,
-      task_state: 12,
-      fact: 8
-    },
-    debug: {
-      exception: 20,
-      rule: 18,
-      procedure: 12,
-      fact: 12,
-      decision: 10,
-      task_state: 8
-    },
-    continue: {
-      task_state: 20,
-      procedure: 16,
-      decision: 14,
-      rule: 14,
-      exception: 10,
-      fact: 8
-    },
-    repo_control: {},
-    trivial: {}
-  };
-
-  return matrix[intent]?.[kind] || 0;
-}
-
-function scoreRecency(createdAt: string): number {
-  const created = Date.parse(createdAt);
-  if (Number.isNaN(created)) return 0;
-  const ageHours = Math.max(0, (Date.now() - created) / (1000 * 60 * 60));
-  if (ageHours < 24) return 12;
-  if (ageHours < 24 * 7) return 8;
-  if (ageHours < 24 * 30) return 4;
-  return 1;
-}
-
-function scoreEntry(
-  entry: MemoryEntry,
-  queryTokens: string[],
-  intent: MemoryIntent
-): number {
-  if (entry.kind === "noise") return Number.NEGATIVE_INFINITY;
-
-  const combined = `${entry.title} ${entry.summary} ${entry.tags.join(" ")}`;
-  const entryTokens = tokenize(combined);
-  const overlap = queryTokens.filter((token) => entryTokens.includes(token));
-  const titleMatch = queryTokens.filter((token) =>
-    tokenize(entry.title).includes(token)
-  ).length;
-
-  return (
-    scoreKind(entry.kind, intent) +
-    scoreRecency(entry.createdAt) +
-    overlap.length * 10 +
-    titleMatch * 6 +
-    Math.round((entry.confidence || 0) * 10)
-  );
-}
-
 function inferCandidateStage(candidate: {
   kind: MemoryKind;
   baseKind?: DurableMemoryKind;
@@ -693,13 +778,6 @@ function stageStrength(stage: MemoryStage): number {
   }
 }
 
-function confidenceFromScore(score: number): MemoryConfidence {
-  if (score <= 0) return "none";
-  if (score < 20) return "low";
-  if (score < 40) return "medium";
-  return "high";
-}
-
 function toDurableMemoryKind(
   kind: MemoryKind | DurableMemoryKind
 ): DurableMemoryKind {
@@ -733,17 +811,58 @@ function summarizeCandidateText(normalizedText: string): {
 export class ProjectMemoryService {
   private static readonly MAX_CANDIDATES = 20;
   private static readonly MAX_PROPOSALS = 20;
+  private readonly recallEngine: MemoryRecallEngine;
 
   constructor(
-    private readonly skillPromotionService = new SkillPromotionService()
-  ) {}
+    private readonly skillPromotionService = new SkillPromotionService(),
+    private readonly options: ProjectMemoryServiceOptions = {}
+  ) {
+    this.recallEngine = new MemoryRecallEngine(options);
+  }
 
   getSkillPromotionService(): SkillPromotionService {
     return this.skillPromotionService;
   }
 
+  buildRetrievalQuery(input: {
+    prompt: string;
+    intent?: MemoryIntent;
+    operationalContext?: {
+      projectName?: string | null;
+      currentObjective?: string | null;
+      nextEligibleBlock?: string | null;
+      latestClosedBlock?: string | null;
+    } | null;
+  }): string {
+    return buildSharedRetrievalQuery(input);
+  }
+
   private ledgerPath(workdir: string): string {
     return path.join(workdir, ".agents", "MEMORY.ndjson");
+  }
+
+  private globalMemoriesRoot(): string | null {
+    if (this.options.globalMemoriesRoot === null) {
+      return null;
+    }
+    if (this.options.globalMemoriesRoot) {
+      return this.options.globalMemoriesRoot;
+    }
+    const codexHome = normalizeWhitespace(process.env.CODEX_HOME || "");
+    if (codexHome) {
+      return path.join(codexHome, "memories");
+    }
+    return path.join(os.homedir(), ".codex", "memories");
+  }
+
+  private globalMemoryRegistryPath(): string | null {
+    const root = this.globalMemoriesRoot();
+    return root ? path.join(root, "MEMORY.md") : null;
+  }
+
+  private globalMemorySummaryPath(): string | null {
+    const root = this.globalMemoriesRoot();
+    return root ? path.join(root, "memory_summary.md") : null;
   }
 
   private inboxDir(workdir: string): string {
@@ -776,6 +895,49 @@ export class ProjectMemoryService {
 
   private napkinPath(workdir: string): string {
     return path.join(workdir, ".codex", "napkin.md");
+  }
+
+  private buildGlobalMemoryEntry(input: {
+    sourcePath: string;
+    sourceLabel: string;
+    section: string;
+    index: number;
+    workdir: string;
+    title: string;
+    summary: string;
+    kind: DurableMemoryKind;
+    confidence: number;
+    context?: string;
+  }): MemoryEntry {
+    const sourceDetail = `${input.sourcePath} :: ${input.sourceLabel} :: ${input.section}`;
+    return {
+      id: `global-${createDeterministicId(
+        input.sourcePath,
+        input.section,
+        String(input.index),
+        input.summary
+      )}`,
+      createdAt: new Date().toISOString(),
+      project: path.basename(input.workdir),
+      scope: "repo",
+      kind: input.kind,
+      stage: "durable_memory",
+      title: input.title,
+      summary: input.summary,
+      evidence: {
+        type: "file",
+        value: `${input.sourcePath}#${input.section}`
+      },
+      tags: inferTags(
+        `${input.title} ${input.summary} ${input.context || ""} ${path.basename(input.workdir)}`
+      ),
+      supersedes: [],
+      confidence: input.confidence,
+      source: {
+        type: "file",
+        detail: sourceDetail
+      }
+    };
   }
 
   private async readOperationalContext(workdir: string): Promise<{
@@ -885,6 +1047,182 @@ export class ProjectMemoryService {
         ...entry,
         stage: inferEntryStage(entry)
       }));
+  }
+
+  private buildSummaryEntries(
+    workdir: string,
+    sourcePath: string,
+    sourceMtime: Date,
+    markdown: string
+  ): MemoryEntry[] {
+    const createdAt = sourceMtime.toISOString();
+    const buildEntry = (
+      section: string,
+      index: number,
+      kind: DurableMemoryKind,
+      text: string
+    ) =>
+      ({
+        ...this.buildGlobalMemoryEntry({
+          sourcePath,
+          sourceLabel: "global",
+          section,
+          index,
+          workdir,
+          title: firstSentence(text),
+          summary: text,
+          kind,
+          confidence: section === "User Profile" ? 0.78 : 0.74,
+          context: section
+        }),
+        createdAt
+      }) satisfies MemoryEntry;
+
+    const profile = extractParagraphItems(
+      extractSectionLines(markdown, "User Profile")
+    ).map((text, index) => buildEntry("User Profile", index, "fact", text));
+    const preferences = extractBulletItems(
+      extractSectionLines(markdown, "User preferences")
+    ).map((text, index) => buildEntry("User preferences", index, "rule", text));
+    const tips = extractBulletItems(
+      extractSectionLines(markdown, "General Tips")
+    ).map((text, index) =>
+      buildEntry("General Tips", index, "procedure", text)
+    );
+
+    return [...profile, ...preferences, ...tips];
+  }
+
+  private taskGroupAppliesToWorkdir(
+    workdir: string,
+    appliesTo: string
+  ): boolean {
+    const probe = normalizeAscii(appliesTo);
+    if (!probe) return false;
+    const basename = normalizeAscii(path.basename(workdir));
+    const normalizedWorkdir = normalizeAscii(workdir);
+    return (
+      probe.includes("cross-repo") ||
+      probe.includes("cross-workflow") ||
+      (basename ? probe.includes(basename) : false) ||
+      (normalizedWorkdir ? probe.includes(normalizedWorkdir) : false)
+    );
+  }
+
+  private buildRegistryEntries(
+    workdir: string,
+    sourcePath: string,
+    sourceMtime: Date,
+    markdown: string
+  ): MemoryEntry[] {
+    const createdAt = sourceMtime.toISOString();
+    const groups = extractTaskGroups(markdown);
+    const entries: MemoryEntry[] = [];
+
+    for (const group of groups) {
+      const scope = group.content.match(/^scope:\s*(.+)$/im)?.[1]?.trim() || "";
+      const appliesTo =
+        group.content.match(/^applies_to:\s*(.+)$/im)?.[1]?.trim() || "";
+      if (!this.taskGroupAppliesToWorkdir(workdir, appliesTo)) {
+        continue;
+      }
+
+      const keywords = collectSubheadingBulletItems(
+        group.content,
+        "keywords"
+      ).join(" ");
+      const context = [group.title, scope, appliesTo, keywords]
+        .filter(Boolean)
+        .join(" ");
+      const sections: Array<{
+        name: string;
+        kind: DurableMemoryKind;
+        items: string[];
+      }> = [
+        {
+          name: "User preferences",
+          kind: "rule",
+          items: extractBulletItems(
+            extractSectionLines(group.content, "User preferences")
+          )
+        },
+        {
+          name: "Reusable knowledge",
+          kind: "fact",
+          items: extractBulletItems(
+            extractSectionLines(group.content, "Reusable knowledge")
+          )
+        },
+        {
+          name: "Failures and how to do differently",
+          kind: "procedure",
+          items: extractBulletItems(
+            extractSectionLines(
+              group.content,
+              "Failures and how to do differently"
+            )
+          )
+        }
+      ];
+
+      for (const section of sections) {
+        section.items.forEach((text, index) => {
+          entries.push({
+            ...this.buildGlobalMemoryEntry({
+              sourcePath,
+              sourceLabel: "global",
+              section: `${group.title} / ${section.name}`,
+              index,
+              workdir,
+              title: `${group.title}: ${firstSentence(text, 72)}`,
+              summary: text,
+              kind: section.kind,
+              confidence: 0.88,
+              context
+            }),
+            createdAt
+          });
+        });
+      }
+    }
+
+    return entries;
+  }
+
+  private async readGlobalMemoryEntries(
+    workdir: string
+  ): Promise<MemoryEntry[]> {
+    const registryPath = this.globalMemoryRegistryPath();
+    const summaryPath = this.globalMemorySummaryPath();
+    const entries: MemoryEntry[] = [];
+
+    for (const sourcePath of [registryPath, summaryPath].filter(
+      (value): value is string => Boolean(value)
+    )) {
+      if (!(await pathExists(sourcePath))) {
+        continue;
+      }
+      const [content, stats] = await Promise.all([
+        fs.readFile(sourcePath, "utf8"),
+        fs.stat(sourcePath)
+      ]);
+      if (path.basename(sourcePath).toLowerCase() === "memory_summary.md") {
+        entries.push(
+          ...this.buildSummaryEntries(workdir, sourcePath, stats.mtime, content)
+        );
+      } else {
+        entries.push(
+          ...this.buildRegistryEntries(
+            workdir,
+            sourcePath,
+            stats.mtime,
+            content
+          )
+        );
+      }
+    }
+
+    return entries;
   }
 
   private isValidEntry(entry: unknown): entry is MemoryEntry {
@@ -1106,7 +1444,7 @@ export class ProjectMemoryService {
   ): Promise<number> {
     const [candidates, entries] = await Promise.all([
       this.readCandidates(workdir),
-      this.readLedgerEntries(workdir)
+      this.recallEngine.readLedgerEntries(workdir)
     ]);
 
     const candidateMatches = candidates.filter(
@@ -1258,50 +1596,23 @@ export class ProjectMemoryService {
   }
 
   shouldUseMemory(prompt: string, intent: MemoryIntent = "auto"): boolean {
-    if (intent === "repo_control" || intent === "trivial") {
-      return false;
-    }
-
-    if (intent !== "auto") {
-      return true;
-    }
-
-    const normalized = normalizeAscii(prompt);
-    if (!normalized) return false;
-    if (
-      /^(ls|dir|pwd|whoami|which|list files|show files|help|menu|status)$/i.test(
-        normalized
-      )
-    ) {
-      return false;
-    }
-
-    return true;
+    return this.recallEngine.shouldUseMemory(prompt, intent);
   }
 
   async queryMemory({
     workdir,
     prompt,
     intent = "auto",
-    maxEntries = 5
+    maxEntries = 5,
+    operationalContext
   }: MemoryQuery): Promise<MemoryQueryResult> {
-    const resolvedWorkdir = path.resolve(workdir);
-    const queryTokens = tokenize(prompt);
-    const entries = await this.readLedgerEntries(resolvedWorkdir);
-    const scored = entries
-      .map((entry) => ({
-        entry,
-        score: scoreEntry(entry, queryTokens, intent)
-      }))
-      .filter((item) => Number.isFinite(item.score) && item.score > 0)
-      .sort((left, right) => right.score - left.score)
-      .slice(0, Math.max(1, maxEntries));
-
-    return {
-      entries: scored.map((item) => item.entry),
-      sources: scored.length ? [this.ledgerPath(resolvedWorkdir)] : [],
-      confidence: confidenceFromScore(scored[0]?.score || 0)
-    };
+    return this.recallEngine.queryMemory({
+      workdir,
+      prompt,
+      intent,
+      maxEntries,
+      operationalContext
+    });
   }
 
   async buildMemoryPacket({
@@ -1310,91 +1621,20 @@ export class ProjectMemoryService {
     intent = "auto",
     maxEntries = 5
   }: MemoryQuery): Promise<MemoryPacket | null> {
-    const resolvedWorkdir = path.resolve(workdir);
-    if (!this.shouldUseMemory(prompt, intent)) {
-      return null;
-    }
-
-    const operational = await this.readOperationalContext(resolvedWorkdir);
-    const queryResult = await this.queryMemory({
-      workdir: resolvedWorkdir,
+    return this.recallEngine.buildMemoryPacket({
+      workdir,
       prompt,
       intent,
       maxEntries
     });
-
-    if (!operational.usedOperationalState && !queryResult.entries.length) {
-      return null;
-    }
-
-    return {
-      workdir: resolvedWorkdir,
-      currentObjective: operational.currentObjective,
-      latestClosedBlock: operational.latestClosedBlock,
-      nextEligibleBlock: operational.nextEligibleBlock,
-      tacticalNotes: operational.tacticalNotes,
-      relevantMemory: queryResult.entries,
-      sources: [...operational.sources, ...queryResult.sources],
-      confidence: queryResult.confidence,
-      usedOperationalState: operational.usedOperationalState
-    };
   }
 
   renderMemoryPacket(packet: MemoryPacket, prompt: string): string {
-    const lines: string[] = [
-      "Authoritative project memory packet:",
-      packet.currentObjective
-        ? `- current objective: ${packet.currentObjective}`
-        : "- current objective: not recorded",
-      packet.latestClosedBlock
-        ? `- latest closed block: ${packet.latestClosedBlock}`
-        : "- latest closed block: not recorded",
-      packet.nextEligibleBlock
-        ? `- next eligible block: ${packet.nextEligibleBlock}`
-        : "- next eligible block: not recorded"
-    ];
-
-    if (packet.tacticalNotes.length) {
-      lines.push("- tactical notes:");
-      lines.push(
-        ...packet.tacticalNotes
-          .slice(0, 2)
-          .map((line) => `  - ${line.replace(/^- /, "")}`)
-      );
-    }
-
-    if (packet.relevantMemory.length) {
-      lines.push("- durable memory:");
-      lines.push(
-        ...packet.relevantMemory
-          .slice(0, 3)
-          .map(
-            (entry) =>
-              `  - [${entry.stage || inferEntryStage(entry)}|${entry.kind}] ${compactPacketText(entry.title || entry.summary, 88)}`
-          )
-      );
-    }
-    lines.push(
-      "",
-      "Use this project memory only when it is relevant. If the request conflicts with this memory, say so explicitly.",
-      "If this compact packet is insufficient, inspect the underlying project files before acting.",
-      "",
-      "User request:",
-      prompt
-    );
-
-    return lines.join("\n");
+    return this.recallEngine.renderMemoryPacket(packet, prompt);
   }
 
   buildSourceDisclosure(packet: MemoryPacket): string | null {
-    if (!packet.sources.length) return null;
-    return `Using project memory from: ${packet.sources
-      .slice(0, 3)
-      .map(
-        (source) =>
-          path.relative(packet.workdir, source) || path.basename(source)
-      )
-      .join(", ")}`;
+    return this.recallEngine.buildSourceDisclosure(packet);
   }
 
   async captureCandidate(
@@ -1677,9 +1917,20 @@ export class ProjectMemoryService {
     text: string;
     promptText?: string | null;
   }): Promise<FinalizedResponseCaptureResult> {
+    const explicitCapture = hasExplicitMemoryCaptureIntent(input.promptText);
+    const structuredMemoryLine = extractStructuredMemoryLine(input.text);
+
+    if (!explicitCapture && !structuredMemoryLine) {
+      return {
+        candidate: null,
+        message: null,
+        projectSkillStatus: await this.getProjectSkillStatus(input.workdir)
+      };
+    }
+
     const candidate = await this.captureCandidate({
       workdir: input.workdir,
-      text: input.text,
+      text: explicitCapture ? input.text : structuredMemoryLine!,
       promptText: input.promptText,
       source: {
         type: "runtime",
@@ -1764,24 +2015,6 @@ export class ProjectMemoryService {
     workdir: string,
     target: "index" | "project" | "active" | "handoff" | "napkin" | "ledger"
   ): Promise<string | null> {
-    const resolvedWorkdir = path.resolve(workdir);
-    const targetPath =
-      target === "index"
-        ? this.indexPath(resolvedWorkdir)
-        : target === "project"
-          ? this.projectPath(resolvedWorkdir)
-          : target === "active"
-            ? this.activePath(resolvedWorkdir)
-            : target === "handoff"
-              ? this.handoffPath(resolvedWorkdir)
-              : target === "napkin"
-                ? this.napkinPath(resolvedWorkdir)
-                : this.ledgerPath(resolvedWorkdir);
-
-    if (!(await pathExists(targetPath))) {
-      return null;
-    }
-
-    return fs.readFile(targetPath, "utf8");
+    return this.recallEngine.readOperationalFile(workdir, target);
   }
 }

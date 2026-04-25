@@ -30,6 +30,7 @@ Consequencia pratica:
 - pedido expresso para `tornar metodo padrao` passa a ser governanca global por definicao e so entra em vigor depois de revisao de ambiguidade, conflito, lacuna e informacao inconclusiva
 - ao comunicar uma fase ativa, o cabecalho deve mostrar a fase junto do agente responsavel por ela
 - quando houver colaboracao efetiva de especialistas numa etapa, o fechamento deve creditar essa colaboracao de forma breve e clara
+- achado material em revisao, auditoria ou fechamento deve sair com destino explicito: `Gabi Garimpeira` qualifica se e aprendizado forte, ruido ou acao; `Estela Estaciona` segura o que continuar vivo, imaturo, lateral ou pendente; `Fernanda do Fluxo` mantem o gate de seguir, segurar ou retornar
 
 ## Fases e especialistas auxiliares
 
@@ -51,6 +52,7 @@ Regras:
 - quando a colaboracao do especialista entrar de fato no fluxo, a resposta de fechamento deve trazer credito explicito a esse agente especializado
 - o marcador de fase deve preferir o formato `Fase | agente-responsavel`
 - se a fase for trivial ou o especialista nao tiver contribuido materialmente, nao inventar colaboracao ficticia
+- em `revisar`, `testar` e `veredito`, achados nao consumidos no mesmo passo devem ser estacionados ou explicitamente descartados; nao deixar finding util solto sem destino
 
 Formato minimo de credito:
 
@@ -88,10 +90,17 @@ O v1 e estritamente memoria de projeto.
 
 Ele nao tenta resolver:
 
-- memoria entre projetos diferentes
+- ledger compartilhado e gravavel entre projetos diferentes
+- promocao cruzada implicita de memoria entre projetos
 - perfil pessoal do usuario
 - embeddings ou vector search
 - mutacao implicita de memoria
+
+Excecao explicita:
+
+- o recall pode consultar memoria global read-only do operador quando ela estiver disponivel em `C:\Users\<usuario>\.codex\memories` ou `${CODEX_HOME}/memories`
+- essa memoria global nao substitui o ledger local do projeto
+- a escrita duravel continua local ao workspace em `.agents/MEMORY.ndjson`
 
 ## Camadas
 
@@ -130,6 +139,42 @@ Regra:
 
 - o `INDEX.md` e o metodo padrao de localizacao
 - busca textual vira fallback, nao entrypoint principal
+
+#### 1.1. INDEX local parseavel
+
+Quando um diretorio operacional ficar denso o bastante para exigir retomada
+propria, ele pode ter um `INDEX.md` local. Esse arquivo segue a mesma ideia da
+camada 1 do projeto: localizar rapido, sem explicar nem duplicar conteudo.
+
+Formato obrigatorio:
+
+```md
+# <Nome Da Pasta> Index
+
+Atualizado em: `YYYY-MM-DDTHH:mm:ss-03:00`
+Surface version: `1`
+Papel: `camada 1 local - catalogo rapido de <tema>`
+
+## Regra de leitura
+
+- Este INDEX localiza; nao explica.
+- Abra apenas a entrada aderente ao pedido.
+- Use busca textual apenas como fallback.
+
+## Catalogo
+
+- `<entry_id>` | status: `<status>` | tipo: `<tipo>` | resumo: `<resumo curto>` | abre: `<arquivo-ou-subpasta>` | fallback: `<arquivo-ou-fonte>`
+```
+
+Regras:
+
+- cada entrada do catalogo ocupa exatamente uma linha
+- `entry_id` e curto, humano, estavel e unico dentro do indice local
+- `status` usa `ativo`, `planejado`, `em_execucao`, `fechado`, `arquivado`, `estacionado` ou `legado`
+- `tipo` usa `sprint`, `plano`, `runbook`, `auditoria`, `bateria`, `doc`, `memoria`, `arquivo` ou `outro`
+- todo `INDEX.md` local criado deve nascer preenchido com o conteudo relevante ja existente no diretorio
+- todo `INDEX.md` local criado deve ficar alcancavel pelo `INDEX.md` raiz, por um `INDEX.md` pai ou pela retomada em `ACTIVE/HANDOFF`
+- se automacao futura precisar de JSON, ele deve ser derivado desse Markdown canonico, nao editado manualmente como fonte primaria
 
 #### 2. Camada de contexto de uso
 
@@ -299,22 +344,19 @@ Os pontos principais sao estes.
 
 ### `src/orchestrator/memoryService.ts`
 
-Motor principal da memoria.
+Camada principal de escrita, candidate/proposal e promocao.
 
 Responsabilidades:
 
 - capturar candidates
 - classificar candidates
 - distinguir memoria comum de `skill_candidate`
-- recuperar memoria relevante
-- construir `MemoryPacket`
 - persistir inbox em arquivo
 - propor promocao
 - aplicar promocao confirmada
 - auto-promover skill quando o sinal for forte e claro
-- ler arquivos operacionais
-- usar `INDEX.md` e `.agents/PROJECT.md` como superficies operacionais de leitura rapida
-- preferir `.agents/HANDOFF.md -> Current block status` quando o objetivo for descobrir frente atual e proximo passo
+- endurecer a captura finalizada para aceitar apenas pedido explicitamente memory/promotion ou linha estruturada (`Decision:`, `Rule:`, `Procedure:`, `Exception:`, `Task state:`)
+- delegar todo o read-path para `src/orchestrator/memoryRecallEngine.ts`
 
 Principais tipos:
 
@@ -324,6 +366,19 @@ Principais tipos:
 - `MemoryPacket`
 - `MemoryWriteProposal`
 - `SkillDraft`
+
+### `src/orchestrator/memoryRecallEngine.ts`
+
+Fronteira read-only do recall.
+
+Responsabilidades:
+
+- ler `INDEX.md`, `.agents/PROJECT.md`, `.agents/ACTIVE.md`, `.agents/HANDOFF.md` e `.codex/napkin.md`
+- ler o ledger local `.agents/MEMORY.ndjson`
+- ler memoria global markdown read-only (`MEMORY.md` e `memory_summary.md`)
+- usar uma `buildRetrievalQuery(...)` unica com `projectName`, `currentObjective`, `nextEligibleBlock` e `latestClosedBlock`
+- ranquear memoria de forma lexical, mas com priors de escopo e contexto operacional
+- montar `MemoryPacket`, renderizar disclosure e manter cache por `mtime` para a memoria global markdown
 
 ### `src/orchestrator/skillPromotionService.ts`
 
@@ -342,18 +397,11 @@ Responsabilidades:
 
 Principais metodos:
 
-- `captureCandidate(...)`
-- `queryMemory(...)`
-- `buildMemoryPacket(...)`
-- `renderMemoryPacket(...)`
-- `listCandidates(...)`
-- `listProposals(...)`
-- `proposePromotion(...)`
-- `applyPromotion(...)`
-- `discardCandidate(...)`
-- `cancelProposal(...)`
-- `explainCandidate(...)`
-- `readOperationalFile(...)`
+- `assessCandidate(...)`
+- `buildDraft(...)`
+- `promoteSkill(...)`
+- `findRelevantSkills(...)`
+- `listProjectSkillStatus(...)`
 
 ### `src/orchestrator/projectIntelligence.ts`
 
@@ -461,11 +509,11 @@ Importante:
 
 ### `src/index.ts`
 
-No runtime principal, respostas finalizadas do Codex podem virar candidates automaticamente.
+No runtime principal, respostas finalizadas do Codex podem virar candidates automaticamente, mas agora em modo estrito.
 
 Importante:
 
-- isso cria candidate
+- isso so cria candidate quando o pedido original ja e um fluxo explicito de memoria/promocao ou quando a resposta traz uma linha estruturada como `Decision:` ou `Rule:`
 - isso escreve em `.agents/INBOX/candidates.ndjson`
 - isso nao grava direto em `.agents/MEMORY.ndjson` na maioria dos casos
 - quando um fluxo repetivel ficar forte e claro, a resposta finalizada pode auto-promover para skill
@@ -533,21 +581,27 @@ Tipos previstos:
 
 ## Regras de recuperacao
 
-O ranking atual e lexical e deterministico.
+O ranking atual continua lexical e deterministico, mas agora usa a mesma query unificada em todos os call sites principais.
 
 Sinais usados:
 
+- query unificada montada a partir de `prompt + projectName + currentObjective + nextEligibleBlock + latestClosedBlock`
 - recencia
 - tipo da memoria
 - overlap de tokens com o prompt
 - match no titulo
 - confianca da entrada
+- boost de escopo (`repo` > `subsystem` > `task`)
+- boost de overlap com `currentObjective` e `nextEligibleBlock`
+- frescor extra para `task_state` recente quando bater com o objetivo atual
+- pequena penalidade para memoria transversal de `memory_summary.md` quando competir com memoria mais especifica do repo
 
 Filtros importantes:
 
 - `noise` nao entra
 - itens superseded saem do recall
 - prompts triviais podem nem abrir memoria
+- memoria global continua somente leitura
 
 ## Contrato do `MemoryPacket`
 

@@ -9,6 +9,8 @@ import {
 } from "../src/orchestrator/memoryService.js";
 import { SkillPromotionService } from "../src/orchestrator/skillPromotionService.js";
 
+const DISABLE_GLOBAL_MEMORY = { globalMemoriesRoot: null } as const;
+
 async function createWorkspace(): Promise<string> {
   const workdir = await fs.mkdtemp(path.join(os.tmpdir(), "dex-agent-memory-"));
   await fs.mkdir(path.join(workdir, ".agents"), { recursive: true });
@@ -27,9 +29,29 @@ async function writeLedger(
   );
 }
 
+async function createGlobalMemoriesRoot(files?: {
+  memoryMd?: string;
+  summaryMd?: string;
+}): Promise<string> {
+  const root = await fs.mkdtemp(
+    path.join(os.tmpdir(), "dex-agent-global-memory-")
+  );
+  if (files?.memoryMd) {
+    await fs.writeFile(path.join(root, "MEMORY.md"), files.memoryMd, "utf8");
+  }
+  if (files?.summaryMd) {
+    await fs.writeFile(
+      path.join(root, "memory_summary.md"),
+      files.summaryMd,
+      "utf8"
+    );
+  }
+  return root;
+}
+
 test("queryMemory returns empty result when no ledger exists", async () => {
   const workdir = await createWorkspace();
-  const service = new ProjectMemoryService();
+  const service = new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY);
 
   const result = await service.queryMemory({
     workdir,
@@ -44,7 +66,7 @@ test("queryMemory returns empty result when no ledger exists", async () => {
 
 test("queryMemory prefers repo-scoped relevant entries and ignores superseded ones", async () => {
   const workdir = await createWorkspace();
-  const service = new ProjectMemoryService();
+  const service = new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY);
   const now = "2026-04-20T10:00:00.000Z";
 
   await writeLedger(workdir, [
@@ -104,9 +126,107 @@ test("queryMemory prefers repo-scoped relevant entries and ignores superseded on
   assert.equal(result.confidence, "high");
 });
 
+test("queryMemory reads matching global markdown memories and ignores unrelated task groups", async () => {
+  const workdir = await createWorkspace();
+  const globalRoot = await createGlobalMemoriesRoot({
+    memoryMd: [
+      "# Task Group: Dex Agent memory routing",
+      `scope: keep recall aligned in ${path.basename(workdir)}`,
+      `applies_to: cwd=${workdir}; reuse_rule=use for this repo only`,
+      "",
+      "## Reusable knowledge",
+      "- Use global memory as read-only context instead of merging it into the local ledger.",
+      "",
+      "## Failures and how to do differently",
+      "- Symptom: global memory gets written locally -> fix: keep global memory read-only.",
+      "",
+      "# Task Group: Unrelated repo",
+      "scope: ignore this for dex-agent",
+      "applies_to: cwd=C:\\OtherRepo; reuse_rule=ignore",
+      "",
+      "## Reusable knowledge",
+      "- This note should never show up for dex-agent prompts."
+    ].join("\n"),
+    summaryMd: [
+      "## User Profile",
+      "",
+      "The operator expects honest routing and explicit boundaries.",
+      "",
+      "## User preferences",
+      "- Prefer proposal-first durable memory writes.",
+      "",
+      "## General Tips",
+      "- Keep memory adapters read-only when the source is external."
+    ].join("\n")
+  });
+  const service = new ProjectMemoryService(undefined, {
+    globalMemoriesRoot: globalRoot
+  });
+
+  const result = await service.queryMemory({
+    workdir,
+    prompt: "how should dex-agent keep global memory read-only",
+    intent: "implementation"
+  });
+
+  assert.ok(result.entries.length >= 1);
+  assert.match(result.entries[0]?.summary || "", /read-only/i);
+  assert.ok(
+    result.entries.every(
+      (entry) => !/never show up for dex-agent/i.test(entry.summary)
+    )
+  );
+  assert.ok(result.sources.some((source) => source.endsWith("MEMORY.md")));
+});
+
+test("queryMemory can rank a global memory above a weaker local hit", async () => {
+  const workdir = await createWorkspace();
+  const globalRoot = await createGlobalMemoriesRoot({
+    memoryMd: [
+      "# Task Group: Dex Agent global memory adapter",
+      "scope: ranking behavior for dex-agent",
+      `applies_to: cwd=${path.basename(workdir)}; reuse_rule=use here`,
+      "",
+      "## Reusable knowledge",
+      "- Global markdown memory adapter keeps markdown recall read-only and always-on for dex-agent."
+    ].join("\n")
+  });
+  const service = new ProjectMemoryService(undefined, {
+    globalMemoriesRoot: globalRoot
+  });
+  await writeLedger(workdir, [
+    {
+      id: "mem-local",
+      createdAt: "2026-04-20T10:00:00.000Z",
+      project: path.basename(workdir),
+      scope: "repo",
+      kind: "fact",
+      title: "Local routing note",
+      summary: "Memory exists.",
+      evidence: { type: "operator", value: "local note" },
+      tags: ["memory"],
+      supersedes: [],
+      confidence: 0.2,
+      source: { type: "operator", detail: "local" }
+    }
+  ]);
+
+  const result = await service.queryMemory({
+    workdir,
+    prompt: "global markdown memory adapter read-only dex-agent",
+    intent: "implementation"
+  });
+
+  assert.ok(result.entries.length >= 1);
+  assert.match(
+    result.entries[0]?.title || "",
+    /Dex Agent global memory adapter/i
+  );
+});
+
 test("applyPromotion appends valid durable memory and avoids duplicates", async () => {
   const workdir = await createWorkspace();
-  const service = new ProjectMemoryService();
+  const service = new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY);
 
   await service.captureCandidate({
     workdir,
@@ -141,7 +261,10 @@ test("applyPromotion appends valid durable memory and avoids duplicates", async 
 
 test("candidates and proposals survive service restart through the inbox files", async () => {
   const workdir = await createWorkspace();
-  const firstService = new ProjectMemoryService();
+  const firstService = new ProjectMemoryService(
+    undefined,
+    DISABLE_GLOBAL_MEMORY
+  );
 
   const candidate = await firstService.captureCandidate({
     workdir,
@@ -154,7 +277,10 @@ test("candidates and proposals survive service restart through the inbox files",
   const proposal = await firstService.proposePromotion(workdir, candidate!.id);
   assert.ok(proposal);
 
-  const secondService = new ProjectMemoryService();
+  const secondService = new ProjectMemoryService(
+    undefined,
+    DISABLE_GLOBAL_MEMORY
+  );
   const candidates = await secondService.listCandidates(workdir);
   const proposals = await secondService.listProposals(workdir);
 
@@ -166,7 +292,7 @@ test("candidates and proposals survive service restart through the inbox files",
 
 test("buildMemoryPacket skips trivial prompts and includes operational state for planning", async () => {
   const workdir = await createWorkspace();
-  const service = new ProjectMemoryService();
+  const service = new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY);
 
   await fs.writeFile(
     path.join(workdir, "INDEX.md"),
@@ -247,7 +373,7 @@ test("buildMemoryPacket skips trivial prompts and includes operational state for
 
 test("readOperationalFile can open index and project surfaces", async () => {
   const workdir = await createWorkspace();
-  const service = new ProjectMemoryService();
+  const service = new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY);
 
   await fs.writeFile(path.join(workdir, "INDEX.md"), "# INDEX\n", "utf8");
   await fs.writeFile(
@@ -268,7 +394,7 @@ test("readOperationalFile can open index and project surfaces", async () => {
 
 test("buildMemoryPacket falls back to the first useful objective bullet when no canonical prefix exists", async () => {
   const workdir = await createWorkspace();
-  const service = new ProjectMemoryService();
+  const service = new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY);
 
   await fs.writeFile(
     path.join(workdir, ".agents", "ACTIVE.md"),
@@ -298,7 +424,7 @@ test("buildMemoryPacket falls back to the first useful objective bullet when no 
 
 test("buildMemoryPacket reads the next eligible slot from the human ACTIVE format", async () => {
   const workdir = await createWorkspace();
-  const service = new ProjectMemoryService();
+  const service = new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY);
 
   await fs.writeFile(
     path.join(workdir, ".agents", "ACTIVE.md"),
@@ -325,9 +451,100 @@ test("buildMemoryPacket reads the next eligible slot from the human ACTIVE forma
   assert.equal(packet?.nextEligibleBlock, "777-788");
 });
 
+test("buildMemoryPacket uses completed Current block status as the latest closed block", async () => {
+  const workdir = await createWorkspace();
+  const service = new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY);
+
+  await fs.writeFile(
+    path.join(workdir, ".agents", "ACTIVE.md"),
+    [
+      "# Active State",
+      "",
+      "## Current objective",
+      "- Operar a UX final do Telegram."
+    ].join("\n"),
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(workdir, ".agents", "HANDOFF.md"),
+    [
+      "# Session Handoff",
+      "",
+      "## Current block status",
+      "- tipo: `bloco`",
+      "- nome: `final actions - prompt sugerido, botoes dinamicos e piloto x3`",
+      "- conclusao: `100% concluido`",
+      "- objetivo_atual: `validar a proxima resposta final real no Telegram`",
+      "- proximo_passo_indicado: `monitorar proxima resposta final`"
+    ].join("\n"),
+    "utf8"
+  );
+
+  const packet = await service.buildMemoryPacket({
+    workdir,
+    prompt: "continue do ponto certo",
+    intent: "continue"
+  });
+
+  assert.ok(packet);
+  assert.equal(
+    packet?.latestClosedBlock,
+    "final actions - prompt sugerido, botoes dinamicos e piloto x3"
+  );
+  assert.equal(
+    packet?.currentObjective,
+    "validar a proxima resposta final real no Telegram"
+  );
+});
+
+test("buildMemoryPacket uses bloco_atual Current block status as the latest closed block", async () => {
+  const workdir = await createWorkspace();
+  const service = new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY);
+
+  await fs.writeFile(
+    path.join(workdir, ".agents", "ACTIVE.md"),
+    [
+      "# Active State",
+      "",
+      "## Current objective",
+      "- Operar o backend deste ciclo como fechado."
+    ].join("\n"),
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(workdir, ".agents", "HANDOFF.md"),
+    [
+      "# Session Handoff",
+      "",
+      "## Current block status",
+      "- bloco_atual: `estabilizacao_repo_status_checkpoint`",
+      "- status: `fechado`",
+      "- veredito: `Sprint concluido: diff classificado.`",
+      "- proximo_passo_seguro: `manter backend fechado; novo trabalho somente com corte explicito`"
+    ].join("\n"),
+    "utf8"
+  );
+
+  const packet = await service.buildMemoryPacket({
+    workdir,
+    prompt: "continue do ponto certo",
+    intent: "continue"
+  });
+
+  assert.ok(packet);
+  assert.equal(
+    packet?.latestClosedBlock,
+    "estabilizacao_repo_status_checkpoint"
+  );
+  assert.equal(
+    packet?.nextEligibleBlock,
+    "manter backend fechado; novo trabalho somente com corte explicito"
+  );
+});
+
 test("buildMemoryPacket falls back to the last closed residual when no numbered block exists", async () => {
   const workdir = await createWorkspace();
-  const service = new ProjectMemoryService();
+  const service = new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY);
 
   await fs.writeFile(
     path.join(workdir, ".agents", "ACTIVE.md"),
@@ -356,7 +573,7 @@ test("buildMemoryPacket falls back to the last closed residual when no numbered 
 
 test("renderMemoryPacket keeps the injected packet compact and omits raw evidence lines", async () => {
   const workdir = await createWorkspace();
-  const service = new ProjectMemoryService();
+  const service = new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY);
   await writeLedger(workdir, [
     {
       id: "mem-1",
@@ -401,9 +618,63 @@ test("renderMemoryPacket keeps the injected packet compact and omits raw evidenc
     "continue do ponto certo"
   );
   assert.match(rendered, /Authoritative project memory packet:/i);
-  assert.match(rendered, /\[durable_memory\|procedure\]/i);
+  assert.match(rendered, /\[workspace\|durable_memory\|procedure\]/i);
   assert.doesNotMatch(rendered, /evidence:/i);
   assert.doesNotMatch(rendered, /source files:/i);
+});
+
+test("buildMemoryPacket and source disclosure include workspace-relative and global-absolute sources", async () => {
+  const workdir = await createWorkspace();
+  const globalRoot = await createGlobalMemoriesRoot({
+    summaryMd: [
+      "## User Profile",
+      "",
+      "The operator uses dex-agent as a long-lived operational workspace.",
+      "",
+      "## User preferences",
+      "- Always disclose when memory came from a global source.",
+      "",
+      "## General Tips",
+      "- Keep memory source paths explicit."
+    ].join("\n")
+  });
+  const service = new ProjectMemoryService(undefined, {
+    globalMemoriesRoot: globalRoot
+  });
+  await writeLedger(workdir, [
+    {
+      id: "mem-local",
+      createdAt: "2026-04-20T10:00:00.000Z",
+      project: path.basename(workdir),
+      scope: "repo",
+      kind: "rule",
+      stage: "durable_memory",
+      title: "Show memory sources",
+      summary:
+        "Always disclose where memory came from in dex-agent status flows.",
+      evidence: { type: "operator", value: "local rule" },
+      tags: ["memory", "sources", "dex-agent"],
+      supersedes: [],
+      confidence: 0.95,
+      source: { type: "operator", detail: "local" }
+    }
+  ]);
+
+  const packet = await service.buildMemoryPacket({
+    workdir,
+    prompt: "show memory sources for dex-agent",
+    intent: "status"
+  });
+
+  assert.ok(packet);
+  const disclosure = service.buildSourceDisclosure(packet!);
+  assert.match(disclosure || "", /\.agents[\\/]MEMORY\.ndjson/i);
+  assert.match(disclosure || "", /memory_summary\.md/i);
+  assert.match(disclosure || "", /[A-Z]:\\/i);
+
+  const rendered = service.renderMemoryPacket(packet!, "show memory sources");
+  assert.match(rendered, /\[workspace\|durable_memory\|rule\]/i);
+  assert.match(rendered, /\[global\|durable_memory\|(rule|procedure|fact)\]/i);
 });
 
 test("captureCandidate upgrades strong repeated workflow into skill candidate metadata", async () => {
@@ -411,7 +682,8 @@ test("captureCandidate upgrades strong repeated workflow into skill candidate me
   const service = new ProjectMemoryService(
     new SkillPromotionService({
       globalSkillsRoot: path.join(workdir, "global-skills")
-    })
+    }),
+    DISABLE_GLOBAL_MEMORY
   );
 
   const candidate = await service.captureCandidate({
@@ -435,7 +707,8 @@ test("captureCandidate keeps manual-review items as base kind without forcing sk
   const service = new ProjectMemoryService(
     new SkillPromotionService({
       globalSkillsRoot: path.join(workdir, "global-skills")
-    })
+    }),
+    DISABLE_GLOBAL_MEMORY
   );
 
   const candidate = await service.captureCandidate({
@@ -456,7 +729,7 @@ test("captureCandidate keeps manual-review items as base kind without forcing sk
 
 test("captureCandidate drops weak runtime recap titles and warnings", async () => {
   const workdir = await createWorkspace();
-  const service = new ProjectMemoryService();
+  const service = new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY);
 
   const weakRecap = await service.captureCandidate({
     workdir,
@@ -478,7 +751,7 @@ test("captureCandidate drops weak runtime recap titles and warnings", async () =
 
 test("captureCandidate drops narrated sprint closeout summaries from runtime", async () => {
   const workdir = await createWorkspace();
-  const service = new ProjectMemoryService();
+  const service = new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY);
 
   const closeout = await service.captureCandidate({
     workdir,
@@ -494,7 +767,7 @@ test("captureCandidate drops narrated sprint closeout summaries from runtime", a
 
 test("captureCandidate drops runtime meta narration that only describes the assistant next move", async () => {
   const workdir = await createWorkspace();
-  const service = new ProjectMemoryService();
+  const service = new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY);
 
   const summary = await service.captureCandidate({
     workdir,
@@ -523,7 +796,7 @@ test("captureCandidate drops runtime meta narration that only describes the assi
 
 test("captureCandidate drops runtime wrappers and acknowledgement-style titles before they become skill candidates", async () => {
   const workdir = await createWorkspace();
-  const service = new ProjectMemoryService();
+  const service = new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY);
 
   const acknowledgement = await service.captureCandidate({
     workdir,
@@ -566,7 +839,7 @@ test("captureCandidate drops runtime wrappers and acknowledgement-style titles b
 
 test("listCandidates ignores BOM-prefixed mojibake recent-context entries", async () => {
   const workdir = await createWorkspace();
-  const service = new ProjectMemoryService();
+  const service = new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY);
   const inboxDir = path.join(workdir, ".agents", "INBOX");
   await fs.mkdir(inboxDir, { recursive: true });
   const corrupted = {
@@ -619,7 +892,7 @@ test("listCandidates ignores BOM-prefixed mojibake recent-context entries", asyn
 
 test("captureCandidate drops severe mojibake before writing to candidates", async () => {
   const workdir = await createWorkspace();
-  const service = new ProjectMemoryService();
+  const service = new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY);
 
   const candidate = await service.captureCandidate({
     workdir,
@@ -632,12 +905,204 @@ test("captureCandidate drops severe mojibake before writing to candidates", asyn
   assert.equal((await service.listCandidates(workdir)).length, 0);
 });
 
+test("captureFinalizedResponse ignores generic finalized text without explicit memory intent", async () => {
+  const workdir = await createWorkspace();
+  const service = new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY);
+
+  const result = await service.captureFinalizedResponse({
+    chatId: "1",
+    workdir,
+    promptText: "continue do ponto certo",
+    text: "Resumo honesto: o runtime ja voltou, mas ainda preciso revisar os detalhes antes de fechar."
+  });
+
+  assert.equal(result.candidate, null);
+  assert.equal(result.message, null);
+  assert.equal((await service.listCandidates(workdir)).length, 0);
+});
+
+test("captureFinalizedResponse accepts structured memory lines even without explicit remember intent", async () => {
+  const workdir = await createWorkspace();
+  const service = new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY);
+
+  const result = await service.captureFinalizedResponse({
+    chatId: "1",
+    workdir,
+    promptText: "continue do ponto certo",
+    text: [
+      "Analise concluida.",
+      "Decision: use a single retrieval query builder for project status and reuse.",
+      "Seguimos com a implementacao."
+    ].join("\n")
+  });
+
+  assert.ok(result.candidate);
+  assert.equal(result.candidate?.kind, "decision");
+  assert.match(
+    result.candidate?.summary || "",
+    /single retrieval query builder/i
+  );
+});
+
+test("queryMemory prefers repo memory over transversal summary guidance when both are relevant", async () => {
+  const workdir = await createWorkspace();
+  const globalRoot = await createGlobalMemoriesRoot({
+    memoryMd: [
+      "# Task Group: Dex Agent source disclosure",
+      `scope: disclosure rules for ${path.basename(workdir)}`,
+      `applies_to: cwd=${workdir}; reuse_rule=use here`,
+      "",
+      "## Reusable knowledge",
+      "- Dex Agent status flows must disclose workspace and global memory sources explicitly."
+    ].join("\n"),
+    summaryMd: [
+      "## User Profile",
+      "",
+      "The operator expects explicit boundaries.",
+      "",
+      "## User preferences",
+      "- Keep memory source paths explicit.",
+      "",
+      "## General Tips",
+      "- Prefer read-only adapters."
+    ].join("\n")
+  });
+  const service = new ProjectMemoryService(undefined, {
+    globalMemoriesRoot: globalRoot
+  });
+
+  const result = await service.queryMemory({
+    workdir,
+    prompt: "show memory sources",
+    intent: "status",
+    operationalContext: {
+      projectName: path.basename(workdir),
+      currentObjective: "show memory sources in dex-agent status flows",
+      nextEligibleBlock: "expose memory sources in project status",
+      latestClosedBlock: null
+    }
+  });
+
+  assert.ok(result.entries.length >= 2);
+  assert.match(result.entries[0]?.title || "", /Dex Agent source disclosure/i);
+});
+
+test("queryMemory boosts recent task_state when it matches the active continuation objective", async () => {
+  const workdir = await createWorkspace();
+  const service = new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY);
+
+  await writeLedger(workdir, [
+    {
+      id: "mem-decision",
+      createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 10).toISOString(),
+      project: path.basename(workdir),
+      scope: "repo",
+      kind: "decision",
+      title: "Keep queue recovery visible",
+      summary: "Queue recovery should stay visible during restart handling.",
+      evidence: { type: "operator", value: "older decision" },
+      tags: ["queue", "recovery", "restart"],
+      supersedes: [],
+      confidence: 0.95,
+      source: { type: "operator", detail: "old decision" }
+    },
+    {
+      id: "mem-task-state",
+      createdAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+      project: path.basename(workdir),
+      scope: "task",
+      kind: "task_state",
+      title: "Queue recovery remains the active objective",
+      summary:
+        "Current objective: continue queue recovery after restart with source disclosure preserved.",
+      evidence: { type: "assistant", value: "recent status" },
+      tags: ["queue", "recovery", "restart", "disclosure"],
+      supersedes: [],
+      confidence: 0.75,
+      source: { type: "runtime", detail: "recent_status" }
+    }
+  ]);
+
+  const result = await service.queryMemory({
+    workdir,
+    prompt: "continue queue recovery",
+    intent: "continue",
+    operationalContext: {
+      projectName: path.basename(workdir),
+      currentObjective: "continue queue recovery after restart",
+      nextEligibleBlock: "keep memory source disclosure visible",
+      latestClosedBlock: null
+    }
+  });
+
+  assert.equal(result.entries[0]?.id, "mem-task-state");
+});
+
+test("global markdown cache reuses parsed content until the source mtime changes", async () => {
+  const workdir = await createWorkspace();
+  const globalRoot = await createGlobalMemoriesRoot({
+    memoryMd: [
+      "# Task Group: Dex Agent cache test",
+      `scope: cache behavior for ${path.basename(workdir)}`,
+      `applies_to: cwd=${workdir}; reuse_rule=use here`,
+      "",
+      "## Reusable knowledge",
+      "- First cache version stays active while mtime is unchanged."
+    ].join("\n")
+  });
+  const service = new ProjectMemoryService(undefined, {
+    globalMemoriesRoot: globalRoot
+  });
+  const memoryPath = path.join(globalRoot, "MEMORY.md");
+  const fixedCachedTime = new Date("2026-04-20T10:00:00.000Z");
+  await fs.utimes(memoryPath, fixedCachedTime, fixedCachedTime);
+
+  const first = await service.queryMemory({
+    workdir,
+    prompt: "first cache version",
+    intent: "implementation"
+  });
+  assert.match(first.entries[0]?.summary || "", /First cache version/i);
+
+  await fs.writeFile(
+    memoryPath,
+    [
+      "# Task Group: Dex Agent cache test",
+      `scope: cache behavior for ${path.basename(workdir)}`,
+      `applies_to: cwd=${workdir}; reuse_rule=use here`,
+      "",
+      "## Reusable knowledge",
+      "- Second cache version should only appear after mtime changes."
+    ].join("\n"),
+    "utf8"
+  );
+  await fs.utimes(memoryPath, fixedCachedTime, fixedCachedTime);
+
+  const cached = await service.queryMemory({
+    workdir,
+    prompt: "cache version",
+    intent: "implementation"
+  });
+  assert.match(cached.entries[0]?.summary || "", /First cache version/i);
+
+  const refreshedTime = new Date("2026-04-20T10:00:05.000Z");
+  await fs.utimes(memoryPath, refreshedTime, refreshedTime);
+
+  const refreshed = await service.queryMemory({
+    workdir,
+    prompt: "cache version",
+    intent: "implementation"
+  });
+  assert.match(refreshed.entries[0]?.summary || "", /Second cache version/i);
+});
+
 test("captureFinalizedResponse auto-promotes strong project skill workflows", async () => {
   const workdir = await createWorkspace();
   const service = new ProjectMemoryService(
     new SkillPromotionService({
       globalSkillsRoot: path.join(workdir, "global-skills")
-    })
+    }),
+    DISABLE_GLOBAL_MEMORY
   );
 
   const result = await service.captureFinalizedResponse({
