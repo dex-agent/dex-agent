@@ -16,6 +16,12 @@
 - `npm run dev`: run the bot in watch mode for local development.
 - Use `CODEX_BACKEND=sdk` for the preferred SDK-backed runner; keep `CODEX_BACKEND=cli` only when you specifically need the legacy PTY/CLI path.
 
+## Cross-Project Audio Requests
+
+- If any workspace asks for audio sent by the bot, route to `dex-agent-audio-summary` (`dex-audio`) through the global wrapper before considering generic Telegram or voice-prep skills.
+- Do not satisfy bot-audio requests with a local `.wav`, `.mp3`, text-only handoff, `audio-direcao-voz`, or `tele-codex`; the expected proof is a Telegram `voice note` with `message_id`.
+- `tele-codex` may prepare short Telegram text/status messages, but audio ownership stays with `dex-agent-audio-summary`. If routing is unclear, return to flow governance/Fernanda instead of guessing.
+
 ## Test Commands
 
 - `npm test`: run the full unit test suite with the Node test runner plus `tsx`.

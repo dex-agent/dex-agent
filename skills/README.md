@@ -28,6 +28,8 @@ Skills espelhadas:
 Detalhe importante:
 
 - `skills/dex-agent-audio-summary/SKILL.md` e espelho fiel da skill global canonica; ela cobre resumo em audio e audio explicativo enviado pelo proprio bot via `Dex Agent`
+- alias curto oficial dessa skill: `dex-audio`
+- pedidos de audio real, nota de voz, TTS ou explicacao falada pelo bot devem ir para `dex-agent-audio-summary`; `tele-codex` nao e dona desse envio e deve encaminhar para `dex-audio` ou governanca de fluxo quando o contrato estiver ambiguo
 - `skills/avaliador-memory-candidate/SKILL.md` e espelho fiel da skill global canonica dedicada a revisar `memory candidate` e `skill_candidate` com profundidade operacional, emitindo avancos e retrocessos via `ancora-fluxo`
 - `skills/refinador-intencao/SKILL.md` e a skill local para capturas soltas ou confusas; gatilhos comuns: `guarda isso`, `isso devia virar skill`, `nao sei se isso e memoria ou skill`; use-a antes de `/remember` quando o destino ainda estiver nebuloso
 - `skills/promocao-memoria-para-skill/README.md` explica a motivacao e a organizacao dessa skill
