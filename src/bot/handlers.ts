@@ -22,6 +22,7 @@ import type { Scheduler } from "../cron/scheduler.js";
 import { toErrorMessage } from "../lib/errors.js";
 import type { AudioTranscriber } from "../lib/audioTranscription.js";
 import type { AudioSummaryManager } from "../lib/audioSummaryManager.js";
+import type { AdminWebServer } from "../lib/adminWebServer.js";
 import {
   downloadTelegramMediaToTemp,
   type TelegramMediaSource
@@ -45,7 +46,16 @@ import {
   type MemoryWriteProposal
 } from "../orchestrator/memoryService.js";
 import { ProjectReuseEngine } from "../orchestrator/reuseEngine.js";
-import { PromptLibraryService } from "../orchestrator/promptLibraryService.js";
+import {
+  PromptLibraryService,
+  type ProjectPromptIntent
+} from "../orchestrator/promptLibraryService.js";
+import {
+  DashboardAdminService,
+  type DashboardAdminSnapshot
+} from "../orchestrator/dashboardAdminService.js";
+import { HistoryAdminService } from "../orchestrator/historyAdminService.js";
+import { PromptAdminService } from "../orchestrator/promptAdminService.js";
 import {
   buildProjectPromptPresets,
   type ProjectPromptPreset
@@ -59,6 +69,8 @@ interface SkillResultPayload {
   buttons?: Array<Array<{ text: string; callbackData: string }>>;
 }
 
+type AdminWebServerLike = Pick<AdminWebServer, "getLink">;
+
 interface RegisterHandlersOptions {
   bot: any;
   ptyManager: PtyManager;
@@ -70,6 +82,8 @@ interface RegisterHandlersOptions {
   memoryService: ProjectMemoryService;
   reuseEngine?: ProjectReuseEngine;
   promptLibraryService: PromptLibraryService;
+  dashboardAdminService?: DashboardAdminService;
+  adminWebServer?: AdminWebServerLike;
   audioTranscriber?: AudioTranscriber | null;
   audioSummaryManager?: AudioSummaryManager | null;
   telegramMediaDownloader?: (source: TelegramMediaSource) => Promise<{
@@ -134,6 +148,14 @@ const PROJECT_MEMORY_BUTTON_ROW: LocalizedButtonSpec[] = [
   { labelKey: "buttonMemoryProject", callbackData: "memory:view:project" },
   { labelKey: "buttonMemoryActive", callbackData: "memory:view:active" },
   { labelKey: "buttonMemoryHandoff", callbackData: "memory:view:handoff" }
+];
+
+const ADMIN_DASHBOARD_BUTTON_ROWS: LocalizedButtonSpec[][] = [
+  [
+    { labelKey: "buttonAdminPrompts", callbackData: "admin:prompts" },
+    { labelKey: "buttonAdminHistory", callbackData: "admin:history" },
+    { labelKey: "buttonMemoryRefresh", callbackData: "admin:show" }
+  ]
 ];
 
 function buildLocalizedButtonRow(
@@ -1741,6 +1763,183 @@ function buildPromptLibraryHelpText(): string {
   ].join("\n");
 }
 
+function buildDashboardAdminText(
+  locale: Locale,
+  snapshot: DashboardAdminSnapshot,
+  relativeWorkdir: string
+): string {
+  const builtinCount = snapshot.prompts.items.filter(
+    (item) => item.source === "builtin"
+  ).length;
+  const customCount = snapshot.prompts.items.filter(
+    (item) => item.source === "custom"
+  ).length;
+
+  return [
+    t(locale, "adminDashboardTitle"),
+    `${t(locale, "adminDashboardProjectLabel")}: ${relativeWorkdir || snapshot.workdir}`,
+    "",
+    `${t(locale, "adminDashboardModulesLabel")}:`,
+    ...snapshot.modules.map((module) =>
+      [
+        `- ${module.label}: ${module.status} / ${module.mode}`,
+        module.reason ? ` - ${module.reason}` : ""
+      ].join("")
+    ),
+    "",
+    `${t(locale, "adminDashboardPromptsLabel")}:`,
+    `- ${t(locale, "adminDashboardBuiltinsLabel")}: ${builtinCount}`,
+    `- ${t(locale, "adminDashboardCustomLabel")}: ${customCount}`,
+    `- ${t(locale, "adminDashboardActionsLabel")}: ${snapshot.prompts.capabilities.join(", ")}`,
+    "",
+    `${t(locale, "adminDashboardHistoryLabel")}:`,
+    `- ${t(locale, "adminDashboardCandidatesLabel")}: ${snapshot.history.candidates.length}`,
+    `- ${t(locale, "adminDashboardProposalsLabel")}: ${snapshot.history.proposals.length}`,
+    `- ${t(locale, "adminDashboardActionsLabel")}: ${snapshot.history.capabilities.join(", ")}`,
+    "",
+    `${t(locale, "adminDashboardOperationLabel")}: ${snapshot.operation.reason}`,
+    `${t(locale, "adminDashboardSettingsLabel")}: ${snapshot.settings.reason}`,
+    "",
+    t(locale, "adminDashboardLinkHint")
+  ].join("\n");
+}
+
+function buildAdminPromptsText(
+  locale: Locale,
+  snapshot: DashboardAdminSnapshot,
+  relativeWorkdir: string
+): string {
+  const builtinItems = snapshot.prompts.items.filter(
+    (item) => item.source === "builtin"
+  );
+  const customItems = snapshot.prompts.items.filter(
+    (item) => item.source === "custom"
+  );
+
+  const formatItem = (item: (typeof snapshot.prompts.items)[number]): string =>
+    [
+      `- ${item.selector}`,
+      item.label,
+      humanizePromptIntent(item.intent),
+      item.removable ? t(locale, "adminPromptsRemovable") : null
+    ]
+      .filter(Boolean)
+      .join(" | ");
+
+  return [
+    t(locale, "adminPromptsTitle"),
+    `${t(locale, "adminDashboardProjectLabel")}: ${relativeWorkdir || snapshot.workdir}`,
+    "",
+    `${t(locale, "adminDashboardBuiltinsLabel")}:`,
+    ...(builtinItems.length
+      ? builtinItems.map(formatItem)
+      : [t(locale, "adminPromptsEmptyBuiltins")]),
+    "",
+    `${t(locale, "adminDashboardCustomLabel")}:`,
+    ...(customItems.length
+      ? customItems.map(formatItem)
+      : [t(locale, "adminPromptsEmptyCustom")]),
+    "",
+    `${t(locale, "adminDashboardActionsLabel")}: ${snapshot.prompts.capabilities.join(", ")}`,
+    t(locale, "adminPromptsUsage")
+  ].join("\n");
+}
+
+function buildAdminHistoryText(
+  locale: Locale,
+  snapshot: DashboardAdminSnapshot,
+  relativeWorkdir: string
+): string {
+  const formatCandidate = (
+    item: (typeof snapshot.history.candidates)[number]
+  ): string =>
+    [
+      `- ${item.selector}`,
+      item.title,
+      `${item.confidence}`,
+      item.stage || item.kind
+    ]
+      .filter(Boolean)
+      .join(" | ");
+
+  const formatProposal = (
+    item: (typeof snapshot.history.proposals)[number]
+  ): string =>
+    [`- ${item.selector}`, item.title, item.destination, `${item.confidence}`]
+      .filter(Boolean)
+      .join(" | ");
+
+  return [
+    t(locale, "adminHistoryTitle"),
+    `${t(locale, "adminDashboardProjectLabel")}: ${relativeWorkdir || snapshot.workdir}`,
+    "",
+    `${t(locale, "adminDashboardCandidatesLabel")}:`,
+    ...(snapshot.history.candidates.length
+      ? snapshot.history.candidates.map(formatCandidate)
+      : [t(locale, "adminHistoryEmptyCandidates")]),
+    "",
+    `${t(locale, "adminDashboardProposalsLabel")}:`,
+    ...(snapshot.history.proposals.length
+      ? snapshot.history.proposals.map(formatProposal)
+      : [t(locale, "adminHistoryEmptyProposals")]),
+    "",
+    `${t(locale, "adminDashboardActionsLabel")}: ${snapshot.history.capabilities.join(", ")}`,
+    t(locale, "adminHistoryUsage")
+  ].join("\n");
+}
+
+function buildAdminHistoryExplainText(
+  locale: Locale,
+  relativeWorkdir: string,
+  selector: string,
+  explanation: string
+): string {
+  return [
+    t(locale, "adminHistoryExplainTitle"),
+    `${t(locale, "adminDashboardProjectLabel")}: ${relativeWorkdir}`,
+    `selector: ${selector}`,
+    "",
+    explanation || t(locale, "emptyResponse")
+  ].join("\n");
+}
+
+function isProjectPromptIntent(value: string): value is ProjectPromptIntent {
+  return (
+    value === "status" ||
+    value === "continue" ||
+    value === "planning" ||
+    value === "implementation"
+  );
+}
+
+function parseAdminPromptAddPayload(
+  raw: string
+): { label: string; prompt: string; intent?: ProjectPromptIntent } | null {
+  const normalized = String(raw || "").trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const parts = normalized
+    .split("::")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length === 2) {
+    const [label, prompt] = parts;
+    return label && prompt ? { label, prompt } : null;
+  }
+
+  if (parts.length === 3 && isProjectPromptIntent(parts[0] || "")) {
+    const intent = parts[0] as ProjectPromptIntent;
+    const label = parts[1];
+    const prompt = parts[2];
+    return label && prompt ? { intent, label, prompt } : null;
+  }
+
+  return null;
+}
+
 const PROMPT_LIBRARY_PAGE_SIZE = 8;
 
 function normalizePromptLibraryPage(page: number, total: number): number {
@@ -1984,6 +2183,8 @@ export function registerHandlers({
   memoryService,
   reuseEngine,
   promptLibraryService,
+  dashboardAdminService,
+  adminWebServer,
   audioTranscriber,
   audioSummaryManager,
   telegramMediaDownloader = (source) => downloadTelegramMediaToTemp({ source }),
@@ -1992,6 +2193,14 @@ export function registerHandlers({
 }: RegisterHandlersOptions): void {
   const effectiveReuseEngine =
     reuseEngine || new ProjectReuseEngine(memoryService);
+  const effectiveDashboardAdminService =
+    dashboardAdminService || new DashboardAdminService();
+  const effectiveAdminWebServer = adminWebServer;
+  const effectiveHistoryAdminService = new HistoryAdminService(memoryService);
+  const effectivePromptAdminService = new PromptAdminService(
+    memoryService,
+    promptLibraryService
+  );
   const localeOf = (chatId: string | number): Locale =>
     ptyManager.getLanguage(chatId);
   const buildPromptWithMemory = async (
@@ -2394,6 +2603,454 @@ export function registerHandlers({
     });
   };
 
+  const handleAdminDashboardCommand = async (ctx: any): Promise<void> => {
+    const locale = localeOf(ctx.chat.id);
+    const status = ptyManager.getStatus(ctx.chat.id);
+    const keyboard = Markup.inlineKeyboard(
+      ADMIN_DASHBOARD_BUTTON_ROWS.map((row) =>
+        buildLocalizedButtonRow(locale, row).map((button) =>
+          Markup.button.callback(button.text, button.callbackData)
+        )
+      )
+    );
+
+    try {
+      const snapshot = await effectiveDashboardAdminService.inspect(
+        status.workdir
+      );
+      await sendChunkedMarkdown(
+        ctx,
+        buildDashboardAdminText(locale, snapshot, status.relativeWorkdir),
+        {
+          ...keyboard
+        }
+      );
+    } catch (error) {
+      await sendChunkedMarkdown(
+        ctx,
+        t(locale, "adminDashboardInspectFailed", {
+          error: toErrorMessage(error)
+        })
+      );
+    }
+  };
+  const handleAdminLinkCommand = async (ctx: any): Promise<void> => {
+    const locale = localeOf(ctx.chat.id);
+    const status = ptyManager.getStatus(ctx.chat.id);
+
+    if (!effectiveAdminWebServer) {
+      await sendChunkedMarkdown(
+        ctx,
+        t(locale, "adminLinkFailed", {
+          error: "admin_web_server_unavailable"
+        })
+      );
+      return;
+    }
+
+    try {
+      const url = await effectiveAdminWebServer.getLink(status.workdir);
+      await sendChunkedMarkdown(
+        ctx,
+        t(locale, "adminLinkReady", {
+          relativeWorkdir: status.relativeWorkdir,
+          url
+        })
+      );
+    } catch (error) {
+      await sendChunkedMarkdown(
+        ctx,
+        t(locale, "adminLinkFailed", {
+          error: toErrorMessage(error)
+        })
+      );
+    }
+  };
+  const handleAdminPromptsCommand = async (
+    ctx: any,
+    payload = ""
+  ): Promise<void> => {
+    const locale = localeOf(ctx.chat.id);
+    const status = ptyManager.getStatus(ctx.chat.id);
+    const trimmedPayload = String(payload || "").trim();
+
+    if (trimmedPayload) {
+      const lowerPayload = trimmedPayload.toLowerCase();
+
+      if (lowerPayload.startsWith("add ")) {
+        const parsed = parseAdminPromptAddPayload(trimmedPayload.slice(4));
+        if (!parsed) {
+          await sendChunkedMarkdown(ctx, t(locale, "adminPromptsUsage"));
+          return;
+        }
+
+        try {
+          const created =
+            await effectivePromptAdminService.createPromptAdminItem(
+              status.workdir,
+              parsed
+            );
+          await sendChunkedMarkdown(
+            ctx,
+            t(locale, "adminPromptsCreated", {
+              selector: created.selector,
+              label: created.label,
+              intent: humanizePromptIntent(created.intent)
+            })
+          );
+          return;
+        } catch (error) {
+          await sendChunkedMarkdown(
+            ctx,
+            t(locale, "adminDashboardInspectFailed", {
+              error: toErrorMessage(error)
+            })
+          );
+          return;
+        }
+      }
+
+      if (lowerPayload.startsWith("remove ")) {
+        const selector = trimmedPayload.slice(7).trim();
+        if (!selector) {
+          await sendChunkedMarkdown(ctx, t(locale, "adminPromptsUsage"));
+          return;
+        }
+
+        try {
+          const removed =
+            await effectivePromptAdminService.removePromptAdminItem(
+              status.workdir,
+              selector
+            );
+
+          if (!removed) {
+            await sendChunkedMarkdown(
+              ctx,
+              t(locale, "adminPromptsNotFound", { selector })
+            );
+            return;
+          }
+
+          await sendChunkedMarkdown(
+            ctx,
+            t(locale, "adminPromptsRemoved", {
+              selector: removed.selector,
+              label: removed.label,
+              intent: humanizePromptIntent(removed.intent)
+            })
+          );
+          return;
+        } catch (error) {
+          const message = toErrorMessage(error);
+
+          if (message === "prompt_admin_builtin_not_removable") {
+            await sendChunkedMarkdown(
+              ctx,
+              t(locale, "adminPromptsBuiltinNotRemovable")
+            );
+            return;
+          }
+
+          if (
+            message === "prompt_admin_selector_required" ||
+            message === "prompt_admin_selector_invalid"
+          ) {
+            await sendChunkedMarkdown(ctx, t(locale, "adminPromptsUsage"));
+            return;
+          }
+
+          await sendChunkedMarkdown(
+            ctx,
+            t(locale, "adminDashboardInspectFailed", {
+              error: message
+            })
+          );
+          return;
+        }
+      }
+
+      await sendChunkedMarkdown(ctx, t(locale, "adminPromptsUsage"));
+      return;
+    }
+
+    try {
+      const snapshot = await effectiveDashboardAdminService.inspect(
+        status.workdir
+      );
+      await sendChunkedMarkdown(
+        ctx,
+        buildAdminPromptsText(locale, snapshot, status.relativeWorkdir),
+        {
+          ...Markup.inlineKeyboard(
+            ADMIN_DASHBOARD_BUTTON_ROWS.map((row) =>
+              buildLocalizedButtonRow(locale, row).map((button) =>
+                Markup.button.callback(button.text, button.callbackData)
+              )
+            )
+          )
+        }
+      );
+    } catch (error) {
+      await sendChunkedMarkdown(
+        ctx,
+        t(locale, "adminDashboardInspectFailed", {
+          error: toErrorMessage(error)
+        })
+      );
+    }
+  };
+  const handleAdminHistoryCommand = async (
+    ctx: any,
+    payload = ""
+  ): Promise<void> => {
+    const locale = localeOf(ctx.chat.id);
+    const status = ptyManager.getStatus(ctx.chat.id);
+    const trimmedPayload = String(payload || "").trim();
+
+    if (trimmedPayload) {
+      const lowerPayload = trimmedPayload.toLowerCase();
+
+      if (lowerPayload.startsWith("explain ")) {
+        const selector = trimmedPayload.slice(8).trim();
+        if (!selector) {
+          await sendChunkedMarkdown(ctx, t(locale, "adminHistoryUsage"));
+          return;
+        }
+
+        try {
+          const explanation =
+            await effectiveHistoryAdminService.explainHistoryCandidate(
+              status.workdir,
+              selector
+            );
+
+          if (!explanation) {
+            await sendChunkedMarkdown(
+              ctx,
+              t(locale, "adminHistoryCandidateNotFound", { selector })
+            );
+            return;
+          }
+
+          await sendChunkedMarkdown(
+            ctx,
+            buildAdminHistoryExplainText(
+              locale,
+              status.relativeWorkdir,
+              selector,
+              explanation
+            )
+          );
+          return;
+        } catch (error) {
+          const message = toErrorMessage(error);
+
+          if (
+            message === "history_admin_selector_required" ||
+            message === "history_admin_selector_invalid"
+          ) {
+            await sendChunkedMarkdown(ctx, t(locale, "adminHistoryUsage"));
+            return;
+          }
+
+          await sendChunkedMarkdown(
+            ctx,
+            t(locale, "adminDashboardInspectFailed", {
+              error: message
+            })
+          );
+          return;
+        }
+      }
+
+      if (lowerPayload.startsWith("discard ")) {
+        const selector = trimmedPayload.slice(8).trim();
+        if (!selector) {
+          await sendChunkedMarkdown(ctx, t(locale, "adminHistoryUsage"));
+          return;
+        }
+
+        try {
+          const discarded =
+            await effectiveHistoryAdminService.discardHistoryCandidate(
+              status.workdir,
+              selector
+            );
+
+          if (!discarded) {
+            await sendChunkedMarkdown(
+              ctx,
+              t(locale, "adminHistoryCandidateNotFound", { selector })
+            );
+            return;
+          }
+
+          await sendChunkedMarkdown(
+            ctx,
+            t(locale, "adminHistoryCandidateDiscarded", {
+              selector: discarded.selector,
+              title: discarded.title,
+              stage: discarded.stage || "none"
+            })
+          );
+          return;
+        } catch (error) {
+          const message = toErrorMessage(error);
+
+          if (
+            message === "history_admin_selector_required" ||
+            message === "history_admin_selector_invalid"
+          ) {
+            await sendChunkedMarkdown(ctx, t(locale, "adminHistoryUsage"));
+            return;
+          }
+
+          await sendChunkedMarkdown(
+            ctx,
+            t(locale, "adminDashboardInspectFailed", {
+              error: message
+            })
+          );
+          return;
+        }
+      }
+
+      if (lowerPayload.startsWith("propose ")) {
+        const selector = trimmedPayload.slice(8).trim();
+        if (!selector) {
+          await sendChunkedMarkdown(ctx, t(locale, "adminHistoryUsage"));
+          return;
+        }
+
+        try {
+          const proposal =
+            await effectiveHistoryAdminService.proposeHistoryCandidate(
+              status.workdir,
+              selector
+            );
+
+          if (!proposal) {
+            await sendChunkedMarkdown(
+              ctx,
+              t(locale, "adminHistoryCandidateNotFound", { selector })
+            );
+            return;
+          }
+
+          await sendChunkedMarkdown(
+            ctx,
+            t(locale, "adminHistoryProposalCreated", {
+              selector: proposal.selector,
+              candidateSelector: proposal.candidateSelector,
+              destination: proposal.destination
+            })
+          );
+          return;
+        } catch (error) {
+          const message = toErrorMessage(error);
+
+          if (
+            message === "history_admin_selector_required" ||
+            message === "history_admin_selector_invalid"
+          ) {
+            await sendChunkedMarkdown(ctx, t(locale, "adminHistoryUsage"));
+            return;
+          }
+
+          await sendChunkedMarkdown(
+            ctx,
+            t(locale, "adminDashboardInspectFailed", {
+              error: message
+            })
+          );
+          return;
+        }
+      }
+
+      if (lowerPayload.startsWith("cancel ")) {
+        const selector = trimmedPayload.slice(7).trim();
+        if (!selector) {
+          await sendChunkedMarkdown(ctx, t(locale, "adminHistoryUsage"));
+          return;
+        }
+
+        try {
+          const proposal =
+            await effectiveHistoryAdminService.cancelHistoryProposal(
+              status.workdir,
+              selector
+            );
+
+          if (!proposal) {
+            await sendChunkedMarkdown(
+              ctx,
+              t(locale, "adminHistoryProposalNotFound", { selector })
+            );
+            return;
+          }
+
+          await sendChunkedMarkdown(
+            ctx,
+            t(locale, "adminHistoryProposalCanceled", {
+              selector: proposal.selector,
+              candidateSelector: proposal.candidateSelector,
+              destination: proposal.destination
+            })
+          );
+          return;
+        } catch (error) {
+          const message = toErrorMessage(error);
+
+          if (
+            message === "history_admin_selector_required" ||
+            message === "history_admin_selector_invalid"
+          ) {
+            await sendChunkedMarkdown(ctx, t(locale, "adminHistoryUsage"));
+            return;
+          }
+
+          await sendChunkedMarkdown(
+            ctx,
+            t(locale, "adminDashboardInspectFailed", {
+              error: message
+            })
+          );
+          return;
+        }
+      }
+
+      await sendChunkedMarkdown(ctx, t(locale, "adminHistoryUsage"));
+      return;
+    }
+
+    try {
+      const snapshot = await effectiveDashboardAdminService.inspect(
+        status.workdir
+      );
+      await sendChunkedMarkdown(
+        ctx,
+        buildAdminHistoryText(locale, snapshot, status.relativeWorkdir),
+        {
+          ...Markup.inlineKeyboard(
+            ADMIN_DASHBOARD_BUTTON_ROWS.map((row) =>
+              buildLocalizedButtonRow(locale, row).map((button) =>
+                Markup.button.callback(button.text, button.callbackData)
+              )
+            )
+          )
+        }
+      );
+    } catch (error) {
+      await sendChunkedMarkdown(
+        ctx,
+        t(locale, "adminDashboardInspectFailed", {
+          error: toErrorMessage(error)
+        })
+      );
+    }
+  };
+
   const handleIncomingText = async (
     ctx: any,
     text: string,
@@ -2575,6 +3232,35 @@ export function registerHandlers({
   });
 
   bot.command("menu", handleMenuCommand);
+
+  bot.command("admin", async (ctx: any) => {
+    const payload = String(
+      extractCommandPayload(ctx.message.text, "admin") || "show"
+    ).trim();
+    const lowerPayload = payload.toLowerCase();
+
+    if (lowerPayload === "show") {
+      await handleAdminDashboardCommand(ctx);
+      return;
+    }
+
+    if (lowerPayload === "link") {
+      await handleAdminLinkCommand(ctx);
+      return;
+    }
+
+    if (lowerPayload === "prompts" || lowerPayload.startsWith("prompts ")) {
+      await handleAdminPromptsCommand(ctx, payload.slice("prompts".length));
+      return;
+    }
+
+    if (lowerPayload === "history" || lowerPayload.startsWith("history ")) {
+      await handleAdminHistoryCommand(ctx, payload.slice("history".length));
+      return;
+    }
+
+    await sendChunkedMarkdown(ctx, t(localeOf(ctx.chat.id), "adminUsage"));
+  });
 
   bot.command("status", handleStatusCommand);
 
@@ -3800,6 +4486,10 @@ export function registerHandlers({
         }
         return;
       }
+      if (action === "admin") {
+        await handleAdminDashboardCommand(ctx);
+        return;
+      }
       if (action === "repo") {
         ctx.message = { text: "/repo" };
         await handleRepoCommand(ctx);
@@ -3854,6 +4544,28 @@ export function registerHandlers({
       if (action === "help") {
         await sendChunkedMarkdown(ctx, buildHelpText());
       }
+      return;
+    }
+
+    if (data.startsWith("admin:")) {
+      await ctx.answerCbQuery(t(locale, "callbackRefreshed"));
+      const action = data.replace("admin:", "");
+
+      if (action === "show") {
+        await handleAdminDashboardCommand(ctx);
+        return;
+      }
+
+      if (action === "prompts") {
+        await handleAdminPromptsCommand(ctx);
+        return;
+      }
+
+      if (action === "history") {
+        await handleAdminHistoryCommand(ctx);
+        return;
+      }
+
       return;
     }
 

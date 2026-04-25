@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { registerHandlers } from "../src/bot/handlers.js";
+import { AdminWebServer } from "../src/lib/adminWebServer.js";
 import { ProjectMemoryService } from "../src/orchestrator/memoryService.js";
 import { PromptLibraryService } from "../src/orchestrator/promptLibraryService.js";
 
@@ -146,6 +147,8 @@ function createDependencies(
     workdir?: string;
     memoryService?: ProjectMemoryService;
     promptLibraryService?: PromptLibraryService;
+    dashboardAdminService?: { inspect(workdir: string): Promise<any> };
+    adminWebServer?: { getLink(workdir: string): Promise<string> };
     adminActions?: {
       restart?: () => Promise<void>;
     } | null;
@@ -376,6 +379,13 @@ function createDependencies(
       } as any),
     promptLibraryService:
       overrides.promptLibraryService || new PromptLibraryService(),
+    dashboardAdminService: overrides.dashboardAdminService as any,
+    adminWebServer:
+      overrides.adminWebServer ||
+      ({
+        getLink: async (workdir: string) =>
+          `http://127.0.0.1:3999/admin?workdir=${encodeURIComponent(workdir)}`
+      } satisfies Pick<AdminWebServer, "getLink">),
     audioTranscriber: {
       isEnabled: () => true,
       transcribeTelegramAudio:
@@ -483,6 +493,11 @@ test("menu command renders dashboard with inline buttons", async () => {
     }
   )?.inline_keyboard;
   assert.equal(inlineKeyboard?.[0]?.[0]?.callback_data, "menu:project");
+  assert.ok(
+    inlineKeyboard?.some((row) =>
+      row.some((button) => button.callback_data === "menu:admin")
+    )
+  );
 });
 
 test("text handler sends free text directly to Codex", async () => {
@@ -1996,6 +2011,597 @@ test("menu callback project opens the project card", async () => {
   await handler!(ctx);
 
   assert.deepEqual(calls, ["default"]);
+});
+
+test("menu callback admin opens the internal admin dashboard", async () => {
+  const inspected: string[] = [];
+  const { bot } = createDependencies({
+    workdir: "C:\\CodexProjetos\\dex-agent",
+    dashboardAdminService: {
+      inspect: async (workdir: string) => {
+        inspected.push(workdir);
+        return {
+          workdir,
+          modules: [
+            {
+              key: "prompts",
+              label: "Prompts",
+              status: "enabled",
+              mode: "editable",
+              reason: null
+            },
+            {
+              key: "history",
+              label: "Historico",
+              status: "enabled",
+              mode: "editable",
+              reason: null
+            },
+            {
+              key: "operation",
+              label: "Operacao",
+              status: "planned",
+              mode: "read-only",
+              reason:
+                "Ainda falta uma fronteira dedicada para mutacoes de fila."
+            },
+            {
+              key: "settings",
+              label: "Configuracoes",
+              status: "planned",
+              mode: "read-only",
+              reason:
+                "Ainda nao existe um ConfigService proprio para escrita segura."
+            }
+          ],
+          prompts: {
+            items: [
+              {
+                source: "builtin",
+                selector: "builtin:0",
+                label: "Retomar trabalho",
+                intent: "continue",
+                removable: false
+              },
+              {
+                source: "custom",
+                selector: "custom:abc-123",
+                label: "Sprint atual",
+                intent: "planning",
+                removable: true
+              }
+            ],
+            capabilities: [
+              "listBuiltins",
+              "listCustom",
+              "createCustom",
+              "removeCustom"
+            ]
+          },
+          history: {
+            candidates: [{}],
+            proposals: [],
+            capabilities: [
+              "listCandidates",
+              "listProposals",
+              "explainCandidate",
+              "discardCandidate",
+              "proposePromotion",
+              "cancelProposal"
+            ]
+          },
+          operation: {
+            enabled: false,
+            reason: "Mutacoes de fila continuam fora do v1."
+          },
+          settings: {
+            enabled: false,
+            reason:
+              "Configuracoes seguem em leitura ate existir fronteira segura."
+          }
+        };
+      }
+    }
+  });
+  const ctx = createContext("", 1, { text: undefined });
+  ctx.callbackQuery = {
+    data: "menu:admin"
+  };
+  const handler = bot.events.get("callback_query");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.deepEqual(inspected, ["C:\\CodexProjetos\\dex-agent"]);
+  assert.match(
+    ctx.replies[1]?.text || "",
+    /Admin dashboard \\?\(internal v1\\?\)/i
+  );
+  assert.match(ctx.replies[1]?.text || "", /Prompts: enabled \/ editable/i);
+  assert.match(ctx.replies[1]?.text || "", /Historico: enabled \/ editable/i);
+  const inlineKeyboard = (
+    ctx.replies[1]?.options?.reply_markup as {
+      inline_keyboard?: Array<Array<{ callback_data?: string }>>;
+    }
+  )?.inline_keyboard;
+  assert.ok(
+    inlineKeyboard?.some((row) =>
+      row.some((button) => button.callback_data === "admin:prompts")
+    )
+  );
+  assert.ok(
+    inlineKeyboard?.some((row) =>
+      row.some((button) => button.callback_data === "admin:history")
+    )
+  );
+});
+
+test("admin command opens the same internal admin dashboard snapshot", async () => {
+  const { bot } = createDependencies({
+    dashboardAdminService: {
+      inspect: async (workdir: string) => ({
+        workdir,
+        modules: [
+          {
+            key: "prompts",
+            label: "Prompts",
+            status: "enabled",
+            mode: "editable",
+            reason: null
+          },
+          {
+            key: "history",
+            label: "Historico",
+            status: "enabled",
+            mode: "editable",
+            reason: null
+          },
+          {
+            key: "operation",
+            label: "Operacao",
+            status: "planned",
+            mode: "read-only",
+            reason: "Ainda falta uma fronteira dedicada para mutacoes de fila."
+          },
+          {
+            key: "settings",
+            label: "Configuracoes",
+            status: "planned",
+            mode: "read-only",
+            reason:
+              "Ainda nao existe um ConfigService proprio para escrita segura."
+          }
+        ],
+        prompts: {
+          items: [
+            {
+              source: "builtin",
+              selector: "builtin:0",
+              label: "Retomar trabalho",
+              intent: "continue",
+              removable: false
+            },
+            {
+              source: "custom",
+              selector: "custom:abc-123",
+              label: "Sprint atual",
+              intent: "planning",
+              removable: true
+            }
+          ],
+          capabilities: [
+            "listBuiltins",
+            "listCustom",
+            "createCustom",
+            "removeCustom"
+          ]
+        },
+        history: {
+          candidates: [{}],
+          proposals: [],
+          capabilities: [
+            "listCandidates",
+            "listProposals",
+            "explainCandidate",
+            "discardCandidate",
+            "proposePromotion",
+            "cancelProposal"
+          ]
+        },
+        operation: {
+          enabled: false,
+          reason: "Mutacoes de fila continuam fora do v1."
+        },
+        settings: {
+          enabled: false,
+          reason:
+            "Configuracoes seguem em leitura ate existir fronteira segura."
+        }
+      })
+    }
+  });
+  const ctx = createContext("/admin");
+  const handler = bot.commands.get("admin");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.match(
+    ctx.replies[0]?.text || "",
+    /Admin dashboard \\?\(internal v1\\?\)/i
+  );
+  assert.match(ctx.replies[0]?.text || "", /History:/i);
+});
+
+test("admin link returns a real local dashboard URL", async () => {
+  const { bot } = createDependencies({
+    adminWebServer: {
+      getLink: async () => "http://127.0.0.1:3999/admin?workdir=test-repo"
+    }
+  });
+  const ctx = createContext("/admin link");
+  const handler = bot.commands.get("admin");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.match(
+    ctx.replies[0]?.text || "",
+    /Admin web link ready|Link web do admin pronto/i
+  );
+  assert.match(ctx.replies[0]?.text || "", /127\\\.0\\\.0\\\.1:3999/i);
+  assert.match(ctx.replies[0]?.text || "", /workdir\\=test\\-repo/i);
+});
+
+test("admin prompts command opens the focused prompts module", async () => {
+  const { bot } = createDependencies({
+    dashboardAdminService: {
+      inspect: async (workdir: string) => ({
+        workdir,
+        modules: [],
+        prompts: {
+          items: [
+            {
+              source: "builtin",
+              selector: "builtin:0",
+              label: "Retomar trabalho",
+              intent: "continue",
+              removable: false
+            },
+            {
+              source: "custom",
+              selector: "custom:abc-123",
+              label: "Sprint atual",
+              intent: "planning",
+              removable: true
+            }
+          ],
+          capabilities: [
+            "listBuiltins",
+            "listCustom",
+            "createCustom",
+            "removeCustom"
+          ]
+        },
+        history: {
+          candidates: [],
+          proposals: [],
+          capabilities: []
+        },
+        operation: {
+          enabled: false,
+          reason: "Mutacoes de fila continuam fora do v1."
+        },
+        settings: {
+          enabled: false,
+          reason:
+            "Configuracoes seguem em leitura ate existir fronteira segura."
+        }
+      })
+    }
+  });
+  const ctx = createContext("/admin prompts");
+  const handler = bot.commands.get("admin");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.match(
+    ctx.replies[0]?.text || "",
+    /Admin prompts \\?\(internal v1\\?\)/i
+  );
+  assert.match(
+    ctx.replies[0]?.text || "",
+    /builtin:0\s+\\?\|\s+Retomar trabalho/i
+  );
+  assert.match(
+    ctx.replies[0]?.text || "",
+    /custom:abc\\?-123\s+\\?\|\s+Sprint atual/i
+  );
+  assert.match(ctx.replies[0]?.text || "", /removable/i);
+});
+
+test("admin prompts add creates a custom prompt through the admin flow", async () => {
+  const workdir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "dex-agent-admin-prompts-handler-")
+  );
+  const promptLibraryService = new PromptLibraryService();
+  const { bot } = createDependencies({
+    workdir,
+    promptLibraryService
+  });
+  const handler = bot.commands.get("admin");
+
+  assert.ok(handler);
+
+  const addCtx = createContext(
+    "/admin prompts add planning :: Sprint implementacao :: /plan continue a implementacao usando $sprinter"
+  );
+  await handler!(addCtx);
+  assert.match(addCtx.replies.at(-1)?.text || "", /Admin prompt created/i);
+  assert.match(addCtx.replies.at(-1)?.text || "", /custom:/i);
+
+  const listCtx = createContext("/admin prompts");
+  await handler!(listCtx);
+  assert.match(listCtx.replies[0]?.text || "", /Sprint implementacao/i);
+  assert.match(listCtx.replies[0]?.text || "", /Planning|Planejamento/i);
+});
+
+test("admin prompts remove deletes a custom prompt through the admin flow", async () => {
+  const workdir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "dex-agent-admin-prompts-remove-")
+  );
+  const promptLibraryService = new PromptLibraryService();
+  const { bot } = createDependencies({
+    workdir,
+    promptLibraryService
+  });
+  const handler = bot.commands.get("admin");
+
+  assert.ok(handler);
+
+  const addCtx = createContext(
+    "/admin prompts add planning :: Sprint implementacao :: /plan continue a implementacao usando $sprinter"
+  );
+  await handler!(addCtx);
+
+  const stored = await promptLibraryService.listPrompts(workdir);
+  assert.equal(stored.length, 1);
+
+  const removeCtx = createContext(
+    `/admin prompts remove custom:${stored[0]!.id}`
+  );
+  await handler!(removeCtx);
+  assert.match(removeCtx.replies.at(-1)?.text || "", /Admin prompt removed/i);
+  assert.equal((await promptLibraryService.listPrompts(workdir)).length, 0);
+});
+
+test("admin history command opens the focused history module", async () => {
+  const { bot } = createDependencies({
+    dashboardAdminService: {
+      inspect: async (workdir: string) => ({
+        workdir,
+        modules: [],
+        prompts: {
+          items: [],
+          capabilities: []
+        },
+        history: {
+          candidates: [
+            {
+              selector: "candidate:cand-1",
+              title: "Bloco validado",
+              confidence: 0.8,
+              stage: "durable_memory",
+              kind: "task_state"
+            }
+          ],
+          proposals: [
+            {
+              selector: "proposal:prop-1",
+              title: "Promover bloco",
+              destination: "memory",
+              confidence: 0.8
+            }
+          ],
+          capabilities: [
+            "listCandidates",
+            "listProposals",
+            "explainCandidate",
+            "discardCandidate",
+            "proposePromotion",
+            "cancelProposal"
+          ]
+        },
+        operation: {
+          enabled: false,
+          reason: "Mutacoes de fila continuam fora do v1."
+        },
+        settings: {
+          enabled: false,
+          reason:
+            "Configuracoes seguem em leitura ate existir fronteira segura."
+        }
+      })
+    }
+  });
+  const ctx = createContext("/admin history");
+  const handler = bot.commands.get("admin");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.match(
+    ctx.replies[0]?.text || "",
+    /Admin history \\?\(internal v1\\?\)/i
+  );
+  assert.match(ctx.replies[0]?.text || "", /candidate:cand\\?-1/i);
+  assert.match(ctx.replies[0]?.text || "", /proposal:prop\\?-1/i);
+});
+
+test("admin history explain shows the candidate explanation", async () => {
+  const { bot } = createDependencies({
+    memoryService: {
+      buildMemoryPacket: async () => null,
+      renderMemoryPacket: (_packet: unknown, prompt: string) => prompt,
+      buildSourceDisclosure: () => "",
+      listCandidates: async () => [],
+      listProposals: async () => [],
+      proposePromotion: async () => null,
+      discardCandidate: async () => null,
+      explainCandidate: async () =>
+        "Candidate explains the current block state.",
+      applyPromotion: async () => ({ ok: false, reason: "missing" }),
+      cancelProposal: async () => null,
+      readOperationalFile: async () => null,
+      captureCandidate: async () => null
+    } as any
+  });
+  const ctx = createContext("/admin history explain candidate:cand-1");
+  const handler = bot.commands.get("admin");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.match(
+    ctx.replies[0]?.text || "",
+    /Admin history explain|Explicacao do historico do admin/i
+  );
+  assert.match(
+    ctx.replies[0]?.text || "",
+    /Candidate explains the current block state/i
+  );
+});
+
+test("admin history discard removes the candidate", async () => {
+  const { bot } = createDependencies({
+    memoryService: {
+      buildMemoryPacket: async () => null,
+      renderMemoryPacket: (_packet: unknown, prompt: string) => prompt,
+      buildSourceDisclosure: () => "",
+      listCandidates: async () => [],
+      listProposals: async () => [],
+      proposePromotion: async () => null,
+      discardCandidate: async () => ({
+        id: "cand-1",
+        title: "Bloco validado",
+        summary: "Resumo curto",
+        kind: "task_state",
+        stage: "durable_memory",
+        baseKind: "task_state",
+        scope: "project",
+        destination: "memory",
+        confidence: 0.8,
+        createdAt: "2026-04-22T00:00:00.000Z"
+      }),
+      explainCandidate: async () => null,
+      applyPromotion: async () => ({ ok: false, reason: "missing" }),
+      cancelProposal: async () => null,
+      readOperationalFile: async () => null,
+      captureCandidate: async () => null
+    } as any
+  });
+  const ctx = createContext("/admin history discard candidate:cand-1");
+  const handler = bot.commands.get("admin");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.match(
+    ctx.replies[0]?.text || "",
+    /Admin history candidate discarded|Candidato do historico do admin descartado/i
+  );
+  assert.match(ctx.replies[0]?.text || "", /candidate:cand\\-1/i);
+});
+
+test("admin history propose creates a proposal", async () => {
+  const { bot } = createDependencies({
+    memoryService: {
+      buildMemoryPacket: async () => null,
+      renderMemoryPacket: (_packet: unknown, prompt: string) => prompt,
+      buildSourceDisclosure: () => "",
+      listCandidates: async () => [],
+      listProposals: async () => [],
+      proposePromotion: async () => ({
+        id: "prop-1",
+        candidateId: "cand-1",
+        destination: "memory",
+        entry: {
+          title: "Bloco validado",
+          summary: "Resumo curto",
+          kind: "task_state",
+          stage: "proposal_review",
+          confidence: 0.8
+        },
+        createdAt: "2026-04-22T00:00:00.000Z",
+        reason: "Manual review requested.",
+        skillDraft: null
+      }),
+      discardCandidate: async () => null,
+      explainCandidate: async () => null,
+      applyPromotion: async () => ({ ok: false, reason: "missing" }),
+      cancelProposal: async () => null,
+      readOperationalFile: async () => null,
+      captureCandidate: async () => null
+    } as any
+  });
+  const ctx = createContext("/admin history propose candidate:cand-1");
+  const handler = bot.commands.get("admin");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.match(
+    ctx.replies[0]?.text || "",
+    /Admin history proposal created|Proposal do historico do admin criada/i
+  );
+  assert.match(ctx.replies[0]?.text || "", /proposal:prop\\-1/i);
+  assert.match(ctx.replies[0]?.text || "", /candidate:cand\\-1/i);
+});
+
+test("admin history cancel cancels a proposal", async () => {
+  const { bot } = createDependencies({
+    memoryService: {
+      buildMemoryPacket: async () => null,
+      renderMemoryPacket: (_packet: unknown, prompt: string) => prompt,
+      buildSourceDisclosure: () => "",
+      listCandidates: async () => [],
+      listProposals: async () => [],
+      proposePromotion: async () => null,
+      discardCandidate: async () => null,
+      explainCandidate: async () => null,
+      applyPromotion: async () => ({ ok: false, reason: "missing" }),
+      cancelProposal: async () => ({
+        id: "prop-1",
+        candidateId: "cand-1",
+        destination: "memory",
+        entry: {
+          title: "Bloco validado",
+          summary: "Resumo curto",
+          kind: "task_state",
+          stage: "proposal_review",
+          confidence: 0.8
+        },
+        createdAt: "2026-04-22T00:00:00.000Z",
+        reason: "Manual review requested.",
+        skillDraft: null
+      }),
+      readOperationalFile: async () => null,
+      captureCandidate: async () => null
+    } as any
+  });
+  const ctx = createContext("/admin history cancel proposal:prop-1");
+  const handler = bot.commands.get("admin");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.match(
+    ctx.replies[0]?.text || "",
+    /Admin history proposal canceled|Proposal do historico do admin cancelada/i
+  );
+  assert.match(ctx.replies[0]?.text || "", /proposal:prop\\-1/i);
+  assert.match(ctx.replies[0]?.text || "", /candidate:cand\\-1/i);
 });
 
 test("queue command lists the current queue", async () => {

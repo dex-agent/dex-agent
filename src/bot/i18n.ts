@@ -52,7 +52,7 @@ const MESSAGES: Record<string, TranslationCatalog> = {
       "Dex Agent ready.",
       "Plain messages, voice notes, and coding tasks route to Codex.",
       "Bot-side MCP only runs through explicit /mcp commands.",
-      "Try: /status, /repo, /pwd, /exec, /auto, /plan, /model, /language, /verbose, /skill, /new, /sh",
+      "Try: /status, /admin, /repo, /pwd, /exec, /auto, /plan, /model, /language, /verbose, /skill, /new, /sh",
       'GitHub example: /gh commit "feat: init"'
     ],
     helpLines: () => [
@@ -61,6 +61,7 @@ const MESSAGES: Record<string, TranslationCatalog> = {
       "/status - Show runtime status for this chat",
       "/pwd - Show the current project directory",
       "/repo - List switchable projects",
+      "/admin [show|link|prompts|prompts add ...|prompts remove ...|history|history explain ...] - Show the internal admin dashboard, open the web link, manage prompts, or inspect history",
       "/repo <name> - Switch the current chat to another project",
       "/repo <keyword> - Match projects by keyword and switch or show candidates",
       "/repo recent - Show recent projects for this chat",
@@ -427,6 +428,66 @@ const MESSAGES: Record<string, TranslationCatalog> = {
       "MCP skill is disabled for this chat. Use /skill on mcp to enable it again.",
     mcpFailed: ({ error }) => `MCP skill failed: ${error}`,
     callbackRefreshed: "Status refreshed",
+    adminDashboardTitle: "Admin dashboard (internal v1)",
+    adminDashboardProjectLabel: "project",
+    adminDashboardModulesLabel: "modules",
+    adminDashboardPromptsLabel: "Prompts",
+    adminDashboardHistoryLabel: "History",
+    adminDashboardBuiltinsLabel: "built-ins",
+    adminDashboardCustomLabel: "custom",
+    adminDashboardCandidatesLabel: "candidates",
+    adminDashboardProposalsLabel: "proposals",
+    adminDashboardActionsLabel: "actions",
+    adminDashboardOperationLabel: "Operation",
+    adminDashboardSettingsLabel: "Settings",
+    adminDashboardLinkHint: "web: /admin link",
+    adminDashboardInspectFailed: ({ error }) =>
+      `Admin dashboard inspection failed: ${error}`,
+    adminLinkReady: ({ relativeWorkdir, url }) =>
+      joinLines(["Admin web link ready.", `project: ${relativeWorkdir}`, url]),
+    adminLinkFailed: ({ error }) => `Admin web link failed: ${error}`,
+    adminPromptsTitle: "Admin prompts (internal v1)",
+    adminPromptsEmptyBuiltins: "- none",
+    adminPromptsEmptyCustom: "- none",
+    adminPromptsRemovable: "removable",
+    adminPromptsUsage:
+      "Usage: /admin prompts | /admin prompts add <label> :: <prompt> | /admin prompts add <intent> :: <label> :: <prompt> | /admin prompts remove <selector>",
+    adminPromptsCreated: ({ selector, label, intent }) =>
+      `Admin prompt created: ${selector} | ${label} | ${intent}`,
+    adminPromptsRemoved: ({ selector, label, intent }) =>
+      `Admin prompt removed: ${selector} | ${label} | ${intent}`,
+    adminPromptsNotFound: ({ selector }) =>
+      `Admin prompt not found: ${selector}`,
+    adminPromptsBuiltinNotRemovable:
+      "Built-in prompts cannot be removed from admin.",
+    adminHistoryTitle: "Admin history (internal v1)",
+    adminHistoryEmptyCandidates: "- none",
+    adminHistoryEmptyProposals: "- none",
+    adminHistoryUsage:
+      "Usage: /admin history | /admin history explain <candidate:selector> | /admin history discard <candidate:selector> | /admin history propose <candidate:selector> | /admin history cancel <proposal:selector>",
+    adminHistoryExplainTitle: "Admin history explain",
+    adminHistoryCandidateNotFound: ({ selector }) =>
+      `Admin history candidate not found: ${selector}`,
+    adminHistoryCandidateDiscarded: ({ selector, title, stage }) =>
+      `Admin history candidate discarded: ${selector} | ${title} | ${stage}`,
+    adminHistoryProposalCreated: ({
+      selector,
+      candidateSelector,
+      destination
+    }) =>
+      `Admin history proposal created: ${selector} | ${candidateSelector} | ${destination}`,
+    adminHistoryProposalNotFound: ({ selector }) =>
+      `Admin history proposal not found: ${selector}`,
+    adminHistoryProposalCanceled: ({
+      selector,
+      candidateSelector,
+      destination
+    }) =>
+      `Admin history proposal canceled: ${selector} | ${candidateSelector} | ${destination}`,
+    adminUsage:
+      "Usage: /admin [show|link|prompts|prompts add ...|prompts remove ...|history|history explain ...|history discard ...|history propose ...|history cancel ...]",
+    buttonAdminPrompts: "Prompts",
+    buttonAdminHistory: "History",
     buttonAudioSummary: "🔊 Resumo em audio",
     buttonAudioSummaryConcise: "🎧 Conciso",
     buttonAudioSummaryDetailed: "🔊 Detalhado",
@@ -1232,7 +1293,7 @@ MESSAGES["pt-BR"] = {
     "Dex Agent pronto.",
     "Mensagens, áudios e tarefas de código vão para o Codex.",
     "MCP do bot só roda por comandos explícitos com /mcp.",
-    "Use: /status, /repo, /pwd, /exec, /auto, /plan, /model, /language, /verbose, /skill, /new, /sh",
+    "Use: /status, /admin, /repo, /pwd, /exec, /auto, /plan, /model, /language, /verbose, /skill, /new, /sh",
     'Exemplo GitHub: /gh commit "feat: init"'
   ],
   helpLines: () => [
@@ -1241,6 +1302,7 @@ MESSAGES["pt-BR"] = {
     "/status - Mostra o estado do runtime neste chat",
     "/pwd - Mostra o diretório atual do projeto",
     "/repo - Lista projetos disponíveis",
+    "/admin [show|link|prompts|prompts add ...|prompts remove ...|history|history explain ...] - Mostra o dashboard admin interno, abre o link web, gerencia prompts e inspeciona historico",
     "/repo <name> - Troca o projeto atual deste chat",
     "/repo <keyword> - Procura projeto por palavra-chave e troca ou lista candidatos",
     "/repo recent - Mostra projetos recentes deste chat",
@@ -1362,6 +1424,67 @@ MESSAGES["pt-BR"] = {
       : "Nao existe execucao ativa do Codex neste chat.",
   languageInvalid: "Idiomas suportados: pt-BR, en, zh, zh-HK.",
   callbackRefreshed: "Status atualizado",
+  adminDashboardTitle: "Dashboard admin (interno v1)",
+  adminDashboardProjectLabel: "projeto",
+  adminDashboardModulesLabel: "modulos",
+  adminDashboardPromptsLabel: "Prompts",
+  adminDashboardHistoryLabel: "Historico",
+  adminDashboardBuiltinsLabel: "built-ins",
+  adminDashboardCustomLabel: "custom",
+  adminDashboardCandidatesLabel: "candidatos",
+  adminDashboardProposalsLabel: "propostas",
+  adminDashboardActionsLabel: "acoes",
+  adminDashboardOperationLabel: "Operacao",
+  adminDashboardSettingsLabel: "Configuracoes",
+  adminDashboardLinkHint: "web: /admin link",
+  adminDashboardInspectFailed: ({ error }) =>
+    `Falha ao inspecionar o dashboard admin: ${error}`,
+  adminLinkReady: ({ relativeWorkdir, url }) =>
+    joinLines([
+      "Link web do admin pronto.",
+      `projeto: ${relativeWorkdir}`,
+      url
+    ]),
+  adminLinkFailed: ({ error }) =>
+    `Falha ao abrir o link web do admin: ${error}`,
+  adminPromptsTitle: "Prompts do admin (interno v1)",
+  adminPromptsEmptyBuiltins: "- nenhum",
+  adminPromptsEmptyCustom: "- nenhum",
+  adminPromptsRemovable: "removivel",
+  adminPromptsUsage:
+    "Uso: /admin prompts | /admin prompts add <label> :: <prompt> | /admin prompts add <intent> :: <label> :: <prompt> | /admin prompts remove <selector>",
+  adminPromptsCreated: ({ selector, label, intent }) =>
+    `Prompt do admin criado: ${selector} | ${label} | ${intent}`,
+  adminPromptsRemoved: ({ selector, label, intent }) =>
+    `Prompt do admin removido: ${selector} | ${label} | ${intent}`,
+  adminPromptsNotFound: ({ selector }) =>
+    `Prompt do admin nao encontrado: ${selector}`,
+  adminPromptsBuiltinNotRemovable:
+    "Prompts built-in nao podem ser removidos pelo admin.",
+  adminHistoryTitle: "Historico do admin (interno v1)",
+  adminHistoryEmptyCandidates: "- nenhum",
+  adminHistoryEmptyProposals: "- nenhum",
+  adminHistoryUsage:
+    "Uso: /admin history | /admin history explain <candidate:selector> | /admin history discard <candidate:selector> | /admin history propose <candidate:selector> | /admin history cancel <proposal:selector>",
+  adminHistoryExplainTitle: "Explicacao do historico do admin",
+  adminHistoryCandidateNotFound: ({ selector }) =>
+    `Candidato do historico do admin nao encontrado: ${selector}`,
+  adminHistoryCandidateDiscarded: ({ selector, title, stage }) =>
+    `Candidato do historico do admin descartado: ${selector} | ${title} | ${stage}`,
+  adminHistoryProposalCreated: ({ selector, candidateSelector, destination }) =>
+    `Proposal do historico do admin criada: ${selector} | ${candidateSelector} | ${destination}`,
+  adminHistoryProposalNotFound: ({ selector }) =>
+    `Proposal do historico do admin nao encontrada: ${selector}`,
+  adminHistoryProposalCanceled: ({
+    selector,
+    candidateSelector,
+    destination
+  }) =>
+    `Proposal do historico do admin cancelada: ${selector} | ${candidateSelector} | ${destination}`,
+  adminUsage:
+    "Uso: /admin [show|link|prompts|prompts add ...|prompts remove ...|history|history explain ...|history discard ...|history propose ...|history cancel ...]",
+  buttonAdminPrompts: "Prompts",
+  buttonAdminHistory: "Historico",
   emptyResponse: "(resposta vazia)",
   memoryInboxTitle: "Inbox de memoria",
   memoryCandidatesCountLabel: "candidatos",

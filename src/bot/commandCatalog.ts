@@ -20,6 +20,13 @@ export const COMMAND_CATALOG: CommandSpec[] = [
     group: "Projeto"
   },
   {
+    command: "admin",
+    description: "Mostra o snapshot interno do dashboard admin",
+    usage:
+      "/admin [show|link|prompts|prompts add <label> :: <prompt>|prompts add <intent> :: <label> :: <prompt>|prompts remove <selector>|history|history explain <candidate:selector>|history discard <candidate:selector>|history propose <candidate:selector>|history cancel <proposal:selector>]",
+    group: "Projeto"
+  },
+  {
     command: "prompts",
     description: "Lista e gerencia prompts frequentes do projeto",
     usage:
@@ -213,6 +220,7 @@ export function buildMenuText(): string {
     "",
     "Projeto:",
     "- /project",
+    "- /admin",
     "- /prompts",
     "- /inbox",
     "- /memory",
@@ -274,6 +282,7 @@ export function buildMenuButtons(): Array<
       { text: "Dev", callbackData: "menu:dev" },
       { text: "Continuar", callbackData: "menu:continue" }
     ],
+    [{ text: "Admin", callbackData: "menu:admin" }],
     [
       { text: "Novo", callbackData: "menu:new" },
       { text: "Interromper", callbackData: "menu:interrupt" },

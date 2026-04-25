@@ -20,6 +20,7 @@ import { ProjectStatusSkill } from "./orchestrator/skills/projectStatusSkill.js"
 import { ProjectMemoryService } from "./orchestrator/memoryService.js";
 import { ProjectReuseEngine } from "./orchestrator/reuseEngine.js";
 import { PromptLibraryService } from "./orchestrator/promptLibraryService.js";
+import { DashboardAdminService } from "./orchestrator/dashboardAdminService.js";
 import { PtyManager } from "./runner/ptyManager.js";
 import { ShellManager } from "./runner/shellManager.js";
 import { DevServerManager } from "./runner/devServerManager.js";
@@ -28,6 +29,7 @@ import { toErrorMessage } from "./lib/errors.js";
 import { AudioTranscriber } from "./lib/audioTranscription.js";
 import { AudioTts } from "./lib/audioTts.js";
 import { AudioSummaryManager } from "./lib/audioSummaryManager.js";
+import { AdminWebServer } from "./lib/adminWebServer.js";
 import { ImageAttachmentManager } from "./lib/imageAttachmentManager.js";
 import { createTelegramApiAgent } from "./lib/telegramApi.js";
 import { createRestartBootstrapScript } from "./restartBootstrap.js";
@@ -106,6 +108,8 @@ const mcpSkill = new McpSkill({ mcpClient });
 const memoryService = new ProjectMemoryService();
 const reuseEngine = new ProjectReuseEngine(memoryService);
 const promptLibraryService = new PromptLibraryService();
+const dashboardAdminService = new DashboardAdminService();
+const adminWebServer = new AdminWebServer(dashboardAdminService);
 const projectStatusSkill = new ProjectStatusSkill(
   memoryService,
   promptLibraryService
@@ -191,6 +195,8 @@ registerHandlers({
   memoryService,
   reuseEngine,
   promptLibraryService,
+  dashboardAdminService,
+  adminWebServer,
   audioTranscriber,
   audioSummaryManager,
   telegramConfig: {
@@ -273,6 +279,7 @@ async function shutdown(signal: string): Promise<void> {
   scheduler.stop();
   await ptyManager?.shutdown();
   await devServerManager.shutdown();
+  await adminWebServer.shutdown();
   await mcpClient?.closeAll();
   bot.stop(signal);
   await fs.rm(pidPath, { force: true }).catch(() => {});

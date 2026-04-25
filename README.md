@@ -45,6 +45,7 @@ npm run start
 
 ```text
 /status
+/admin
 /repo
 /skill
 /dev status
@@ -162,7 +163,7 @@ For live checks, configure your own local `.env` values after startup and keep t
 ```text
 Telegram text/audio/image
   -> src/bot/handlers.ts
-     -> explicit command handlers (/project, /repo, /queue, /memory, /inbox, ...)
+     -> explicit command handlers (/project, /admin, /repo, /queue, /memory, /inbox, ...)
      -> src/runner/ptyManager.ts        (free-text execution -> Codex SDK or Codex CLI)
      -> src/orchestrator/skills/*.ts    (explicit bot-side capabilities)
   -> src/bot/formatter.ts
@@ -274,6 +275,7 @@ General:
 - `/start` - bootstrap message
 - `/menu` - deterministic dashboard with clickable shortcuts
 - `/help` - command summary
+- `/admin [show|link|prompts|prompts add ...|prompts remove ...|history|history explain ...|history discard ...|history propose ...|history cancel ...]` - show the internal admin dashboard snapshot, open a real local dashboard link, manage custom admin prompts, or inspect and mutate the focused history module for the current project
 - `/status` - show current chat status, active runner mode, workdir, model override, MCP servers, the internal superpowers workflow phase, and the derived operational posture (`working`, `queued`, `awaiting closeout`, `prolonged silence`, etc.)
 - `/pwd` - show the current project directory for this chat
 - `/repo` - list switchable git projects under `WORKSPACE_ROOT`
