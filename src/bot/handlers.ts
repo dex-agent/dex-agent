@@ -4,6 +4,7 @@ import { Markup } from "telegraf";
 import {
   buildPlanPrompt,
   extractCommandPayload,
+  shouldAttachImmediateContextToPlan,
   suggestClosestWord
 } from "./commandUtils.js";
 import {
@@ -18,18 +19,25 @@ import {
   type Locale
 } from "./i18n.js";
 import { escapeMarkdownV2, splitTelegramMessage } from "./formatter.js";
+import type { AppConfig, CodexReasoningEffort } from "../config.js";
 import type { Scheduler } from "../cron/scheduler.js";
 import { toErrorMessage } from "../lib/errors.js";
 import type { AudioTranscriber } from "../lib/audioTranscription.js";
 import type { AudioSummaryManager } from "../lib/audioSummaryManager.js";
 import type { AdminWebServer } from "../lib/adminWebServer.js";
 import {
+  extractFinalResponseNextSpecialist,
+  extractFinalResponseRecommendedStep,
+  extractFinalResponseNextStep
+} from "../lib/finalActionContext.js";
+import {
   downloadTelegramMediaToTemp,
   type TelegramMediaSource
 } from "../lib/telegramMedia.js";
 import type {
   OperationalContinuationState,
-  PtyManager
+  PtyManager,
+  SendPromptResult
 } from "../runner/ptyManager.js";
 import type {
   ShellExecutionResult,
@@ -96,6 +104,7 @@ interface RegisterHandlersOptions {
     botToken: string;
     proxyUrl?: string;
   };
+  instance?: AppConfig["instance"];
   adminActions?: {
     restart?: () => Promise<void>;
   };
@@ -157,6 +166,43 @@ const ADMIN_DASHBOARD_BUTTON_ROWS: LocalizedButtonSpec[][] = [
     { labelKey: "buttonMemoryRefresh", callbackData: "admin:show" }
   ]
 ];
+
+const REASONING_EFFORT_ALIASES: Record<string, CodexReasoningEffort> = {
+  minimal: "minimal",
+  minima: "minimal",
+  low: "low",
+  baixa: "low",
+  medium: "medium",
+  media: "medium",
+  medio: "medium",
+  high: "high",
+  alta: "high",
+  xhigh: "xhigh",
+  altissima: "xhigh",
+  altissimo: "xhigh"
+};
+
+function normalizeCommandToken(value: string): string {
+  return value
+    .trim()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+}
+
+function parseReasoningEffortValue(value: string): CodexReasoningEffort | null {
+  return REASONING_EFFORT_ALIASES[normalizeCommandToken(value)] || null;
+}
+
+function parseAutopilotResponseCount(value: string): number | null {
+  const trimmed = String(value || "").trim();
+  if (!/^\d+$/.test(trimmed)) {
+    return null;
+  }
+
+  const parsed = Number(trimmed);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
 
 function buildLocalizedButtonRow(
   locale: Locale,
@@ -580,6 +626,12 @@ function buildRepoButtons(
   return rows;
 }
 
+function isFixedInstanceMode(
+  instance: AppConfig["instance"] | undefined
+): instance is AppConfig["instance"] {
+  return instance?.contextMode === "instance";
+}
+
 function formatQueueLines(
   items: Array<{
     id: string;
@@ -653,6 +705,22 @@ function isOperationalStatusQuestion(text: string): boolean {
   ].includes(normalized);
 }
 
+function isOperationalNextStepQuestion(text: string): boolean {
+  const normalized = normalizeAscii(text)
+    .replace(/[?!.]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return [
+    "qual o proximo passo seguro",
+    "qual o proximo passo",
+    "proximo passo seguro",
+    "como seguir daqui",
+    "onde paramos",
+    "o que faco agora"
+  ].includes(normalized);
+}
+
 function stripProjectStatusFormatting(input: string): string {
   return String(input || "")
     .replace(/\\([_*[\]()~`>#+\-=|{}.!\\])/g, "$1")
@@ -660,6 +728,29 @@ function stripProjectStatusFormatting(input: string): string {
     .replace(/`([^`]+)`/g, "$1")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function extractSuggestedSessionSpecialists(input: string): string | null {
+  const normalized = String(input || "")
+    .replace(/\\([_*[\]()~`>#+\-=|{}.!\\])/g, "$1")
+    .replace(/[*~]/g, "")
+    .replace(/`([^`]+)`/g, "$1");
+
+  const lines = normalized
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (const line of lines) {
+    const match = line.match(
+      /^(?:[-•]\s*)?(?:Sugestao de especialistas da sessao|Sugestao de especialistas para a sessao|sugestao_especialistas_sessao|sugestaoespecialistassessao)\s*:\s*(.+)$/i
+    );
+    if (match?.[1]) {
+      return stripProjectStatusFormatting(match[1]);
+    }
+  }
+
+  return null;
 }
 
 function buildProjectStatusMeetingPrompt(
@@ -695,11 +786,54 @@ function buildProjectStatusMeetingPrompt(
 }
 
 function buildFinalResponsePlanPrompt(currentText: string): string {
+  const specialistLine = buildSuggestedSpecialistsLine(currentText, [
+    "$sprinter",
+    "$chato",
+    "$focado",
+    "$estacionamento"
+  ]);
+
   return buildPlanPrompt(
     [
-      "Use a conclusao abaixo como base canonica para planejar o proximo sprint.",
-      "Entregue um plano curto, operacional e verificavel.",
-      "Se nao houver base suficiente para planejar com seguranca, diga isso claramente.",
+      "Modo planejamento usando $sprinter.",
+      "Transforme a conclusao abaixo em planejamento de bloco e sprints detalhados, com checklist separado, prioridades, riscos, riscos contraditorios, definicao de pronto e estacionamento.",
+      "Use o formato do $sprinter e entregue o plano pronto para continuar depois, sem deixar o proximo corte implícito.",
+      "Se houver contexto suficiente, organize a saida para encaixar no contrato canonico de retomada: Restart protocol now, Suggested commands, Next queue, First steps if resuming now e Progress snapshot.",
+      "A retomada deve seguir esta ordem quando os arquivos existirem: INDEX.md raiz -> AGENTS.md -> INDEX.md local relevante -> arquivo alvo -> ACTIVE.md + HANDOFF.md -> .codex/napkin.md -> .agents/sprints/INDEX.md quando houver sprint/bloco -> .agents/ESTACIONAMENTO.md quando houver residuo/reabertura. Use .agents/MEMORY.ndjson como ledger, nao como fonte primaria do proximo passo.",
+      "Quando criar ou alterar sprint em repo com .agents/, crie ou atualize .agents/sprints/INDEX.md no Markdown parseavel canonico, completo para o diretorio e com uma linha por entrada.",
+      "Nao use MEMORY/ como destino novo de sprint; se houver MEMORY/ legado, trate apenas como fallback de leitura ou legado operacional indexado.",
+      "Todo plano deve terminar com Proximo passo e Proximo especialista indicado.",
+      ...(specialistLine ? [specialistLine] : []),
+      "Se nao houver base suficiente para planejar com seguranca, diga isso claramente e retorne para Pensamento ou mantenha em Planejamento, em vez de fabricar um pseudo-sprint.",
+      "",
+      "Conclusao atual:",
+      stripProjectStatusFormatting(currentText)
+    ].join("\n")
+  );
+}
+
+function buildFinalResponseHandoffPrompt(currentText: string): string {
+  const nextSpecialist = extractFinalResponseNextSpecialist(currentText);
+
+  return applyLocalExecutionPreference(
+    [
+      "Trate este clique como encaminhamento de um unico proximo corte ao Proximo especialista indicado abaixo.",
+      "Use $ancora-fluxo como Fernanda do Fluxo no menor preset seguro para seguir para o owner correto.",
+      nextSpecialist
+        ? `Proximo especialista indicado pelo contexto: ${nextSpecialist}.`
+        : "Nao ha especialista explicito no contexto; escolha o menor encaminhamento seguro pelo contrato de fase.",
+      "Nao replaneje o bloco, nao abra reuniao e nao avance para outros blocos.",
+      "Confirme a fase atual entre Pensamento, Planejamento, Construir, Revisar, Testar e Veredito.",
+      "Se houver conflito entre Proximo passo e Proximo especialista indicado, explique objetivamente e retorne para Planejamento.",
+      "Use $focado para proteger a prioridade dominante e $estacionamento apenas para residuos fora deste encaminhamento.",
+      "Entregue curto:",
+      "- Fase atual",
+      "- Resultado do encaminhamento",
+      "- Proximo passo",
+      "- Proximo especialista indicado",
+      "- Cooperacao sugerida",
+      "- Seguir, segurar ou retornar",
+      "- Fallback se precisar voltar",
       "",
       "Conclusao atual:",
       stripProjectStatusFormatting(currentText)
@@ -716,13 +850,108 @@ function applyLocalExecutionPreference(prompt: string): string {
   ].join("\n");
 }
 
-function buildFinalResponseContinuePrompt(currentText: string): string {
+function buildSuggestedSpecialistsLine(
+  currentText: string,
+  extras: string[] = []
+): string | null {
+  const suggestedSpecialists = extractSuggestedSessionSpecialists(currentText);
+  const nextSpecialist = extractFinalResponseNextSpecialist(currentText);
+  const normalized = Array.from(
+    new Set(
+      [nextSpecialist, suggestedSpecialists, ...extras]
+        .flatMap((value) =>
+          String(value || "")
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean)
+        )
+        .map((item) => item.replace(/^[$`]+|[$`]+$/g, ""))
+        .filter(Boolean)
+    )
+  );
+
+  return normalized.length
+    ? `Adicione os especialistas sugeridos para sessao antes de executar: ${normalized.join(", ")}.`
+    : null;
+}
+
+function buildFinalResponseContinuePrompt(
+  currentText: string,
+  level: "short" | "medium" | "full" = "short"
+): string {
+  const specialistLine = buildSuggestedSpecialistsLine(currentText);
+  const exactNextStep =
+    extractFinalResponseRecommendedStep(currentText) ||
+    extractFinalResponseNextStep(currentText);
+  const levelLines =
+    level === "medium"
+      ? [
+          "Treat this button click as approval to continue beyond a single micro-step and close the current sprint or current open block implied by the finalized conclusion below.",
+          "Work through the implementation, review, test, and honest closeout needed for that one sprint or block without stopping after the first tiny follow-up.",
+          "Do not reinterpret this click as approval for all future open sprints, unrelated work, or a new planning loop."
+        ]
+      : level === "full"
+        ? [
+            "Treat this button click as approval to conclude the entire current open block implied by the finalized conclusion below.",
+            "Close that one block from the current state through implementation, review, test, and honest verdict when those phases apply, without stopping after the first tiny follow-up.",
+            "Before advancing, restate the block you are closing and the concrete steps you will perform now. Do not reinterpret this click as approval for future blocks, unrelated work, or a fresh planning branch."
+          ]
+        : [
+            "Treat this button click as approval for exactly one small and safe follow-up execution scoped to the finalized conclusion below.",
+            exactNextStep
+              ? `Execute exactly this next safe step if it is still valid: ${exactNextStep}`
+              : "Execute only the next eligible block or next concrete implementation step already implied by that conclusion in the open project.",
+            "Do not reinterpret this click as blanket approval for unrelated work, a new meeting, or a full replan."
+          ];
+
   return applyLocalExecutionPreference(
     [
-      "Treat this button click as approval for exactly one follow-up execution scoped to the finalized conclusion below.",
-      "Execute only the next eligible block or next concrete implementation step already implied by that conclusion in the open project.",
-      "Do not reinterpret this click as blanket approval for unrelated work, a new meeting, or a full replan.",
+      ...levelLines,
       "Se o proximo passo seguro nao for execucao e sim revisao ou /plan, diga isso objetivamente e pare.",
+      ...(specialistLine ? [specialistLine] : []),
+      "",
+      "Approved context:",
+      stripProjectStatusFormatting(currentText)
+    ].join("\n")
+  );
+}
+
+export function buildFinalResponseAutopilotPrompt(currentText: string): string {
+  const specialistLine = buildSuggestedSpecialistsLine(currentText, [
+    "$kant",
+    "$chato",
+    "$focado",
+    "$garimpeiro",
+    "$estacionamento",
+    "$bruno-brain"
+  ]);
+
+  return applyLocalExecutionPreference(
+    [
+      "Treat this button click as approval for an autopilot execution run on the current line of work until all currently open planned sprints or open blocks in scope reach 100 percent or a real blocker requires explicit user input.",
+      "Ative $ancora-fluxo e use os presets canonicos pensamento, planejamento, construir, revisar, testar e veredito com pre-flight, post-flight e return-flight quando necessario.",
+      "Coordene explicitamente os owners do fluxo neste formato: Rita Reuniao e Quele Questiona em Pensamento, Paula Planeja em Planejamento, Ivo Implementa em Construir, Renata Review em Revisar, Tereza Testa em Testar e Vera Veredito em Veredito.",
+      "Use o contrato da ancora-fluxo para decidir se deve seguir para, segurar em, ou retornar para uma fase anterior. Se houver duvida, escolha o menor preset seguro em vez de avancar artificialmente.",
+      "Use reunioes rapidas e concisas de especialistas apenas quando elas ajudarem a destravar uma decisao, um risco, uma revisao, um teste ou um fechamento real do bloco atual.",
+      "Cada fase, especialista ou reuniao deve indicar explicitamente Proximo passo, Proximo especialista indicado e, quando fizer sentido, Cooperacao sugerida.",
+      "Se o trabalho travar por escopo aberto, falta de opcoes ou falta de caminho claro, faca uma reuniao curta de quebra-gelo com $bruno-brain para gerar alternativas e depois encaminhe o fluxo de volta para o especialista correto.",
+      ...(specialistLine ? [specialistLine] : []),
+      "Use $focado para proteger a prioridade dominante, $kant e $chato como lentes transversais de simplicidade e pressao adversarial, $garimpeiro para separar aprendizado forte de ruido no fechamento, e $estacionamento para residuos fora do foco imediato.",
+      "Nao invente escopo novo fora do que ja esta aberto ou claramente implicado pelo contexto aprovado. Feche um bloco por vez com progresso real, objetivo atual, proximo passo, fallback e sprints restantes quando existirem.",
+      "Antes de executar, recupere rapidamente o estado vivo nesta ordem quando os arquivos existirem: INDEX.md raiz -> AGENTS.md -> INDEX.md local relevante -> arquivo alvo -> ACTIVE.md + HANDOFF.md -> .codex/napkin.md -> .agents/sprints/INDEX.md quando houver sprint/bloco -> .agents/ESTACIONAMENTO.md quando houver residuo/reabertura. Use .agents/MEMORY.ndjson como ledger, nao como fonte primaria do proximo passo. So use busca textual como fallback.",
+      "Toda resposta do autopilot deve terminar com este mini-card operacional, mesmo quando a decisao for parar:",
+      "- Resultado real",
+      "- Decisao do piloto: seguir | parar | retornar",
+      "- Por que segui ou parei",
+      "- Ponto cego",
+      "- Dica de ouro",
+      "- Opcoes seguras",
+      "- Proximo passo recomendado",
+      "- Proximo especialista indicado",
+      "Nao deixe `Ponto cego`, `Dica de ouro` ou `Opcoes seguras` vazios; se nada material apareceu, diga isso honestamente em uma frase curta.",
+      "Ao concluir cada resposta, deixe um checkpoint retomavel com: progresso real, proximo passo seguro, especialista indicado, fallback e se ainda ha trabalho aberto para o piloto seguir.",
+      "Se a execucao ficar maior que o contexto seguro, pare com um checkpoint claro e instrua usar /autopilot resume depois do restart, em vez de improvisar continuidade invisivel.",
+      "Se houver ambiguidade material, nao avance no automatico: convoque a menor reuniao necessaria, registre a decisao e retorne para o owner correto.",
       "",
       "Approved context:",
       stripProjectStatusFormatting(currentText)
@@ -747,6 +976,59 @@ function buildFinalResponseMeetingPrompt(currentText: string): string {
       "- Encaminhamento"
     ].join("\n")
   );
+}
+
+type FinalActionRoute =
+  | "plan"
+  | "handoff"
+  | "continue_short"
+  | "continue_medium"
+  | "continue_full"
+  | "autopilot"
+  | "autopilot_arm"
+  | "review"
+  | "organize"
+  | "meeting";
+
+function normalizeFinalActionRoute(action: string): FinalActionRoute {
+  switch (action) {
+    case "c1":
+    case "continue":
+    case "execute":
+    case "continue_short":
+      return "continue_short";
+    case "pl":
+    case "plan":
+      return "plan";
+    case "sp":
+    case "handoff":
+    case "specialist":
+    case "encaminhar":
+      return "handoff";
+    case "c2":
+    case "continue_medium":
+      return "continue_medium";
+    case "c3":
+    case "continue_full":
+      return "continue_full";
+    case "ap":
+    case "autopilot":
+      return "autopilot";
+    case "ax":
+    case "autopilot_arm":
+      return "autopilot_arm";
+    case "rv":
+    case "review":
+      return "review";
+    case "mt":
+    case "meeting":
+      return "meeting";
+    case "ib":
+    case "organize":
+      return "organize";
+    default:
+      return "plan";
+  }
 }
 
 function parseIsoTimestamp(value: string | null | undefined): number | null {
@@ -1110,7 +1392,6 @@ function formatMemorySourcesForReply(
   sources: string[]
 ): string {
   return sources
-    .slice(0, 3)
     .map(
       (source) =>
         path.relative(workdir, source).replace(/\\/g, "/") ||
@@ -1690,11 +1971,14 @@ function buildMemoryHelpText(memoryReadmePath: string): string {
     "- `guarda isso como skill de projeto: ...`: preserva a intencao de promover para skill",
     "",
     "Contrato atual:",
-    "- localizacao comeca em `INDEX.md` e na camada 2 `.agents/PROJECT.md`, `.agents/ACTIVE.md`, `.agents/HANDOFF.md` e `.codex/napkin.md`",
-    "- memoria duravel fica em `.agents/MEMORY.ndjson`",
+    "- localizacao comeca em `INDEX.md`, `AGENTS.md` e na camada 2 `.agents/PROJECT.md`, `.agents/ACTIVE.md`, `.agents/HANDOFF.md` e `.codex/napkin.md`",
+    "- retomada operacional completa tambem confere `.agents/sprints/INDEX.md` quando houver sprint/bloco e `.agents/ESTACIONAMENTO.md` quando houver residuo/reabertura",
+    "- memoria duravel do workspace fica em `.agents/MEMORY.ndjson`",
     "- skill candidate e o estagio entre memoria reutilizavel e skill pronta",
     "- escrita duravel segue `proposal-first writes`",
-    "- recall mistura estado operacional com ledger duravel quando houver evidencia",
+    "- recall mistura estado operacional local, ledger duravel do workspace e memoria global read-only",
+    "- a query de recall agora e unificada com `projectName`, `currentObjective`, `nextEligibleBlock` e `latestClosedBlock`",
+    "- captura automatica de resposta finalizada so entra quando o pedido original ja e de memoria/promocao ou quando a resposta traz uma linha estruturada como `Decision:` ou `Rule:`",
     "",
     `README completo: ${memoryReadmePath}`
   ].join("\n");
@@ -2147,7 +2431,9 @@ function renderRelevantMemory(
             `*${t(locale, "memoryTacticalNotesTitle")}*`,
             ...packet.tacticalNotes
               .slice(0, 3)
-              .map((line) => `- ${escapeMarkdownV2(line.replace(/^- /, ""))}`),
+              .map(
+                (line) => `\\- ${escapeMarkdownV2(line.replace(/^- /, ""))}`
+              ),
             ""
           ]
         : []),
@@ -2158,7 +2444,7 @@ function renderRelevantMemory(
               .slice(0, 5)
               .map(
                 (entry) =>
-                  `- [${escapeMarkdownV2(entry.kind)}] ${escapeMarkdownV2(entry.title)}`
+                  `\\- \\[${escapeMarkdownV2(entry.kind)}\\] ${escapeMarkdownV2(entry.title)}`
               ),
             ""
           ]
@@ -2189,8 +2475,12 @@ export function registerHandlers({
   audioSummaryManager,
   telegramMediaDownloader = (source) => downloadTelegramMediaToTemp({ source }),
   telegramConfig,
+  instance,
   adminActions
 }: RegisterHandlersOptions): void {
+  const instanceConfig = instance ?? ptyManager.config.instance;
+  const fixedInstanceProject =
+    instanceConfig?.projectLabel || path.basename(ptyManager.config.runner.cwd);
   const effectiveReuseEngine =
     reuseEngine || new ProjectReuseEngine(memoryService);
   const effectiveDashboardAdminService =
@@ -2203,6 +2493,33 @@ export function registerHandlers({
   );
   const localeOf = (chatId: string | number): Locale =>
     ptyManager.getLanguage(chatId);
+  const resolveImmediatePlanContext = (
+    chatId: string | number,
+    workdir: string,
+    task: string
+  ): string | null => {
+    if (!shouldAttachImmediateContextToPlan(task)) {
+      return null;
+    }
+
+    const latestFinalActionText =
+      audioSummaryManager?.getLatestFinalActionText?.(chatId, workdir);
+    if (latestFinalActionText) {
+      return latestFinalActionText;
+    }
+
+    const projectState = ptyManager.getProjectState(chatId, workdir);
+    const operationalState = ptyManager.getOperationalContinuationState(
+      chatId,
+      workdir
+    );
+
+    return (
+      projectState.lastFinalResponseText ||
+      operationalState.lastFinalResponseText ||
+      null
+    );
+  };
   const buildPromptWithMemory = async (
     chatId: string | number,
     workdir: string,
@@ -2376,8 +2693,8 @@ export function registerHandlers({
     locale: Locale,
     prompt: string,
     intent: MemoryIntent = "auto",
-    options: Record<string, unknown> = {}
-  ): Promise<void> => {
+    options: Record<string, unknown> & { startedMessageText?: string } = {}
+  ): Promise<SendPromptResult | null> => {
     const workdir = ptyManager.getStatus(ctx.chat.id).workdir;
     const promptWithMemory = await buildPromptWithMemory(
       ctx.chat.id,
@@ -2388,21 +2705,24 @@ export function registerHandlers({
     if (promptWithMemory.disclosure) {
       await sendChunkedMarkdown(ctx, promptWithMemory.disclosure);
     }
+    const { startedMessageText, ...sendPromptOptions } = options;
     const result = await ptyManager.sendPrompt(
       ctx,
       promptWithMemory.prompt,
-      options as any
+      sendPromptOptions as any
     );
     if (result.started) {
       await sendChunkedMarkdown(
         ctx,
-        "Pedido enviado ao Codex. Vou te mostrando o andamento aqui."
+        startedMessageText ||
+          "Pedido enviado ao Codex. Vou te mostrando o andamento aqui."
       );
-      return;
+      return result;
     }
     if (!result.started) {
       await handlePromptResult(ctx, locale, result);
     }
+    return result;
   };
 
   const handleStatusCommand = async (ctx: any): Promise<void> => {
@@ -2469,6 +2789,16 @@ export function registerHandlers({
     const payload = extractCommandPayload(ctx.message.text, "repo");
     const status = ptyManager.getStatus(ctx.chat.id);
     const previousWorkdir = status.workdir;
+
+    if (isFixedInstanceMode(instanceConfig)) {
+      await sendChunkedMarkdown(
+        ctx,
+        t(locale, "instanceRepoSwitchBlocked", {
+          project: fixedInstanceProject
+        })
+      );
+      return;
+    }
 
     if (!payload) {
       const projects = ptyManager.listProjects();
@@ -2602,7 +2932,6 @@ export function registerHandlers({
       ...keyboard
     });
   };
-
   const handleAdminDashboardCommand = async (ctx: any): Promise<void> => {
     const locale = localeOf(ctx.chat.id);
     const status = ptyManager.getStatus(ctx.chat.id);
@@ -3089,6 +3418,11 @@ export function registerHandlers({
 
       if (isOperationalStatusQuestion(text)) {
         await renderOperationalStatus(ctx, locale, "status");
+        return;
+      }
+
+      if (isOperationalNextStepQuestion(text)) {
+        await executeProjectStatus(ctx, locale, "next");
         return;
       }
 
@@ -4137,11 +4471,20 @@ export function registerHandlers({
       await sendChunkedMarkdown(ctx, t(locale, "usagePlan"));
       return;
     }
+    const workdir = ptyManager.getStatus(ctx.chat.id).workdir;
 
     await executeActionPrompt(
       ctx,
       locale,
-      applyLocalExecutionPreference(buildPlanPrompt(task)),
+      applyLocalExecutionPreference(
+        buildPlanPrompt(task, {
+          immediateContext: resolveImmediatePlanContext(
+            ctx.chat.id,
+            workdir,
+            task
+          )
+        })
+      ),
       "planning",
       {
         forceExec: true,
@@ -4318,6 +4661,158 @@ export function registerHandlers({
     const closed = ptyManager.closeSession(ctx.chat.id);
     await sendChunkedMarkdown(ctx, t(locale, "modelSet", { value, closed }));
   });
+
+  const handleReasoningCommand = async (ctx: any, commandName: string) => {
+    const locale = localeOf(ctx.chat.id);
+    const value = extractCommandPayload(ctx.message.text, commandName);
+    if (!value) {
+      const status = ptyManager.getStatus(ctx.chat.id);
+      await sendChunkedMarkdown(
+        ctx,
+        t(locale, "reasoningCurrent", {
+          effort: status.preferredReasoningEffort
+        })
+      );
+      return;
+    }
+
+    if (/^(reset|default|inherit)$/i.test(value)) {
+      ptyManager.clearPreferredReasoningEffort(ctx.chat.id);
+      const closed = ptyManager.closeSession(ctx.chat.id);
+      await sendChunkedMarkdown(ctx, t(locale, "reasoningReset", { closed }));
+      return;
+    }
+
+    const effort = parseReasoningEffortValue(value);
+    if (!effort) {
+      await sendChunkedMarkdown(ctx, t(locale, "usageReasoning"));
+      return;
+    }
+
+    ptyManager.setPreferredReasoningEffort(ctx.chat.id, effort);
+    const closed = ptyManager.closeSession(ctx.chat.id);
+    await sendChunkedMarkdown(
+      ctx,
+      t(locale, "reasoningSet", { value: effort, closed })
+    );
+  };
+
+  bot.command("reasoning", async (ctx: any) =>
+    handleReasoningCommand(ctx, "reasoning")
+  );
+  bot.command("raciocinio", async (ctx: any) =>
+    handleReasoningCommand(ctx, "raciocinio")
+  );
+
+  const handleAutopilotCommand = async (ctx: any, commandName: string) => {
+    const locale = localeOf(ctx.chat.id);
+    const value = extractCommandPayload(ctx.message.text, commandName);
+
+    if (!value || /^(status|state|estado)$/i.test(value.trim())) {
+      const status = ptyManager.getSpecialAutopilotStatus(ctx.chat.id);
+      await sendChunkedMarkdown(
+        ctx,
+        t(locale, "autopilotLoopCurrent", {
+          enabled: status.enabled,
+          remaining: status.remainingResponses
+        })
+      );
+      return;
+    }
+
+    const normalizedValue = normalizeCommandToken(value);
+    if (
+      /^(resume|retomar|continuar|continue|seguir|de onde parou|de-onde-parou|ponto)$/.test(
+        normalizedValue
+      )
+    ) {
+      const status = ptyManager.getSpecialAutopilotStatus(ctx.chat.id);
+      if (!status.enabled || status.remainingResponses <= 0) {
+        await sendChunkedMarkdown(ctx, t(locale, "autopilotResumeDisabled"));
+        return;
+      }
+
+      const projectState = ptyManager.getProjectState(ctx.chat.id);
+      const operational = ptyManager.getOperationalContinuationState(
+        ctx.chat.id
+      );
+      const lastFinalResponseText = String(
+        projectState.lastFinalResponseText ||
+          operational.lastFinalResponseText ||
+          ""
+      ).trim();
+
+      if (!lastFinalResponseText) {
+        await sendChunkedMarkdown(
+          ctx,
+          t(locale, "autopilotResumeMissingFinal")
+        );
+        return;
+      }
+
+      await sendChunkedMarkdown(
+        ctx,
+        t(locale, "autopilotResumeRequested", {
+          remaining: status.remainingResponses,
+          lastFinalized: operational.lastFinalizedAt || ""
+        })
+      );
+
+      const result = await executeActionPrompt(
+        ctx,
+        locale,
+        buildFinalResponseAutopilotPrompt(lastFinalResponseText),
+        "continue",
+        {
+          queueLabel: "Retomar piloto automatico do ultimo fechamento",
+          queueOnBusy: false,
+          startedMessageText: t(locale, "autopilotResumeStarted")
+        }
+      );
+
+      if (result?.started) {
+        const nextStatus = ptyManager.consumeSpecialAutopilotStep(ctx.chat.id);
+        await sendChunkedMarkdown(
+          ctx,
+          t(locale, "autopilotLoopTriggered", {
+            remaining: nextStatus.remainingResponses
+          })
+        );
+      }
+      return;
+    }
+
+    if (/^(off|disable|desligar|stop|parar|0)$/.test(normalizedValue)) {
+      ptyManager.clearSpecialAutopilot(ctx.chat.id);
+      await sendChunkedMarkdown(ctx, t(locale, "autopilotLoopDisabled"));
+      return;
+    }
+
+    const inlineCount = parseAutopilotResponseCount(value);
+    const matchCount = value.match(/^(?:on|ativar|ligar)\s+(\d+)\s*$/i);
+    const count =
+      inlineCount || parseAutopilotResponseCount(matchCount?.[1] || "");
+
+    if (!count || count > 50) {
+      await sendChunkedMarkdown(ctx, t(locale, "usageAutopilotLoop"));
+      return;
+    }
+
+    const status = ptyManager.setSpecialAutopilot(ctx.chat.id, count);
+    await sendChunkedMarkdown(
+      ctx,
+      t(locale, "autopilotLoopEnabled", {
+        remaining: status.remainingResponses
+      })
+    );
+  };
+
+  bot.command("autopilot", async (ctx: any) =>
+    handleAutopilotCommand(ctx, "autopilot")
+  );
+  bot.command("piloto", async (ctx: any) =>
+    handleAutopilotCommand(ctx, "piloto")
+  );
 
   bot.command("verbose", async (ctx: any) => {
     const locale = localeOf(ctx.chat.id);
@@ -4571,6 +5066,16 @@ export function registerHandlers({
 
     if (data.startsWith("repo:switch:")) {
       await ctx.answerCbQuery(t(locale, "callbackRefreshed"));
+      if (isFixedInstanceMode(instanceConfig)) {
+        await sendChunkedMarkdown(
+          ctx,
+          t(locale, "instanceRepoSwitchBlocked", {
+            project: fixedInstanceProject
+          })
+        );
+        return;
+      }
+
       const status = ptyManager.getStatus(ctx.chat.id);
       const previousWorkdir = status.workdir;
       const rawTarget = data.replace("repo:switch:", "");
@@ -4798,10 +5303,13 @@ export function registerHandlers({
       if (action === "view") {
         const target = (argument || "active") as
           | "index"
+          | "agents"
           | "project"
           | "active"
           | "handoff"
           | "napkin"
+          | "sprintsIndex"
+          | "estacionamento"
           | "ledger";
         const content = await memoryService.readOperationalFile(
           workdir,
@@ -5268,7 +5776,37 @@ export function registerHandlers({
         return;
       }
 
-      await ctx.answerCbQuery(t(locale, "callbackRefreshed"));
+      const normalizedAction = normalizeFinalActionRoute(action);
+      const handoffTarget =
+        normalizedAction === "handoff"
+          ? extractFinalResponseNextSpecialist(record.text)
+          : null;
+      const callbackKey =
+        normalizedAction === "plan"
+          ? "finalActionPlanCallbackReceived"
+          : normalizedAction === "handoff"
+            ? "finalActionHandoffCallbackReceived"
+            : normalizedAction === "continue_medium"
+              ? "finalActionContinueMediumCallbackReceived"
+              : normalizedAction === "continue_full"
+                ? "finalActionContinueFullCallbackReceived"
+                : normalizedAction === "autopilot"
+                  ? "finalActionAutopilotCallbackReceived"
+                  : normalizedAction === "autopilot_arm"
+                    ? "finalActionAutopilotArmCallbackReceived"
+                    : "finalActionContinueShortCallbackReceived";
+
+      await ctx.answerCbQuery(
+        normalizedAction === "plan" ||
+          normalizedAction === "handoff" ||
+          normalizedAction === "continue_short" ||
+          normalizedAction === "continue_medium" ||
+          normalizedAction === "continue_full" ||
+          normalizedAction === "autopilot" ||
+          normalizedAction === "autopilot_arm"
+          ? t(locale, callbackKey, { target: handoffTarget || "" })
+          : t(locale, "callbackRefreshed")
+      );
 
       if (record.workdir) {
         const currentStatus = ptyManager.getStatus(ctx.chat.id);
@@ -5281,7 +5819,7 @@ export function registerHandlers({
         }
       }
 
-      if (action === "plan") {
+      if (normalizedAction === "plan") {
         await executeActionPrompt(
           ctx,
           locale,
@@ -5291,17 +5829,114 @@ export function registerHandlers({
         return;
       }
 
-      if (action === "continue" || action === "execute") {
+      if (normalizedAction === "handoff") {
+        const targetText = handoffTarget ? ` para ${handoffTarget}` : "";
+        await sendChunkedMarkdown(
+          ctx,
+          `Callback do botao Encaminhar${targetText} recebido.`
+        );
         await executeActionPrompt(
           ctx,
           locale,
-          buildFinalResponseContinuePrompt(record.text),
-          "continue"
+          buildFinalResponseHandoffPrompt(record.text),
+          "planning",
+          {
+            queueLabel: "Botao Encaminhar acionado",
+            startedMessageText:
+              "Botao Encaminhar acionado. Pedido enviado ao Codex. Vou te mostrando o andamento aqui."
+          }
         );
         return;
       }
 
-      if (action === "meeting" || action === "review") {
+      if (
+        normalizedAction === "continue_short" ||
+        normalizedAction === "continue_medium" ||
+        normalizedAction === "continue_full"
+      ) {
+        const level =
+          normalizedAction === "continue_medium"
+            ? "medium"
+            : normalizedAction === "continue_full"
+              ? "full"
+              : "short";
+        const labelText =
+          normalizedAction === "continue_medium"
+            ? "Botao Continuar sprint acionado"
+            : normalizedAction === "continue_full"
+              ? "Botao Concluir bloco todo acionado"
+              : "Botao Proximo passo acionado";
+        const callbackText =
+          normalizedAction === "continue_medium"
+            ? "Callback do botao Continuar sprint recebido."
+            : normalizedAction === "continue_full"
+              ? "Callback do botao Concluir bloco todo recebido."
+              : "Callback do botao Proximo passo recebido.";
+
+        await sendChunkedMarkdown(ctx, callbackText);
+        await executeActionPrompt(
+          ctx,
+          locale,
+          buildFinalResponseContinuePrompt(record.text, level),
+          "continue",
+          {
+            queueLabel: labelText,
+            startedMessageText: `${labelText}. Pedido enviado ao Codex. Vou te mostrando o andamento aqui.`
+          }
+        );
+        return;
+      }
+
+      if (normalizedAction === "autopilot") {
+        await sendChunkedMarkdown(
+          ctx,
+          "Callback do botao Piloto automatico recebido."
+        );
+        await executeActionPrompt(
+          ctx,
+          locale,
+          buildFinalResponseAutopilotPrompt(record.text),
+          "continue",
+          {
+            queueLabel: "Botao Piloto automatico acionado",
+            startedMessageText:
+              "Botao Piloto automatico acionado. Pedido enviado ao Codex. Vou te mostrando o andamento aqui."
+          }
+        );
+        return;
+      }
+
+      if (normalizedAction === "autopilot_arm") {
+        await sendChunkedMarkdown(ctx, "Callback do botao Piloto x3 recebido.");
+        ptyManager.setSpecialAutopilot(ctx.chat.id, 3);
+        const result = await executeActionPrompt(
+          ctx,
+          locale,
+          buildFinalResponseAutopilotPrompt(record.text),
+          "continue",
+          {
+            queueLabel: "Botao Piloto x3 acionado",
+            queueOnBusy: false,
+            startedMessageText:
+              "Botao Piloto x3 acionado. Piloto armado e pedido enviado ao Codex. Vou te mostrando o andamento aqui."
+          }
+        );
+
+        if (result?.started) {
+          const nextStatus = ptyManager.consumeSpecialAutopilotStep(
+            ctx.chat.id
+          );
+          await sendChunkedMarkdown(
+            ctx,
+            t(locale, "autopilotLoopTriggered", {
+              remaining: nextStatus.remainingResponses
+            })
+          );
+        }
+        return;
+      }
+
+      if (normalizedAction === "meeting" || normalizedAction === "review") {
         await executeActionPrompt(
           ctx,
           locale,
@@ -5311,7 +5946,7 @@ export function registerHandlers({
         return;
       }
 
-      if (action === "inbox" || action === "organize") {
+      if (normalizedAction === "organize") {
         const workdir = ptyManager.getStatus(ctx.chat.id).workdir;
         const rendered = renderInboxOverview(
           locale,

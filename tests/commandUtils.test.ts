@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildPlanPrompt,
   extractCommandPayload,
+  shouldAttachImmediateContextToPlan,
   suggestClosestWord
 } from "../src/bot/commandUtils.js";
 
@@ -24,6 +25,30 @@ test("buildPlanPrompt forces planning-only behavior", () => {
   assert.match(prompt, /Planning mode only/);
   assert.match(prompt, /Do not modify files/);
   assert.match(prompt, /Task:\nrefactor src\/index\.ts/);
+});
+
+test("buildPlanPrompt can make immediate review context primary", () => {
+  const prompt = buildPlanPrompt("planeje em cima daqui com os findings", {
+    immediateContext: "Finding 1: Cadastro perde valor + endereco."
+  });
+
+  assert.match(prompt, /Immediate conversation context/i);
+  assert.match(prompt, /primary source/i);
+  assert.match(prompt, /Finding 1: Cadastro perde valor \+ endereco/);
+  assert.match(prompt, /do not replace the current planning target/i);
+});
+
+test("shouldAttachImmediateContextToPlan detects contextual planning requests", () => {
+  assert.equal(
+    shouldAttachImmediateContextToPlan(
+      "consolidar tudo que ja foi levantado nos achados"
+    ),
+    true
+  );
+  assert.equal(
+    shouldAttachImmediateContextToPlan("crie um plano para refatorar src"),
+    false
+  );
 });
 
 test("suggestClosestWord returns the nearest supported command when the typo is small", () => {

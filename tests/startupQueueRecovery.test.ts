@@ -5,7 +5,7 @@ import {
   notifyBootReadyOnStartup
 } from "../src/bot/startupQueueRecovery.js";
 
-test("startup queue recovery announces idle queued chats with action buttons", async () => {
+test("startup queue recovery keeps manual buttons as fallback when auto-run cannot start", async () => {
   const sent: Array<{
     chatId: string | number;
     text: string;
@@ -42,13 +42,20 @@ test("startup queue recovery announces idle queued chats with action buttons", a
           }
         }
       ],
+      runNextQueuedPrompt: async () => ({
+        started: false,
+        reason: "busy",
+        activeMode: "sdk"
+      }),
       getLanguage: () => "en"
-    } as any
+    } as any,
+    "startup"
   );
 
   assert.equal(sent.length, 1);
   assert.equal(sent[0].chatId, "8736107242");
   assert.match(sent[0].text, /fila pendente/i);
+  assert.match(sent[0].text, /inicializacao do bot/i);
   assert.match(sent[0].text, /AgendadorConsultasOticas/);
   const inlineKeyboard = (
     sent[0].options?.reply_markup as {
@@ -60,6 +67,72 @@ test("startup queue recovery announces idle queued chats with action buttons", a
     ["queue:run", "queue:list"]
   );
   assert.equal(inlineKeyboard?.[1]?.[0]?.callback_data, "queue:clear");
+});
+
+test("startup queue recovery auto-runs the next queued item when possible", async () => {
+  const sent: Array<{
+    chatId: string | number;
+    text: string;
+    options?: Record<string, unknown>;
+  }> = [];
+  let runCalls = 0;
+
+  await notifyRecoverableQueuesOnStartup(
+    {
+      telegram: {
+        sendMessage: async (
+          chatId: string | number,
+          text: string,
+          options?: Record<string, unknown>
+        ) => {
+          sent.push({ chatId, text, options });
+          return {};
+        }
+      }
+    },
+    {
+      listRecoverableQueuedChats: () => [
+        {
+          chatId: "8736107242",
+          queueLength: 3,
+          workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
+          relativeWorkdir: "AgendadorConsultasOticas",
+          nextItem: {
+            id: "queue-1",
+            index: 1,
+            text: "continuar o proximo sprint",
+            workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
+            relativeWorkdir: "AgendadorConsultasOticas",
+            createdAt: new Date().toISOString()
+          }
+        }
+      ],
+      runNextQueuedPrompt: async () => {
+        runCalls += 1;
+        return {
+          started: true,
+          mode: "sdk"
+        };
+      },
+      getLanguage: () => "pt-BR"
+    } as any,
+    "restart"
+  );
+
+  assert.equal(runCalls, 1);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /apos o restart do bot/i);
+  assert.match(sent[0].text, /item iniciado automaticamente/i);
+  assert.match(sent[0].text, /itens restantes na fila: 2/i);
+  const inlineKeyboard = (
+    sent[0].options?.reply_markup as {
+      inline_keyboard?: Array<Array<{ callback_data?: string }>>;
+    }
+  )?.inline_keyboard;
+  assert.deepEqual(
+    inlineKeyboard?.map((row) => row.map((button) => button.callback_data)),
+    [["queue:list"], ["queue:clear"]]
+  );
 });
 
 test("startup queue recovery stays quiet when there is nothing recoverable", async () => {
@@ -77,7 +150,8 @@ test("startup queue recovery stays quiet when there is nothing recoverable", asy
     {
       listRecoverableQueuedChats: () => [],
       getLanguage: () => "en"
-    } as any
+    } as any,
+    "startup"
   );
 
   assert.equal(called, false);
@@ -112,4 +186,36 @@ test("boot-ready notification announces that the bot is back", async () => {
   assert.ok(targetMessage);
   assert.match(targetMessage.text, /restart finished/i);
   assert.match(targetMessage.text, /AgendadorConsultasOticas/);
+});
+
+test("boot-ready notification skips chats already covered by queue recovery", async () => {
+  const sent: Array<{
+    chatId: string | number;
+    text: string;
+  }> = [];
+
+  await notifyBootReadyOnStartup(
+    {
+      telegram: {
+        sendMessage: async (chatId: string | number, text: string) => {
+          sent.push({ chatId, text });
+          return {};
+        }
+      }
+    },
+    {
+      getLanguage: () => "pt-BR",
+      getRelativeWorkdir: (chatId: string | number) =>
+        chatId === "123" ? "dex-agent" : "AgendadorConsultasOticas"
+    } as any,
+    ["8736107242", "123"],
+    "startup",
+    new Set(["8736107242"])
+  );
+
+  assert.deepEqual(
+    sent.map((item) => item.chatId),
+    ["123"]
+  );
+  assert.match(sent[0].text, /iniciou e esta pronto/i);
 });

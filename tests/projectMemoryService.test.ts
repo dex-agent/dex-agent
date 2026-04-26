@@ -306,6 +306,13 @@ test("buildMemoryPacket skips trivial prompts and includes operational state for
     "utf8"
   );
   await fs.writeFile(
+    path.join(workdir, "AGENTS.md"),
+    ["# Agents", "", "- Follow local repo instructions before resuming."].join(
+      "\n"
+    ),
+    "utf8"
+  );
+  await fs.writeFile(
     path.join(workdir, ".agents", "PROJECT.md"),
     [
       "# Project",
@@ -349,6 +356,31 @@ test("buildMemoryPacket skips trivial prompts and includes operational state for
     ),
     "utf8"
   );
+  await fs.mkdir(path.join(workdir, ".agents", "sprints"), {
+    recursive: true
+  });
+  await fs.writeFile(
+    path.join(workdir, ".agents", "sprints", "INDEX.md"),
+    [
+      "# Sprints Index",
+      "",
+      "## Catalogo",
+      "- `camada-2` | status: `ativo` | tipo: `sprint` | resumo: alinhar motor | abre: `camada-2.md` | fallback: `.agents/HANDOFF.md`"
+    ].join("\n"),
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(workdir, ".agents", "ESTACIONAMENTO.md"),
+    [
+      "# Estacionamento",
+      "",
+      "## Ativos",
+      "",
+      "- [est-001] [governanca] Confirmar que protocolo humano e runtime nao divergem. | destino: monitorar"
+    ].join("\n"),
+    "utf8"
+  );
+  await writeLedger(workdir, []);
 
   const trivial = await service.buildMemoryPacket({
     workdir,
@@ -367,18 +399,40 @@ test("buildMemoryPacket skips trivial prompts and includes operational state for
   assert.equal(planning?.latestClosedBlock, "301-312");
   assert.equal(planning?.nextEligibleBlock, "alinhar o motor ao contrato");
   assert.equal(planning?.usedOperationalState, true);
-  assert.match((planning?.sources || []).join("\n"), /INDEX\.md/i);
-  assert.match((planning?.sources || []).join("\n"), /PROJECT\.md/i);
+  const sources = (planning?.sources || []).join("\n");
+  assert.match(sources, /INDEX\.md/i);
+  assert.match(sources, /AGENTS\.md/i);
+  assert.match(sources, /PROJECT\.md/i);
+  assert.match(sources, /ACTIVE\.md/i);
+  assert.match(sources, /HANDOFF\.md/i);
+  assert.match(sources, /napkin\.md/i);
+  assert.match(sources, /\.agents[\\/]sprints[\\/]INDEX\.md/i);
+  assert.match(sources, /ESTACIONAMENTO\.md/i);
+  assert.match(sources, /MEMORY\.ndjson/i);
 });
 
-test("readOperationalFile can open index and project surfaces", async () => {
+test("readOperationalFile can open canonical recovery surfaces", async () => {
   const workdir = await createWorkspace();
   const service = new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY);
 
   await fs.writeFile(path.join(workdir, "INDEX.md"), "# INDEX\n", "utf8");
+  await fs.writeFile(path.join(workdir, "AGENTS.md"), "# AGENTS\n", "utf8");
   await fs.writeFile(
     path.join(workdir, ".agents", "PROJECT.md"),
     "# PROJECT\n",
+    "utf8"
+  );
+  await fs.mkdir(path.join(workdir, ".agents", "sprints"), {
+    recursive: true
+  });
+  await fs.writeFile(
+    path.join(workdir, ".agents", "sprints", "INDEX.md"),
+    "# SPRINTS\n",
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(workdir, ".agents", "ESTACIONAMENTO.md"),
+    "# ESTACIONAMENTO\n",
     "utf8"
   );
 
@@ -387,8 +441,20 @@ test("readOperationalFile can open index and project surfaces", async () => {
     "# INDEX\n"
   );
   assert.equal(
+    await service.readOperationalFile(workdir, "agents"),
+    "# AGENTS\n"
+  );
+  assert.equal(
     await service.readOperationalFile(workdir, "project"),
     "# PROJECT\n"
+  );
+  assert.equal(
+    await service.readOperationalFile(workdir, "sprintsIndex"),
+    "# SPRINTS\n"
+  );
+  assert.equal(
+    await service.readOperationalFile(workdir, "estacionamento"),
+    "# ESTACIONAMENTO\n"
   );
 });
 

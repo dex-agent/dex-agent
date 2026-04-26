@@ -6,6 +6,8 @@ import path from "node:path";
 import { ProjectMemoryService } from "../src/orchestrator/memoryService.js";
 import { ProjectReuseEngine } from "../src/orchestrator/reuseEngine.js";
 
+const DISABLE_GLOBAL_MEMORY = { globalMemoriesRoot: null } as const;
+
 async function createWorkdir(name: string): Promise<string> {
   const workdir = await fs.mkdtemp(path.join(os.tmpdir(), `${name}-`));
   await fs.mkdir(path.join(workdir, ".agents"), { recursive: true });
@@ -20,7 +22,10 @@ async function createWorkdir(name: string): Promise<string> {
 
 test("reuse engine prepares prompt packets with relevant skill context", async () => {
   const workdir = await createWorkdir("reuse-engine-prompt");
-  const memoryService = new ProjectMemoryService();
+  const memoryService = new ProjectMemoryService(
+    undefined,
+    DISABLE_GLOBAL_MEMORY
+  );
   const engine = new ProjectReuseEngine(memoryService);
 
   const draft = memoryService.getSkillPromotionService().buildDraft({
@@ -70,7 +75,9 @@ test("reuse engine prepares prompt packets with relevant skill context", async (
 
 test("reuse engine delegates finalized response capture through the shared memory service", async () => {
   const workdir = await createWorkdir("reuse-engine-finalized");
-  const engine = new ProjectReuseEngine(new ProjectMemoryService());
+  const engine = new ProjectReuseEngine(
+    new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY)
+  );
 
   const result = await engine.captureFinalizedResponse({
     chatId: 1,
@@ -99,7 +106,9 @@ test("reuse engine delegates finalized response capture through the shared memor
 
 test("reuse engine promotion sanitizes injected skill packets from prompt text", async () => {
   const workdir = await createWorkdir("reuse-engine-sanitized-prompt");
-  const engine = new ProjectReuseEngine(new ProjectMemoryService());
+  const engine = new ProjectReuseEngine(
+    new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY)
+  );
 
   const result = await engine.captureFinalizedResponse({
     chatId: 1,

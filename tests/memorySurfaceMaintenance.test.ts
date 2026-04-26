@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   auditMemorySurfaces,
+  archiveCompletedSprintSurfaces,
   migrateLegacyMemoryRecord,
   normalizeMemorySurfaces
 } from "../src/orchestrator/memorySurfaceMaintenance.js";
@@ -265,6 +266,158 @@ test("normalizeMemorySurfaces migrates legacy ledger lines, preserves structured
   assert.ok(result.changedFiles.includes(ledgerPath));
   assert.ok(
     result.changedFiles.some((filePath) => filePath.endsWith("MEMORY.md"))
+  );
+});
+
+test("normalizeMemorySurfaces archives completed sprint notes and sidecar artifacts", async () => {
+  const repoRoot = await createRepoRoot("memory-normalize-sprint-archive");
+  const globalRoot = await createGlobalRoot();
+  await writeLedger(repoRoot, [structuredEntry(repoRoot, "mem-archive")]);
+
+  const sprintsDir = path.join(repoRoot, ".agents", "sprints");
+  await fs.mkdir(sprintsDir, { recursive: true });
+  await fs.writeFile(
+    path.join(sprintsDir, "INDEX.md"),
+    [
+      "# Sprint Notes Index",
+      "",
+      "## Catalogo",
+      "- `finished-sprint` | status: `fechado` | tipo: `sprint` | resumo: `Finished Sprint` | abre: `.agents/sprints/finished-sprint.md` | fallback: `.agents/HANDOFF.md`",
+      "- `open-sprint` | status: `em_execucao` | tipo: `sprint` | resumo: `Open Sprint` | abre: `.agents/sprints/open-sprint.md` | fallback: `.agents/HANDOFF.md`"
+    ].join("\n"),
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(sprintsDir, "finished-sprint.md"),
+    "# Finished Sprint\n\nStatus: 100% concluido\n",
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(sprintsDir, "finished-sprint.report.json"),
+    '{"ok":true}\n',
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(sprintsDir, "open-sprint.md"),
+    "# Open Sprint\n\nStatus: em execucao\n",
+    "utf8"
+  );
+
+  const audit = await auditMemorySurfaces({
+    repoRoots: [repoRoot],
+    globalMemoryRoot: globalRoot
+  });
+  assert.ok(
+    audit.findings.some(
+      (finding) => finding.code === "completed_sprint_not_archived"
+    )
+  );
+
+  const dryRun = await normalizeMemorySurfaces({
+    repoRoots: [repoRoot],
+    globalMemoryRoot: globalRoot,
+    write: false
+  });
+  assert.equal(dryRun.sprintArchiveResults[0]?.archivedEntries, 1);
+  assert.equal(
+    await fs.readFile(path.join(sprintsDir, "finished-sprint.md"), "utf8"),
+    "# Finished Sprint\n\nStatus: 100% concluido\n"
+  );
+
+  const result = await normalizeMemorySurfaces({
+    repoRoots: [repoRoot],
+    globalMemoryRoot: globalRoot,
+    write: true
+  });
+
+  assert.equal(result.sprintArchiveResults[0]?.archivedEntries, 1);
+  assert.equal(result.sprintArchiveResults[0]?.movedFiles.length, 2);
+  await assert.rejects(
+    fs.readFile(path.join(sprintsDir, "finished-sprint.md"), "utf8"),
+    /ENOENT/
+  );
+  assert.equal(
+    await fs.readFile(
+      path.join(
+        repoRoot,
+        ".agents",
+        "ARQUIVADO",
+        "sprints",
+        "finished-sprint.md"
+      ),
+      "utf8"
+    ),
+    "# Finished Sprint\n\nStatus: 100% concluido\n"
+  );
+  assert.equal(
+    await fs.readFile(
+      path.join(
+        repoRoot,
+        ".agents",
+        "ARQUIVADO",
+        "sprints",
+        "finished-sprint.report.json"
+      ),
+      "utf8"
+    ),
+    '{"ok":true}\n'
+  );
+  assert.equal(
+    await fs.readFile(path.join(sprintsDir, "open-sprint.md"), "utf8"),
+    "# Open Sprint\n\nStatus: em execucao\n"
+  );
+
+  const index = await fs.readFile(path.join(sprintsDir, "INDEX.md"), "utf8");
+  assert.match(index, /finished-sprint` \| status: `arquivado`/i);
+  assert.match(index, /\.agents\/ARQUIVADO\/sprints\/finished-sprint\.md/i);
+  assert.match(index, /open-sprint` \| status: `em_execucao`/i);
+});
+
+test("archiveCompletedSprintSurfaces exposes startup-safe completed sprint archiving", async () => {
+  const repoRoot = await createRepoRoot("memory-startup-sprint-archive");
+  await writeLedger(repoRoot, [structuredEntry(repoRoot, "mem-startup")]);
+
+  const sprintsDir = path.join(repoRoot, ".agents", "sprints");
+  await fs.mkdir(sprintsDir, { recursive: true });
+  await fs.writeFile(
+    path.join(sprintsDir, "INDEX.md"),
+    [
+      "# Sprint Notes Index",
+      "",
+      "## Catalogo",
+      "- `done-at-startup` | status: `concluido` | tipo: `sprint` | resumo: `Done` | abre: `.agents/sprints/done-at-startup.md` | fallback: `.agents/HANDOFF.md`"
+    ].join("\n"),
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(sprintsDir, "done-at-startup.md"),
+    "# Done\n",
+    "utf8"
+  );
+
+  const result = await archiveCompletedSprintSurfaces({
+    repoRoots: [repoRoot],
+    write: true
+  });
+
+  assert.equal(result[0]?.archivedEntries, 1);
+  assert.equal(result[0]?.movedFiles.length, 1);
+  await assert.rejects(
+    fs.readFile(path.join(sprintsDir, "done-at-startup.md"), "utf8"),
+    /ENOENT/
+  );
+  assert.equal(
+    await fs.readFile(
+      path.join(
+        repoRoot,
+        ".agents",
+        "ARQUIVADO",
+        "sprints",
+        "done-at-startup.md"
+      ),
+      "utf8"
+    ),
+    "# Done\n"
   );
 });
 

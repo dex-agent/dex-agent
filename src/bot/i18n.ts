@@ -44,6 +44,49 @@ function joinLines(lines: readonly string[] = []): string {
   return lines.join("\n");
 }
 
+function reasoningEffortLabel(
+  effort: string | null | undefined,
+  locale: Locale
+): string {
+  const value = String(effort || "").trim();
+  if (!value) {
+    return "";
+  }
+
+  const labels: Record<Locale, Record<string, string>> = {
+    "pt-BR": {
+      minimal: "Mínima",
+      low: "Baixa",
+      medium: "Média",
+      high: "Alta",
+      xhigh: "Altíssima"
+    },
+    en: {
+      minimal: "Minimal",
+      low: "Low",
+      medium: "Medium",
+      high: "High",
+      xhigh: "Very high"
+    },
+    zh: {
+      minimal: "最低",
+      low: "低",
+      medium: "中",
+      high: "高",
+      xhigh: "极高"
+    },
+    "zh-HK": {
+      minimal: "最低",
+      low: "低",
+      medium: "中",
+      high: "高",
+      xhigh: "極高"
+    }
+  };
+
+  return labels[locale]?.[value] || labels.en[value] || value;
+}
+
 const MESSAGES: Record<string, TranslationCatalog> = {
   en: {
     buttonRefreshTestStatus: "Refresh test status",
@@ -52,7 +95,7 @@ const MESSAGES: Record<string, TranslationCatalog> = {
       "Dex Agent ready.",
       "Plain messages, voice notes, and coding tasks route to Codex.",
       "Bot-side MCP only runs through explicit /mcp commands.",
-      "Try: /status, /admin, /repo, /pwd, /exec, /auto, /plan, /model, /language, /verbose, /skill, /new, /sh",
+      "Try: /status, /repo, /pwd, /exec, /auto, /autopilot, /plan, /model, /reasoning, /language, /verbose, /skill, /new, /sh",
       'GitHub example: /gh commit "feat: init"'
     ],
     helpLines: () => [
@@ -69,11 +112,13 @@ const MESSAGES: Record<string, TranslationCatalog> = {
       "/new - Clear the current project's saved conversation",
       "/exec <task> - Force a one-off Codex run without saving project context",
       "/auto <task> - Force a one-off fully automatic Codex run",
+      "/autopilot [status|resume|off|<count>|on <count>] - Arm, resume, or disable the special autopilot for a fixed number of finalized responses",
       "/plan <task> - Generate a plan only, without direct file modification intent",
       "/continue - Replay the last blocked same-workdir request once",
       "/queue [list|add|remove|clear|run] - Manage queued Codex requests for this chat",
       "/fila [listar|adicionar|remover|limpar|executar] - Alias for /queue",
       "/model [name|reset] - Show or set the model for this chat",
+      "/reasoning [low|medium|high|xhigh|reset] - Show or set the reasoning effort for this chat",
       "/language [en|zh|zh-HK] - Show or set the system language for this chat",
       "/verbose [on|off] - Show or hide system notices for this chat",
       "/skill list - Show skill switches for this chat",
@@ -114,8 +159,18 @@ const MESSAGES: Record<string, TranslationCatalog> = {
               : "no (exec fallback)"
       }`,
       `preferred model: ${status.preferredModel || "inherit codex default"}`,
+      `preferred reasoning: ${
+        status.preferredReasoningEffort
+          ? reasoningEffortLabel(status.preferredReasoningEffort, "en")
+          : "inherit codex default"
+      }`,
       `language: ${status.language} (${languageLabel(status.language, "en")})`,
       `verbose: ${status.verboseOutput ? "on" : "off"}`,
+      `special autopilot: ${
+        status.specialAutopilotEnabled
+          ? `on (${status.specialAutopilotRemainingResponses} remaining)`
+          : "off"
+      }`,
       `command: ${status.command}`,
       `workspace root: ${status.workspaceRoot}`,
       `workdir: ${status.workdir}`,
@@ -290,6 +345,9 @@ const MESSAGES: Record<string, TranslationCatalog> = {
     usagePlan: "Usage: /plan <task>",
     usageQueue:
       "Usage: /queue [list|add <task>|add <project> :: <task>|remove <id|index>|clear|run]",
+    usageReasoning: "Usage: /reasoning [low|medium|high|xhigh|reset]",
+    usageAutopilotLoop:
+      "Usage: /autopilot [status|resume|off|<count>|on <count>] (count: 1-50)",
     usageVerbose: "Usage: /verbose [on|off]",
     usageLanguage: "Usage: /language [en|zh|zh-HK]",
     execNotice: "Running one-off Codex task...",
@@ -328,13 +386,33 @@ const MESSAGES: Record<string, TranslationCatalog> = {
     queueRemoveFailed: ({ selector, reason }) =>
       `Nao encontrei o item ${selector} na fila (${reason}).`,
     queueCleared: ({ count }) => `Fila limpa. ${count} item(ns) removido(s).`,
-    queueStartupRecovery: ({ count, relativeWorkdir, text }) =>
+    queueStartupRecovery: ({ count, relativeWorkdir, text, bootMode }) =>
       joinLines([
-        "Encontrei uma fila pendente deste chat apos o restart do bot.",
+        bootMode === "restart"
+          ? "Encontrei uma fila pendente deste chat apos o restart do bot."
+          : "Encontrei uma fila pendente deste chat durante a inicializacao do bot.",
         `projeto: ${relativeWorkdir}`,
         `itens pendentes: ${count}`,
         `proximo item: ${text}`,
         "Escolha abaixo se quer rodar agora, revisar a fila ou limpar."
+      ]),
+    queueStartupAutoRun: ({
+      count,
+      relativeWorkdir,
+      text,
+      remainingCount,
+      mode,
+      bootMode
+    }) =>
+      joinLines([
+        bootMode === "restart"
+          ? "Encontrei uma fila pendente deste chat apos o restart do bot."
+          : "Encontrei uma fila pendente deste chat durante a inicializacao do bot.",
+        `projeto: ${relativeWorkdir}`,
+        `itens pendentes antes da retomada: ${count}`,
+        `item iniciado automaticamente: ${text}`,
+        `itens restantes na fila: ${remainingCount}`,
+        `Vou mostrar o andamento aqui (${mode}).`
       ]),
     buttonQueueRunNow: "▶️ Rodar agora",
     buttonQueueView: "📋 Ver fila",
@@ -402,10 +480,55 @@ const MESSAGES: Record<string, TranslationCatalog> = {
       closed
         ? `Model set to ${value} and the current session was rebuilt.`
         : `Model set to ${value}.`,
+    reasoningCurrent: ({ effort }) =>
+      `Current reasoning effort: ${
+        effort ? reasoningEffortLabel(effort, "en") : "inherit codex default"
+      }`,
+    reasoningReset: ({ closed }) =>
+      closed
+        ? "Reasoning effort reset to the Codex default and the current session was rebuilt."
+        : "Reasoning effort reset to the Codex default.",
+    reasoningSet: ({ value, closed }) =>
+      closed
+        ? `Reasoning effort set to ${reasoningEffortLabel(value, "en")} and the current session was rebuilt.`
+        : `Reasoning effort set to ${reasoningEffortLabel(value, "en")}.`,
     verboseCurrent: ({ enabled }) =>
       `System notices: ${enabled ? "on" : "off"}`,
     verboseSet: ({ enabled }) =>
       `System notices ${enabled ? "enabled" : "disabled"}.`,
+    autopilotLoopCurrent: ({ enabled, remaining }) =>
+      enabled
+        ? `Special autopilot is on for this chat. Remaining auto-followups: ${remaining}.`
+        : "Special autopilot is off for this chat.",
+    autopilotLoopEnabled: ({ remaining }) =>
+      `Special autopilot armed for ${remaining} finalized response(s) in this chat. It will continue automatically after each finalized response until the counter reaches zero or you run /autopilot off.`,
+    autopilotLoopDisabled: "Special autopilot disabled for this chat.",
+    autopilotLoopTriggered: ({ remaining }) =>
+      remaining > 0
+        ? `Special autopilot followed automatically after this finalized response. Remaining auto-followups: ${remaining}.`
+        : "Special autopilot followed automatically after this finalized response and finished its configured test run.",
+    autopilotLoopBlocked:
+      "Special autopilot is still armed, but it could not continue automatically right now. The quick actions stayed available and you can run /autopilot off to stop it.",
+    autopilotLoopStoppedClosedLine: [
+      "Special autopilot stopped safely.",
+      "",
+      "Why it stopped: the finalized response says the line or block is closed and there is no open sprint to continue.",
+      "Blind spot: forcing another automatic step here would likely reopen a closed line by inertia.",
+      "Golden tip: open a new explicit cut before arming autopilot again.",
+      "Safe options: ask for planning, use the recommended next-step button, or run /autopilot off if you want to keep it disabled."
+    ].join("\n"),
+    autopilotResumeDisabled:
+      "Special autopilot is not armed for this chat. Use /autopilot <count> first.",
+    autopilotResumeMissingFinal:
+      "I do not have a saved finalized response for this project yet, so there is no exact stop point to resume from.",
+    autopilotResumeRequested: ({ remaining, lastFinalized }) =>
+      joinLines([
+        "Resuming special autopilot from the last saved finalized response.",
+        `remaining auto-followups before this resume: ${remaining}`,
+        ...(lastFinalized ? [`last finalized: ${lastFinalized}`] : [])
+      ]),
+    autopilotResumeStarted:
+      "Autopilot resume sent to Codex from the last saved finalized response.",
     languageCurrent: ({ language }) =>
       `Current language: ${language} (${languageLabel(language, "en")})`,
     languageSet: ({ language }) =>
@@ -488,17 +611,46 @@ const MESSAGES: Record<string, TranslationCatalog> = {
       "Usage: /admin [show|link|prompts|prompts add ...|prompts remove ...|history|history explain ...|history discard ...|history propose ...|history cancel ...]",
     buttonAdminPrompts: "Prompts",
     buttonAdminHistory: "History",
+    finalActionExecuteCallbackReceived: "Execute next step received",
+    finalActionPlanCallbackReceived: "Transform into planning received",
+    finalActionHandoffCallbackReceived: ({ target }) =>
+      target ? `Send to ${target} received` : "Specialist handoff received",
+    finalActionContinueShortCallbackReceived: "Short continue received",
+    finalActionContinueMediumCallbackReceived: "Sprint continue received",
+    finalActionContinueFullCallbackReceived: "Finish whole block received",
+    finalActionAutopilotCallbackReceived: "Autopilot received",
+    finalActionAutopilotArmCallbackReceived: "Autopilot x3 received",
     buttonAudioSummary: "🔊 Resumo em audio",
     buttonAudioSummaryConcise: "🎧 Conciso",
     buttonAudioSummaryDetailed: "🔊 Detalhado",
     audioSummaryOffer:
       "Essa resposta ficou longa. Quer um resumo curto em audio?",
-    finalActionsOffer:
-      "How should I proceed from here?\nEach button sends one specific follow-up action. You can also type your own reply.",
-    buttonQuickExecute: "▶️ Execute next step",
+    finalActionsOffer: ({ ctaRef, suggestedPrompt, recommendedAction }) =>
+      joinLines([
+        "How should I proceed from here?",
+        recommendedAction ? `Recommended button: ${recommendedAction}` : "",
+        suggestedPrompt ? `Short suggestion: ${suggestedPrompt}` : "",
+        "Use the button marked with ->.",
+        ...(ctaRef ? [`CTA ref: ${ctaRef}`] : [])
+      ]),
+    buttonQuickContinueShort: "Execute next step",
+    buttonQuickPlan: "Transform into planning",
+    buttonQuickHandoff: "Send to specialist",
+    buttonQuickContinueMedium: "Continue current sprint",
+    buttonQuickContinueFull: "Finish whole block",
+    buttonQuickAutopilot: "Autopilot",
+    buttonQuickAutopilotArm: "Autopilot x3",
+    buttonQuickMeeting: "Quick meeting",
     buttonQuickReview: "🧠 Start review",
     buttonQuickOrganize: "📥 Open inbox now",
-    buttonQuickExecuteRecommended: "✅ Execute next step",
+    buttonQuickContinueShortRecommended: "-> Next step",
+    buttonQuickPlanRecommended: "-> Transform into planning",
+    buttonQuickHandoffRecommended: "-> Send to specialist",
+    buttonQuickContinueMediumRecommended: "-> Current sprint",
+    buttonQuickContinueFullRecommended: "-> Finish whole block",
+    buttonQuickAutopilotRecommended: "-> Autopilot",
+    buttonQuickAutopilotArmRecommended: "-> Autopilot x3",
+    buttonQuickMeetingRecommended: "-> Quick meeting",
     buttonQuickReviewRecommended: "✅ Start review",
     buttonQuickOrganizeRecommended: "✅ Open inbox now",
     audioSummaryCaption: "Resumo curto em audio",
@@ -823,7 +975,7 @@ const MESSAGES: Record<string, TranslationCatalog> = {
       "Dex Agent 已就绪。",
       "普通消息和编码任务会路由到 Codex。",
       "Bot 侧 MCP 仅通过显式 /mcp 命令调用。",
-      "试试: /status, /repo, /pwd, /exec, /auto, /plan, /model, /language, /verbose, /skill, /new, /sh",
+      "试试: /status, /repo, /pwd, /exec, /auto, /plan, /model, /reasoning, /language, /verbose, /skill, /new, /sh",
       'GitHub 示例: /gh commit "feat: init"'
     ],
     helpLines: () => [
@@ -842,6 +994,7 @@ const MESSAGES: Record<string, TranslationCatalog> = {
       "/plan <task> - 仅生成计划，不直接修改文件",
       "/continue - 仅一次继续执行最近一次被同 workdir 冲突拦下的请求",
       "/model [name|reset] - 查看或设置当前 chat 模型",
+      "/reasoning [low|medium|high|xhigh|reset] - 查看或设置当前 chat 的推理强度",
       "/language [en|zh|zh-HK] - 查看或设置当前 chat 的系统语言",
       "/verbose [on|off] - 显示或隐藏系统提示",
       "/skill list - 查看当前 chat 的 skill 开关",
@@ -881,6 +1034,11 @@ const MESSAGES: Record<string, TranslationCatalog> = {
               : "no (exec fallback)"
       }`,
       `preferred model: ${status.preferredModel || "inherit codex default"}`,
+      `preferred reasoning: ${
+        status.preferredReasoningEffort
+          ? reasoningEffortLabel(status.preferredReasoningEffort, "zh")
+          : "inherit codex default"
+      }`,
       `language: ${status.language} (${languageLabel(status.language, "zh")})`,
       `verbose: ${status.verboseOutput ? "on" : "off"}`,
       `command: ${status.command}`,
@@ -1019,6 +1177,7 @@ const MESSAGES: Record<string, TranslationCatalog> = {
     usageSh: "用法: /sh <command>",
     usageAuto: "用法: /auto <task>",
     usagePlan: "用法: /plan <task>",
+    usageReasoning: "用法: /reasoning [low|medium|high|xhigh|reset]",
     usageVerbose: "用法: /verbose [on|off]",
     usageLanguage: "用法: /language [en|zh|zh-HK]",
     execNotice: "正在执行一次性 Codex 任务...",
@@ -1088,6 +1247,18 @@ const MESSAGES: Record<string, TranslationCatalog> = {
       closed
         ? `模型已设置为 ${value}，并重建了当前会话。`
         : `模型已设置为 ${value}。`,
+    reasoningCurrent: ({ effort }) =>
+      `当前推理强度: ${
+        effort ? reasoningEffortLabel(effort, "zh") : "inherit codex default"
+      }`,
+    reasoningReset: ({ closed }) =>
+      closed
+        ? "推理强度已重置为 Codex 默认值，并重建了当前会话。"
+        : "推理强度已重置为 Codex 默认值。",
+    reasoningSet: ({ value, closed }) =>
+      closed
+        ? `推理强度已设置为 ${reasoningEffortLabel(value, "zh")}，并重建了当前会话。`
+        : `推理强度已设置为 ${reasoningEffortLabel(value, "zh")}。`,
     verboseCurrent: ({ enabled }) =>
       `当前系统提示输出: ${enabled ? "on" : "off"}`,
     verboseSet: ({ enabled }) => `系统提示输出已${enabled ? "开启" : "关闭"}。`,
@@ -1108,6 +1279,7 @@ const MESSAGES: Record<string, TranslationCatalog> = {
     mcpDisabled: "MCP skill 当前 chat 已禁用。使用 /skill on mcp 重新启用。",
     mcpFailed: ({ error }) => `MCP skill 执行失败: ${error}`,
     callbackRefreshed: "状态已刷新",
+    finalActionExecuteCallbackReceived: "已收到执行下一步",
     testJobNotFound: ({ jobId }) => `找不到测试任务: ${jobId}`,
     useRestartCommand: "请使用 /restart，而不是把它当作普通消息发送。",
     slashSpaceError: ({ fixed }) =>
@@ -1293,7 +1465,7 @@ MESSAGES["pt-BR"] = {
     "Dex Agent pronto.",
     "Mensagens, áudios e tarefas de código vão para o Codex.",
     "MCP do bot só roda por comandos explícitos com /mcp.",
-    "Use: /status, /admin, /repo, /pwd, /exec, /auto, /plan, /model, /language, /verbose, /skill, /new, /sh",
+    "Use: /status, /repo, /pwd, /exec, /auto, /autopilot, /plan, /model, /reasoning, /language, /verbose, /skill, /new, /sh",
     'Exemplo GitHub: /gh commit "feat: init"'
   ],
   helpLines: () => [
@@ -1315,6 +1487,7 @@ MESSAGES["pt-BR"] = {
     "/queue [list|add|remove|clear|run] - Gerencia a fila de pedidos do chat",
     "/fila [listar|adicionar|remover|limpar|executar] - Alias de /queue",
     "/model [name|reset] - Consulta ou fixa o modelo deste chat",
+    "/reasoning [baixa|media|alta|altissimo|reset] - Consulta ou fixa o raciocinio deste chat",
     "/language [pt-BR|en|zh|zh-HK] - Consulta ou troca o idioma deste chat",
     "/verbose [on|off] - Mostra ou esconde avisos do sistema",
     "/skill list - Mostra os skills deste chat",
@@ -1356,8 +1529,18 @@ MESSAGES["pt-BR"] = {
             : "nao (fallback exec)"
     }`,
     `modelo preferido: ${status.preferredModel || "herdar padrao do Codex"}`,
+    `raciocinio preferido: ${
+      status.preferredReasoningEffort
+        ? reasoningEffortLabel(status.preferredReasoningEffort, "pt-BR")
+        : "herdar padrao do Codex"
+    }`,
     `idioma: ${status.language} (${languageLabel(status.language, "pt-BR")})`,
     `avisos do sistema: ${status.verboseOutput ? "on" : "off"}`,
+    `piloto automatico especial: ${
+      status.specialAutopilotEnabled
+        ? `ligado (${status.specialAutopilotRemainingResponses} restantes)`
+        : "desligado"
+    }`,
     `comando: ${status.command}`,
     `raiz do workspace: ${status.workspaceRoot}`,
     `workdir: ${status.workdir}`,
@@ -1386,7 +1569,55 @@ MESSAGES["pt-BR"] = {
   statusLastPromptSignal: ({ value }) => `ultimo pedido: ${value}`,
   statusLastFinalizedSignal: ({ value }) => `ultimo fechamento: ${value}`,
   statusLastFinalResponseSignal: ({ text }) => `ultima resposta final: ${text}`,
+  usageReasoning: "Uso: /reasoning [baixa|media|alta|altissimo|reset]",
+  usageAutopilotLoop:
+    "Uso: /autopilot [status|resume|off|<count>|on <count>] (quantidade: 1-50)",
   usageLanguage: "Uso: /language [pt-BR|en|zh|zh-HK]",
+  reasoningCurrent: ({ effort }) =>
+    `Raciocinio atual: ${
+      effort ? reasoningEffortLabel(effort, "pt-BR") : "herdar padrao do Codex"
+    }`,
+  reasoningReset: ({ closed }) =>
+    closed
+      ? "Raciocinio resetado para o padrao do Codex e a sessao atual foi reconstruida."
+      : "Raciocinio resetado para o padrao do Codex.",
+  reasoningSet: ({ value, closed }) =>
+    closed
+      ? `Raciocinio ajustado para ${reasoningEffortLabel(value, "pt-BR")} e a sessao atual foi reconstruida.`
+      : `Raciocinio ajustado para ${reasoningEffortLabel(value, "pt-BR")}.`,
+  autopilotLoopCurrent: ({ enabled, remaining }) =>
+    enabled
+      ? `Piloto automatico especial ligado neste chat. Restantes para seguir automaticamente: ${remaining}.`
+      : "Piloto automatico especial desligado neste chat.",
+  autopilotLoopEnabled: ({ remaining }) =>
+    `Piloto automatico especial armado para ${remaining} resposta(s) finalizadas neste chat. Ele vai continuar automaticamente apos cada resposta finalizada ate zerar o contador ou voce usar /autopilot off.`,
+  autopilotLoopDisabled: "Piloto automatico especial desligado neste chat.",
+  autopilotLoopTriggered: ({ remaining }) =>
+    remaining > 0
+      ? `Piloto automatico especial seguiu automaticamente apos esta resposta finalizada. Restantes: ${remaining}.`
+      : "Piloto automatico especial seguiu automaticamente apos esta resposta finalizada e encerrou este teste configurado.",
+  autopilotLoopBlocked:
+    "O piloto automatico especial continua armado, mas nao conseguiu seguir automaticamente agora. As acoes finais ficaram disponiveis e voce pode usar /autopilot off para parar.",
+  autopilotLoopStoppedClosedLine: [
+    "Piloto automatico especial parou com seguranca.",
+    "",
+    "Por que parou: a resposta finalizada diz que a linha ou o bloco esta fechado e nao ha sprint aberto para continuar.",
+    "Ponto cego: forcar outro passo automatico aqui provavelmente reabriria uma linha fechada por inercia.",
+    "Dica de ouro: abra um novo corte explicito antes de armar o piloto de novo.",
+    "Opcoes seguras: pedir planejamento, usar o botao de proximo passo recomendado ou rodar /autopilot off para manter desligado."
+  ].join("\n"),
+  autopilotResumeDisabled:
+    "O piloto automatico especial nao esta armado neste chat. Use /autopilot <quantidade> primeiro.",
+  autopilotResumeMissingFinal:
+    "Ainda nao tenho uma resposta finalizada salva neste projeto, entao nao ha um ponto exato para retomar.",
+  autopilotResumeRequested: ({ remaining, lastFinalized }) =>
+    joinLines([
+      "Retomando o piloto automatico especial a partir da ultima resposta finalizada salva.",
+      `respostas automaticas restantes antes desta retomada: ${remaining}`,
+      ...(lastFinalized ? [`ultimo fechamento: ${lastFinalized}`] : [])
+    ]),
+  autopilotResumeStarted:
+    "Retomada do piloto automatico enviada ao Codex a partir do ultimo fechamento salvo.",
   languageCurrent: ({ language }) =>
     `Idioma atual: ${language} (${languageLabel(language, "pt-BR")})`,
   languageSet: ({ language }) =>
@@ -1406,14 +1637,36 @@ MESSAGES["pt-BR"] = {
     ]),
   queueRunStarted: ({ mode }) =>
     `Item da fila enviado ao Codex (${mode}). Vou mostrar o andamento aqui.`,
-  finalActionsOffer:
-    "Como seguir daqui?\nCada botao envia uma acao especifica. Voce tambem pode responder com seu proprio texto.",
+  finalActionsOffer: ({ ctaRef, suggestedPrompt, recommendedAction }) =>
+    joinLines([
+      "Como seguir daqui?",
+      recommendedAction ? `Recomendado: ${recommendedAction}` : "",
+      suggestedPrompt ? `Sugestao curta: ${suggestedPrompt}` : "",
+      "Use o botao marcado com ->.",
+      ...(ctaRef ? [`Ref do CTA: ${ctaRef}`] : [])
+    ]),
   buttonQuickExecute: "▶️ Executar proximo passo",
   buttonQuickReview: "🧠 Iniciar revisao",
   buttonQuickOrganize: "📥 Abrir inbox agora",
   buttonQuickExecuteRecommended: "✅ Executar proximo passo",
   buttonQuickReviewRecommended: "✅ Iniciar revisao",
   buttonQuickOrganizeRecommended: "✅ Abrir inbox agora",
+  buttonQuickContinueShort: "Executar proximo passo",
+  buttonQuickPlan: "Transformar em planejamento",
+  buttonQuickHandoff: "Encaminhar",
+  buttonQuickContinueMedium: "Continuar sprint atual",
+  buttonQuickContinueFull: "Concluir bloco todo",
+  buttonQuickAutopilot: "Piloto automatico",
+  buttonQuickAutopilotArm: "Piloto x3",
+  buttonQuickMeeting: "Reuniao rapida",
+  buttonQuickContinueShortRecommended: "-> Proximo passo",
+  buttonQuickPlanRecommended: "-> Transformar em planejamento",
+  buttonQuickHandoffRecommended: "-> Encaminhar",
+  buttonQuickContinueMediumRecommended: "-> Sprint atual",
+  buttonQuickContinueFullRecommended: "-> Concluir bloco todo",
+  buttonQuickAutopilotRecommended: "-> Piloto automatico",
+  buttonQuickAutopilotArmRecommended: "-> Piloto x3",
+  buttonQuickMeetingRecommended: "-> Reuniao rapida",
   interruptResult: ({ ok }) =>
     ok
       ? "Interrompendo a execucao atual do Codex."
@@ -1485,6 +1738,15 @@ MESSAGES["pt-BR"] = {
     "Uso: /admin [show|link|prompts|prompts add ...|prompts remove ...|history|history explain ...|history discard ...|history propose ...|history cancel ...]",
   buttonAdminPrompts: "Prompts",
   buttonAdminHistory: "Historico",
+  finalActionExecuteCallbackReceived: "Executar proximo passo recebido",
+  finalActionPlanCallbackReceived: "Transformar em planejamento recebido",
+  finalActionHandoffCallbackReceived: ({ target }) =>
+    target ? `Encaminhar para ${target} recebido` : "Encaminhamento recebido",
+  finalActionContinueShortCallbackReceived: "Continuar curto recebido",
+  finalActionContinueMediumCallbackReceived: "Continuar sprint recebido",
+  finalActionContinueFullCallbackReceived: "Concluir bloco todo recebido",
+  finalActionAutopilotCallbackReceived: "Piloto automatico recebido",
+  finalActionAutopilotArmCallbackReceived: "Piloto x3 recebido",
   emptyResponse: "(resposta vazia)",
   memoryInboxTitle: "Inbox de memoria",
   memoryCandidatesCountLabel: "candidatos",

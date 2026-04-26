@@ -5,6 +5,11 @@ import {
   type MemoryConfidence,
   type MemoryEntry
 } from "./memoryService.js";
+import {
+  buildOperationalRecoveryPaths,
+  resolveOperationalRecoverySources,
+  type OperationalRecoveryPaths
+} from "./operationalRecoverySources.js";
 
 export type ProjectDecisionSource =
   | "profile_only"
@@ -72,15 +77,6 @@ export interface BuildProjectUnderstandingInput {
   workdir: string;
   variant?: ProjectStatusVariant;
   memoryService?: ProjectMemoryService;
-}
-
-interface CanonicalFileSet {
-  indexPath: string;
-  projectPath: string;
-  activePath: string;
-  handoffPath: string;
-  memoryPath: string;
-  napkinPath: string;
 }
 
 interface MemoriaVivaProfileData {
@@ -340,15 +336,8 @@ async function pathExists(targetPath: string): Promise<boolean> {
   }
 }
 
-function buildCanonicalPaths(workdir: string): CanonicalFileSet {
-  return {
-    indexPath: path.join(workdir, "INDEX.md"),
-    projectPath: path.join(workdir, ".agents", "PROJECT.md"),
-    activePath: path.join(workdir, ".agents", "ACTIVE.md"),
-    handoffPath: path.join(workdir, ".agents", "HANDOFF.md"),
-    memoryPath: path.join(workdir, ".agents", "MEMORY.ndjson"),
-    napkinPath: path.join(workdir, ".codex", "napkin.md")
-  };
+function buildCanonicalPaths(workdir: string): OperationalRecoveryPaths {
+  return buildOperationalRecoveryPaths(workdir);
 }
 
 async function pickLatestMemoryFiles(workdir: string): Promise<string[]> {
@@ -387,15 +376,18 @@ async function readMemoriaVivaProfile(
   workdir: string
 ): Promise<MemoriaVivaProfileData | null> {
   const paths = buildCanonicalPaths(workdir);
+  const recoverySources = await resolveOperationalRecoverySources(workdir);
   const hasIndex = await pathExists(paths.indexPath);
+  const hasAgents = await pathExists(paths.agentsPath);
   const hasProject = await pathExists(paths.projectPath);
   const hasActive = await pathExists(paths.activePath);
   const hasHandoff = await pathExists(paths.handoffPath);
-  const hasMemory = await pathExists(paths.memoryPath);
+  const hasMemory = await pathExists(paths.ledgerPath);
   const hasNapkin = await pathExists(paths.napkinPath);
 
   if (
     !hasIndex &&
+    !hasAgents &&
     !hasProject &&
     !hasActive &&
     !hasHandoff &&
@@ -452,20 +444,12 @@ async function readMemoriaVivaProfile(
     ...legacyProgressSummary
   ].slice(0, 4);
   const latestMemoryFiles = await pickLatestMemoryFiles(workdir);
-  const canonicalSources = [
-    ...(hasIndex ? [paths.indexPath] : []),
-    ...(hasProject ? [paths.projectPath] : []),
-    ...(hasActive ? [paths.activePath] : []),
-    ...(hasHandoff ? [paths.handoffPath] : []),
-    ...(hasMemory ? [paths.memoryPath] : []),
-    ...(hasNapkin ? [paths.napkinPath] : []),
-    ...latestMemoryFiles
-  ];
+  const canonicalSources = Array.from(
+    new Set([...recoverySources.sources, ...latestMemoryFiles])
+  );
   const missingSections = [
-    ...(hasIndex ? [] : ["INDEX.md"]),
+    ...recoverySources.missingCore,
     ...(hasProject ? [] : ["PROJECT.md"]),
-    ...(hasActive ? [] : ["ACTIVE.md"]),
-    ...(hasHandoff ? [] : ["HANDOFF.md"]),
     ...(currentBlockStatus || !hasHandoff ? [] : ["Current block status"]),
     ...(progressSummary.length ? [] : ["Progress snapshot"]),
     ...(suggestedCommands.length ? [] : ["Suggested commands"]),
@@ -594,24 +578,22 @@ export async function buildProjectUnderstanding({
     return createSafeFallbackContract(resolvedWorkdir, variant);
   }
 
-  const memoryQueryText = [
-    profileData.currentStatus.projectName,
-    profileData.currentStatus.primaryFocus || "",
-    profileData.currentStatus.nextEligibleBlock || "",
-    profileData.currentStatus.latestClosedBlock || "",
-    variant,
-    "project status sprint progress risks commands handoff next block"
-  ].join(" ");
   const memoryQuery = await memoryService.queryMemory({
     workdir: resolvedWorkdir,
-    prompt: memoryQueryText,
+    prompt: variant,
     intent:
       variant === "commands"
         ? "implementation"
         : variant === "queue" || variant === "next"
           ? "continue"
           : "status",
-    maxEntries: 5
+    maxEntries: 5,
+    operationalContext: {
+      projectName: profileData.currentStatus.projectName,
+      currentObjective: profileData.currentStatus.primaryFocus,
+      nextEligibleBlock: profileData.currentStatus.nextEligibleBlock,
+      latestClosedBlock: profileData.currentStatus.latestClosedBlock
+    }
   });
 
   const decisionSource: ProjectDecisionSource = profileData.usedOperationalState

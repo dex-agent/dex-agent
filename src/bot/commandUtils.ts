@@ -59,13 +59,66 @@ export function suggestClosestWord(
   return bestDistance <= maxDistance ? best : "";
 }
 
-export function buildPlanPrompt(task: string): string {
+export interface PlanPromptOptions {
+  immediateContext?: string | null;
+}
+
+const MAX_PLAN_IMMEDIATE_CONTEXT_CHARS = 9000;
+
+function normalizeForPlanContext(value: string): string {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+}
+
+function compactPlanImmediateContext(value: string): string {
+  const normalized = String(value || "")
+    .replace(/\r/g, "")
+    .trim();
+
+  if (normalized.length <= MAX_PLAN_IMMEDIATE_CONTEXT_CHARS) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, MAX_PLAN_IMMEDIATE_CONTEXT_CHARS - 80).trimEnd()}\n\n[contexto imediato truncado para manter o prompt seguro]`;
+}
+
+export function shouldAttachImmediateContextToPlan(task: string): boolean {
+  const normalized = normalizeForPlanContext(task);
+
+  return /\b(em cima daqui|a partir daqui|daqui|disso|isso|isto|acima|anterior|ultima resposta|resposta anterior|conversa anterior|conversa acima|achado|achados|finding|findings|review|revisao|relatorio|sugestao|sugestoes|indicacao|indicacoes|levantado|levantados|consolidar tudo|planejamento total)\b/i.test(
+    normalized
+  );
+}
+
+export function buildPlanPrompt(
+  task: string,
+  options: PlanPromptOptions = {}
+): string {
+  const immediateContext = options.immediateContext
+    ? compactPlanImmediateContext(options.immediateContext)
+    : "";
+  const contextLines = immediateContext
+    ? [
+        "Immediate conversation context (primary source for this planning request):",
+        immediateContext,
+        "",
+        "Source priority rules:",
+        '- Treat the immediate conversation context above as the primary source when the task mentions findings, achados, review, relatorio, sugestoes, indicacoes, or "daqui".',
+        "- Use durable project memory, HANDOFF, ACTIVE, and old backlog only as boundaries or fallback; do not replace the current planning target with older project state.",
+        "- Carry each concrete Finding/P0/P1/P2/P3, risk, residue, and next-specialist signal into the plan, or explain explicitly why it is excluded.",
+        ""
+      ]
+    : [];
+
   return [
     "Planning mode only.",
     "Analyze the request and respond with a concise execution plan.",
     "Do not modify files.",
     "Do not run write commands.",
     "Do not claim you already made changes.",
+    ...contextLines,
     "",
     "Task:",
     task

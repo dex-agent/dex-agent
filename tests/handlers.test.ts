@@ -8,6 +8,8 @@ import { AdminWebServer } from "../src/lib/adminWebServer.js";
 import { ProjectMemoryService } from "../src/orchestrator/memoryService.js";
 import { PromptLibraryService } from "../src/orchestrator/promptLibraryService.js";
 
+const DISABLE_GLOBAL_MEMORY = { globalMemoriesRoot: null } as const;
+
 type Handler = (ctx: TestContext) => Promise<void> | void;
 
 interface ReplyRecord {
@@ -143,21 +145,87 @@ function createDependencies(
         requestId: string,
         locale: string
       ): Promise<boolean>;
+      getLatestFinalActionText?(
+        chatId: string | number,
+        workdir?: string
+      ): string | null;
     };
     workdir?: string;
     memoryService?: ProjectMemoryService;
     promptLibraryService?: PromptLibraryService;
-    dashboardAdminService?: { inspect(workdir: string): Promise<any> };
-    adminWebServer?: { getLink(workdir: string): Promise<string> };
+    dashboardAdminService?: {
+      inspect(workdir: string): Promise<{
+        workdir: string;
+        modules: Array<{
+          key: "prompts" | "history" | "operation" | "settings";
+          label: string;
+          status: "enabled" | "planned";
+          mode: "editable" | "read-only";
+          reason: string | null;
+        }>;
+        prompts: {
+          items: Array<{
+            source: "builtin" | "custom";
+            selector?: string;
+            label?: string;
+            intent?: string;
+            removable?: boolean;
+          }>;
+          capabilities: string[];
+        };
+        history: {
+          candidates: unknown[];
+          proposals: unknown[];
+          capabilities: string[];
+        };
+        operation: {
+          enabled: false;
+          reason: string;
+        };
+        settings: {
+          enabled: false;
+          reason: string;
+        };
+      }>;
+    };
+    adminWebServer?: {
+      getLink(workdir: string): Promise<string>;
+    };
     adminActions?: {
       restart?: () => Promise<void>;
     } | null;
+    instance?: {
+      contextMode: "workspace" | "instance";
+      id: string;
+      projectLabel: string;
+    };
   } = {}
 ) {
   const bot = new FakeBot();
   const promptCalls: unknown[] = [];
   const workdir = overrides.workdir || process.cwd();
+  const defaultProjectState = {
+    lastSessionId: "",
+    lastMode: null,
+    lastExitCode: null,
+    lastExitSignal: null,
+    lastWorkflowPhase: null,
+    lastPromptText: null,
+    lastPromptAt: null,
+    lastFinalResponseText: null as string | null,
+    lastFinalizedAt: null as string | null
+  };
   const ptyManager = {
+    config: {
+      runner: {
+        cwd: workdir
+      },
+      instance: overrides.instance || {
+        contextMode: "workspace",
+        id: "dex-agent",
+        projectLabel: path.basename(workdir)
+      }
+    },
     getLanguage: () => "en",
     sendPrompt:
       overrides.sendPrompt ||
@@ -183,14 +251,22 @@ function createDependencies(
       lastExitSignal: null,
       projectSessionId: null,
       preferredModel: null,
+      preferredReasoningEffort: null,
       language: "en",
       verboseOutput: false,
+      specialAutopilotEnabled: false,
+      specialAutopilotRemainingResponses: 0,
       ptySupported: null,
       workdir,
       relativeWorkdir: ".",
       workspaceRoot: workdir,
       command: "codex",
       mcpServers: [],
+      instance: overrides.instance || {
+        contextMode: "workspace",
+        id: "dex-agent",
+        projectLabel: path.basename(workdir)
+      },
       workflowSystem: "superpowers",
       workflowPhase: "none"
     }),
@@ -244,6 +320,25 @@ function createDependencies(
     setLanguage: () => "en",
     setPreferredModel: () => "gpt-5.4",
     clearPreferredModel: () => {},
+    setPreferredReasoningEffort: () => "medium",
+    clearPreferredReasoningEffort: () => {},
+    getSpecialAutopilotStatus: () => ({
+      enabled: false,
+      remainingResponses: 0
+    }),
+    setSpecialAutopilot: (_chatId: number, remainingResponses: number) => ({
+      enabled: remainingResponses > 0,
+      remainingResponses
+    }),
+    clearSpecialAutopilot: () => ({
+      enabled: false,
+      remainingResponses: 0
+    }),
+    consumeSpecialAutopilotStep: () => ({
+      enabled: false,
+      remainingResponses: 0
+    }),
+    getProjectState: () => defaultProjectState,
     getOperationalContinuationState: () => ({
       active: false,
       activeMode: null,
@@ -418,6 +513,7 @@ function createDependencies(
       botToken: "test-token",
       proxyUrl: undefined
     },
+    instance: overrides.instance,
     ...(overrides.adminActions === undefined
       ? {
           adminActions: {
@@ -466,6 +562,45 @@ test("restart command announces restart and calls the admin action", async () =>
   assert.match(ctx.replies[0].text, /restarting the bot process/i);
 });
 
+test("plan command attaches latest finalized action text for contextual planning", async () => {
+  const latestReview = [
+    "Finding 1:",
+    "- Premissa: cadastro perde resposta factual quando valor vem junto com endereco solto.",
+    "- Prioridade: P1",
+    "",
+    "Finding 2:",
+    "- Premissa: smoke de nome salvo passa sem validar reaproveitamento.",
+    "- Prioridade: P2"
+  ].join("\n");
+  const { bot, promptCalls } = createDependencies({
+    audioSummaryManager: {
+      isEnabled: () => false,
+      createSummaryRequest: () => null,
+      resolveRequest: () => null,
+      offerForContext: async () => false,
+      offerFinalActionsForChat: async () => false,
+      sendSummaryForChat: async () => false,
+      handleCallback: async () => false,
+      getLatestFinalActionText: () => latestReview
+    }
+  });
+  const ctx = createContext(
+    "/plan modo Planejamento consolidar tudo que ja foi levantado nos achados em cima daqui"
+  );
+  const handler = bot.commands.get("plan");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  const prompt = String((promptCalls[0] as unknown[])[1] || "");
+  assert.match(prompt, /Immediate conversation context/i);
+  assert.match(prompt, /primary source/i);
+  assert.match(prompt, /Finding 1:/i);
+  assert.match(prompt, /cadastro perde resposta factual/i);
+  assert.match(prompt, /Finding 2:/i);
+  assert.match(prompt, /do not replace the current planning target/i);
+});
+
 test("help command renders deterministic help text", async () => {
   const { bot } = createDependencies();
   const ctx = createContext("/help");
@@ -476,6 +611,242 @@ test("help command renders deterministic help text", async () => {
 
   assert.match(ctx.replies[0].text, /fluxo deterministico/i);
   assert.match(ctx.replies[0].text, /\/project/i);
+});
+
+test("reasoning command shows the current chat preference", async () => {
+  const { bot, ptyManager } = createDependencies();
+  (ptyManager.getLanguage as any) = () => "pt-BR";
+  (ptyManager.getStatus as any) = () => ({
+    backend: "sdk",
+    active: false,
+    activeMode: null,
+    lastMode: null,
+    lastExitCode: null,
+    lastExitSignal: null,
+    projectSessionId: null,
+    preferredModel: null,
+    preferredReasoningEffort: "xhigh",
+    language: "pt-BR",
+    verboseOutput: false,
+    ptySupported: null,
+    workdir: process.cwd(),
+    relativeWorkdir: ".",
+    workspaceRoot: process.cwd(),
+    command: "codex",
+    mcpServers: [],
+    workflowSystem: "superpowers",
+    workflowPhase: "none"
+  });
+  const ctx = createContext("/reasoning", 1);
+  const handler = bot.commands.get("reasoning");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.match(ctx.replies.at(-1)?.text || "", /Alt/i);
+});
+
+test("reasoning command accepts portuguese aliases and rebuilds the session", async () => {
+  let applied: string | null = null;
+  let closedCalls = 0;
+  const { bot, ptyManager } = createDependencies();
+  (ptyManager.getLanguage as any) = () => "pt-BR";
+  (ptyManager.setPreferredReasoningEffort as any) = (
+    _chatId: number,
+    effort: string
+  ) => {
+    applied = effort;
+    return effort;
+  };
+  (ptyManager.closeSession as any) = () => {
+    closedCalls += 1;
+    return true;
+  };
+  const ctx = createContext("/raciocinio altissimo", 1);
+  const handler = bot.commands.get("raciocinio");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.equal(applied, "xhigh");
+  assert.equal(closedCalls, 1);
+  assert.match(
+    ctx.replies.at(-1)?.text || "",
+    /sessao atual foi reconstruida/i
+  );
+  assert.match(ctx.replies.at(-1)?.text || "", /Alt/i);
+});
+
+test("reasoning command resets to the default", async () => {
+  let cleared = 0;
+  let closedCalls = 0;
+  const { bot, ptyManager } = createDependencies();
+  (ptyManager.getLanguage as any) = () => "pt-BR";
+  (ptyManager.clearPreferredReasoningEffort as any) = () => {
+    cleared += 1;
+  };
+  (ptyManager.closeSession as any) = () => {
+    closedCalls += 1;
+    return true;
+  };
+  const ctx = createContext("/reasoning reset", 1);
+  const handler = bot.commands.get("reasoning");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.equal(cleared, 1);
+  assert.equal(closedCalls, 1);
+  assert.match(ctx.replies.at(-1)?.text || "", /padrao do Codex/i);
+});
+
+test("autopilot command shows the current special autopilot status", async () => {
+  const { bot, ptyManager } = createDependencies();
+  (ptyManager.getLanguage as any) = () => "pt-BR";
+  (ptyManager.getSpecialAutopilotStatus as any) = () => ({
+    enabled: true,
+    remainingResponses: 4
+  });
+  const ctx = createContext("/autopilot", 1);
+  const handler = bot.commands.get("autopilot");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.match(ctx.replies.at(-1)?.text || "", /ligado/i);
+  assert.match(ctx.replies.at(-1)?.text || "", /4/i);
+});
+
+test("autopilot command arms the special autopilot for a fixed number of finalized responses", async () => {
+  let applied: number | null = null;
+  const { bot, ptyManager } = createDependencies();
+  (ptyManager.getLanguage as any) = () => "pt-BR";
+  (ptyManager.setSpecialAutopilot as any) = (
+    _chatId: number,
+    remainingResponses: number
+  ) => {
+    applied = remainingResponses;
+    return {
+      enabled: true,
+      remainingResponses
+    };
+  };
+  const ctx = createContext("/autopilot 3", 1);
+  const handler = bot.commands.get("autopilot");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.equal(applied, 3);
+  assert.match(ctx.replies.at(-1)?.text || "", /3 resposta/i);
+});
+
+test("autopilot command accepts the portuguese alias and can disable the special mode", async () => {
+  let cleared = 0;
+  const { bot, ptyManager } = createDependencies();
+  (ptyManager.getLanguage as any) = () => "pt-BR";
+  (ptyManager.clearSpecialAutopilot as any) = () => {
+    cleared += 1;
+    return {
+      enabled: false,
+      remainingResponses: 0
+    };
+  };
+  const ctx = createContext("/piloto off", 1);
+  const handler = bot.commands.get("piloto");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.equal(cleared, 1);
+  assert.match(ctx.replies.at(-1)?.text || "", /desligado/i);
+});
+
+test("autopilot resume continues from the last finalized response and consumes one configured step", async () => {
+  const prompts: string[] = [];
+  let remainingResponses = 2;
+  const { bot, ptyManager } = createDependencies({
+    sendPrompt: async (_ctx: unknown, prompt: string) => {
+      prompts.push(prompt);
+      return {
+        started: true,
+        mode: "sdk"
+      };
+    }
+  });
+  (ptyManager.getLanguage as any) = () => "pt-BR";
+  (ptyManager.getSpecialAutopilotStatus as any) = () => ({
+    enabled: remainingResponses > 0,
+    remainingResponses
+  });
+  (ptyManager.consumeSpecialAutopilotStep as any) = () => {
+    remainingResponses = Math.max(0, remainingResponses - 1);
+    return {
+      enabled: remainingResponses > 0,
+      remainingResponses
+    };
+  };
+  (ptyManager.getProjectState as any) = () => ({
+    lastFinalResponseText:
+      "Proximo passo: continuar exatamente do ponto salvo do sprint.",
+    lastFinalizedAt: "2026-04-23T12:00:00.000Z"
+  });
+  (ptyManager.getOperationalContinuationState as any) = () => ({
+    active: false,
+    activeMode: null,
+    workflowPhase: "none",
+    workdir: process.cwd(),
+    relativeWorkdir: ".",
+    pendingPromptText: null,
+    queuedItems: [],
+    lastPromptText: null,
+    lastPromptAt: null,
+    lastFinalResponseText:
+      "Proximo passo: continuar exatamente do ponto salvo do sprint.",
+    lastFinalizedAt: "2026-04-23T12:00:00.000Z"
+  });
+
+  const ctx = createContext("/autopilot resume", 1);
+  const handler = bot.commands.get("autopilot");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.equal(prompts.length, 1);
+  assert.match(prompts[0] || "", /autopilot execution run/i);
+  assert.match(prompts[0] || "", /ponto salvo do sprint/i);
+  assert.equal(remainingResponses, 1);
+  assert.ok(
+    ctx.replies.some((reply) =>
+      /Retomada do piloto automatico enviada ao Codex/i.test(reply.text || "")
+    )
+  );
+  assert.ok(
+    ctx.replies.some((reply) => /Restantes: 1/i.test(reply.text || ""))
+  );
+});
+
+test("autopilot resume requires the special autopilot to be armed", async () => {
+  const prompts: string[] = [];
+  const { bot, ptyManager } = createDependencies({
+    sendPrompt: async (_ctx: unknown, prompt: string) => {
+      prompts.push(prompt);
+      return {
+        started: true,
+        mode: "sdk"
+      };
+    }
+  });
+  (ptyManager.getLanguage as any) = () => "pt-BR";
+
+  const ctx = createContext("/piloto retomar", 1);
+  const handler = bot.commands.get("piloto");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.deepEqual(prompts, []);
+  assert.match(ctx.replies.at(-1)?.text || "", /nao esta armado/i);
 });
 
 test("menu command renders dashboard with inline buttons", async () => {
@@ -657,6 +1028,91 @@ test("operational status question returns runtime status instead of sending a pr
   assert.match(
     ctx.replies[0]?.text || "",
     /runtime posture: queued work pending/i
+  );
+});
+
+test("operational next-step question routes to project status next instead of Codex", async () => {
+  const prompts: string[] = [];
+  const projectStatusCalls: Array<{ variant?: string; workdir?: string }> = [];
+  const { bot } = createDependencies({
+    workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
+    sendPrompt: async (_ctx: unknown, prompt: string) => {
+      prompts.push(prompt);
+      return {
+        started: true,
+        mode: "sdk"
+      };
+    },
+    projectStatusExecute: async (args: {
+      variant?: string;
+      workdir?: string;
+    }) => {
+      projectStatusCalls.push(args);
+      return {
+        text: `project status variant: ${args.variant || "default"}`
+      };
+    }
+  });
+  const ctx = createContext("qual o proximo passo seguro?");
+  const handler = bot.events.get("text");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.deepEqual(prompts, []);
+  assert.equal(projectStatusCalls.length, 1);
+  assert.equal(projectStatusCalls[0]?.variant, "next");
+  assert.equal(
+    projectStatusCalls[0]?.workdir,
+    "C:/CodexProjetos/AgendadorConsultasOticas"
+  );
+  assert.match(ctx.replies.at(-1)?.text || "", /project status variant: next/i);
+});
+
+test("operational next-step question ignores contaminated recent context", async () => {
+  const prompts: string[] = [];
+  const projectStatusCalls: Array<{ variant?: string }> = [];
+  const { bot, ptyManager } = createDependencies({
+    sendPrompt: async (_ctx: unknown, prompt: string) => {
+      prompts.push(prompt);
+      return {
+        started: true,
+        mode: "sdk"
+      };
+    },
+    projectStatusExecute: async (args: { variant?: string }) => {
+      projectStatusCalls.push(args);
+      return {
+        text: "project status next from canonical state"
+      };
+    }
+  });
+  (ptyManager.getOperationalContinuationState as any) = () => ({
+    active: false,
+    activeMode: null,
+    workflowPhase: "none",
+    workdir: process.cwd(),
+    relativeWorkdir: ".",
+    pendingPromptText: null,
+    queuedItems: [],
+    lastPromptText: "envie exatamente: qual o proximo passo seguro?",
+    lastPromptAt: new Date().toISOString(),
+    lastFinalResponseText:
+      "Recomendado: enviar novamente qual o proximo passo seguro?",
+    lastFinalizedAt: new Date().toISOString()
+  });
+  const ctx = createContext("qual o proximo passo seguro?");
+  const handler = bot.events.get("text");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.deepEqual(prompts, []);
+  assert.equal(projectStatusCalls.length, 1);
+  assert.equal(projectStatusCalls[0]?.variant, "next");
+  assert.match(
+    ctx.replies.at(-1)?.text || "",
+    /project status next from canonical state/i
   );
 });
 
@@ -870,7 +1326,10 @@ test("memory command lists pending candidates and can promote one", async () => 
   const workdir = await fs.mkdtemp(
     path.join(os.tmpdir(), "dex-agent-memory-handler-")
   );
-  const memoryService = new ProjectMemoryService();
+  const memoryService = new ProjectMemoryService(
+    undefined,
+    DISABLE_GLOBAL_MEMORY
+  );
   await memoryService.captureCandidate({
     workdir,
     text: "Decision: keep MEMORY.ndjson append-only and require confirmation before durable writes.",
@@ -908,7 +1367,10 @@ test("menu callback inbox opens the inbox dashboard", async () => {
   const workdir = await fs.mkdtemp(
     path.join(os.tmpdir(), "dex-agent-menu-inbox-")
   );
-  const memoryService = new ProjectMemoryService();
+  const memoryService = new ProjectMemoryService(
+    undefined,
+    DISABLE_GLOBAL_MEMORY
+  );
   await memoryService.captureCandidate({
     workdir,
     text: "Decision: inbox candidates must survive restart.",
@@ -961,7 +1423,10 @@ test("memory remember returns a proposal ready for review", async () => {
   const workdir = await fs.mkdtemp(
     path.join(os.tmpdir(), "dex-agent-memory-remember-")
   );
-  const memoryService = new ProjectMemoryService();
+  const memoryService = new ProjectMemoryService(
+    undefined,
+    DISABLE_GLOBAL_MEMORY
+  );
   const { bot } = createDependencies({
     workdir,
     memoryService
@@ -993,7 +1458,10 @@ test("remember command is a short alias for memory remember", async () => {
   const workdir = await fs.mkdtemp(
     path.join(os.tmpdir(), "dex-agent-remember-alias-")
   );
-  const memoryService = new ProjectMemoryService();
+  const memoryService = new ProjectMemoryService(
+    undefined,
+    DISABLE_GLOBAL_MEMORY
+  );
   const { bot } = createDependencies({
     workdir,
     memoryService
@@ -1015,7 +1483,10 @@ test("remember command preserves explicit skill intent and opens a project skill
   const workdir = await fs.mkdtemp(
     path.join(os.tmpdir(), "dex-agent-remember-skill-")
   );
-  const memoryService = new ProjectMemoryService();
+  const memoryService = new ProjectMemoryService(
+    undefined,
+    DISABLE_GLOBAL_MEMORY
+  );
   const { bot } = createDependencies({
     workdir,
     memoryService
@@ -1038,7 +1509,10 @@ test("weak remember capture returns a refinement guide instead of a dead end", a
   const workdir = await fs.mkdtemp(
     path.join(os.tmpdir(), "dex-agent-remember-refine-")
   );
-  const memoryService = new ProjectMemoryService();
+  const memoryService = new ProjectMemoryService(
+    undefined,
+    DISABLE_GLOBAL_MEMORY
+  );
   const { bot } = createDependencies({
     workdir,
     memoryService
@@ -1095,7 +1569,10 @@ test("explicit free-text remember shortcut creates a proposal instead of sending
   const workdir = await fs.mkdtemp(
     path.join(os.tmpdir(), "dex-agent-remember-shortcut-")
   );
-  const memoryService = new ProjectMemoryService();
+  const memoryService = new ProjectMemoryService(
+    undefined,
+    DISABLE_GLOBAL_MEMORY
+  );
   const { bot } = createDependencies({
     workdir,
     memoryService,
@@ -1126,7 +1603,10 @@ test("explicit free-text skill shortcut preserves the skill destination", async 
   const workdir = await fs.mkdtemp(
     path.join(os.tmpdir(), "dex-agent-skill-shortcut-")
   );
-  const memoryService = new ProjectMemoryService();
+  const memoryService = new ProjectMemoryService(
+    undefined,
+    DISABLE_GLOBAL_MEMORY
+  );
   const { bot } = createDependencies({
     workdir,
     memoryService,
@@ -1157,7 +1637,10 @@ test("memory callback confirm writes durable memory", async () => {
   const workdir = await fs.mkdtemp(
     path.join(os.tmpdir(), "dex-agent-memory-callback-")
   );
-  const memoryService = new ProjectMemoryService();
+  const memoryService = new ProjectMemoryService(
+    undefined,
+    DISABLE_GLOBAL_MEMORY
+  );
   await memoryService.captureCandidate({
     workdir,
     text: "Rule: durable memory must always be proposal-first.",
@@ -1197,7 +1680,10 @@ test("inbox command lists persisted candidates and proposals", async () => {
   const workdir = await fs.mkdtemp(
     path.join(os.tmpdir(), "dex-agent-inbox-handler-")
   );
-  const memoryService = new ProjectMemoryService();
+  const memoryService = new ProjectMemoryService(
+    undefined,
+    DISABLE_GLOBAL_MEMORY
+  );
   await memoryService.captureCandidate({
     workdir,
     text: "Decision: keep inbox candidates durable across restart.",
@@ -1238,7 +1724,10 @@ test("inbox overview hides absolute local paths and raw abs path targets", async
   const workdir = await fs.mkdtemp(
     path.join(os.tmpdir(), "dex-agent-inbox-path-noise-")
   );
-  const memoryService = new ProjectMemoryService();
+  const memoryService = new ProjectMemoryService(
+    undefined,
+    DISABLE_GLOBAL_MEMORY
+  );
   await memoryService.captureCandidate({
     workdir,
     text: "Procedimento: use [HANDOFF.md](/abs/path/C:/CodexProjetos/dex-agent/.agents/HANDOFF.md:24) e revise C:/CodexProjetos/dex-agent/src/orchestrator/memoryService.ts:569 antes de continuar.",
@@ -1274,7 +1763,10 @@ test("inbox candidates and why keep manual-review items humanized without forcin
   const workdir = await fs.mkdtemp(
     path.join(os.tmpdir(), "dex-agent-inbox-humanized-")
   );
-  const memoryService = new ProjectMemoryService();
+  const memoryService = new ProjectMemoryService(
+    undefined,
+    DISABLE_GLOBAL_MEMORY
+  );
   await memoryService.captureCandidate({
     workdir,
     text: "Use este prompt de retomada em uma nova conversa: ```text Projeto: AgendadorConsultasOticas Quero retomar exatamente do estado vivo deste projeto.```",
@@ -1332,7 +1824,10 @@ test("inbox promote shows proposal copy with humanized destination", async () =>
   const workdir = await fs.mkdtemp(
     path.join(os.tmpdir(), "dex-agent-proposal-humanized-")
   );
-  const memoryService = new ProjectMemoryService();
+  const memoryService = new ProjectMemoryService(
+    undefined,
+    DISABLE_GLOBAL_MEMORY
+  );
   await memoryService.captureCandidate({
     workdir,
     text: "Use este prompt de retomada em uma nova conversa: ```text Projeto: AgendadorConsultasOticas Quero retomar exatamente do estado vivo deste projeto.```",
@@ -1610,6 +2105,64 @@ test("repo command says when the requested project is already active", async () 
   );
 });
 
+test("repo command is blocked in fixed instance mode", async () => {
+  const { bot, ptyManager } = createDependencies({
+    instance: {
+      contextMode: "instance",
+      id: "agendador-consultas-oticas",
+      projectLabel: "AgendadorConsultasOticas"
+    }
+  });
+  let switchCalls = 0;
+  (ptyManager.switchWorkdir as any) = () => {
+    switchCalls += 1;
+    return {
+      workdir: "C:/CodexProjetos/ControlePessoal",
+      relativePath: "ControlePessoal"
+    };
+  };
+
+  const ctx = createContext("/repo ControlePessoal");
+  const handler = bot.commands.get("repo");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.equal(switchCalls, 0);
+  assert.match(ctx.replies[0].text, /fixed to one project/i);
+  assert.match(ctx.replies[0].text, /AgendadorConsultasOticas/);
+});
+
+test("repo callback is blocked in fixed instance mode", async () => {
+  const { bot, ptyManager } = createDependencies({
+    instance: {
+      contextMode: "instance",
+      id: "agendador-consultas-oticas",
+      projectLabel: "AgendadorConsultasOticas"
+    }
+  });
+  let switchCalls = 0;
+  (ptyManager.switchWorkdir as any) = () => {
+    switchCalls += 1;
+    return {
+      workdir: "C:/CodexProjetos/ControlePessoal",
+      relativePath: "ControlePessoal"
+    };
+  };
+
+  const ctx = createContext("", 1, { text: undefined });
+  ctx.callbackQuery = {
+    data: "repo:switch:ControlePessoal"
+  };
+  const handler = bot.events.get("callback_query");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.equal(switchCalls, 0);
+  assert.match(ctx.replies.at(-1)?.text || "", /fixed to one project/i);
+});
+
 test("project status callback routes the selected variant through the skill", async () => {
   const calls: string[] = [];
   const { bot } = createDependencies({
@@ -1724,6 +2277,47 @@ test("project prompts callback sends the selected ready-made prompt to Codex", a
   );
 });
 
+test("project prompt retomada preset uses index-first recovery order", async () => {
+  const prompts: string[] = [];
+  const { bot } = createDependencies({
+    sendPrompt: async (_ctx: unknown, prompt: string) => {
+      prompts.push(prompt);
+      return {
+        started: true,
+        mode: "sdk"
+      };
+    }
+  });
+  const ctx = createContext("", 1, { text: undefined });
+  ctx.callbackQuery = {
+    data: "project_status:prompt:builtin~28"
+  };
+  const handler = bot.events.get("callback_query");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.match(prompts[0] || "", /Leia primeiro INDEX\.md/i);
+  assert.match(prompts[0] || "", /AGENTS\.md se existir/i);
+  assert.match(prompts[0] || "", /INDEX\.md local relevante/i);
+  assert.match(
+    prompts[0] || "",
+    /ACTIVE\.md, HANDOFF\.md, \.codex\/napkin\.md/i
+  );
+  assert.match(
+    prompts[0] || "",
+    /\.agents\/sprints\/INDEX\.md quando houver sprint\/bloco/i
+  );
+  assert.match(
+    prompts[0] || "",
+    /\.agents\/ESTACIONAMENTO\.md quando houver residuo\/reabertura/i
+  );
+  assert.match(prompts[0] || "", /MEMORY\.ndjson como ledger/i);
+  assert.ok(
+    ctx.replies.some((reply) => reply.text.includes("Pedido enviado ao Codex"))
+  );
+});
+
 test("prompts command can add, list, run, and remove custom prompts", async () => {
   const prompts: string[] = [];
   const workdir = await fs.mkdtemp(
@@ -1828,7 +2422,15 @@ test("final action plan callback sends a planning prompt from the finalized resu
       createSummaryRequest: () => "req-1",
       resolveRequest: () => ({
         chatId: "1",
-        text: "Bloco concluido com sucesso e pronto para o proximo sprint.",
+        text: [
+          "Bloco concluido com sucesso e pronto para o proximo sprint.",
+          "",
+          "**Proximo passo**",
+          "Abrir explicitamente outro bloco.",
+          "",
+          "**Proximo especialista indicado**",
+          "$sprinter"
+        ].join("\n"),
         workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
         createdAt: Date.now()
       }),
@@ -1840,7 +2442,7 @@ test("final action plan callback sends a planning prompt from the finalized resu
   });
   const ctx = createContext("", 1, { text: undefined });
   ctx.callbackQuery = {
-    data: "final_action:plan:req-1"
+    data: "final_action:pl:req-1"
   };
   const handler = bot.events.get("callback_query");
 
@@ -1848,13 +2450,42 @@ test("final action plan callback sends a planning prompt from the finalized resu
   await handler!(ctx);
 
   assert.match(prompts[0] || "", /Planning mode only/i);
+  assert.match(prompts[0] || "", /Modo planejamento usando \$sprinter/i);
+  assert.match(prompts[0] || "", /planejamento de bloco e sprints detalhados/i);
+  assert.match(
+    prompts[0] || "",
+    /Restart protocol now, Suggested commands, Next queue, First steps if resuming now e Progress snapshot/i
+  );
+  assert.match(
+    prompts[0] || "",
+    /INDEX\.md raiz -> AGENTS\.md -> INDEX\.md local relevante -> arquivo alvo -> ACTIVE\.md \+ HANDOFF\.md/i
+  );
+  assert.match(prompts[0] || "", /\.codex\/napkin\.md/i);
+  assert.match(
+    prompts[0] || "",
+    /\.agents\/ESTACIONAMENTO\.md quando houver residuo\/reabertura/i
+  );
+  assert.match(prompts[0] || "", /\.agents\/MEMORY\.ndjson como ledger/i);
+  assert.match(prompts[0] || "", /\.agents\/sprints\/INDEX\.md/i);
+  assert.match(prompts[0] || "", /Markdown parseavel canonico/i);
+  assert.match(prompts[0] || "", /Nao use MEMORY\/ como destino novo/i);
+  assert.match(
+    prompts[0] || "",
+    /Todo plano deve terminar com Proximo passo e Proximo especialista indicado/i
+  );
+  assert.match(prompts[0] || "", /\$sprinter/i);
   assert.match(prompts[0] || "", /Bloco concluido com sucesso/i);
+  assert.ok(
+    ctx.replies.some((reply) =>
+      /Transform into planning received/i.test(reply.text || "")
+    )
+  );
   assert.ok(
     ctx.replies.some((reply) => reply.text.includes("Pedido enviado ao Codex"))
   );
 });
 
-test("final action execute callback sends an approval prompt from the finalized result", async () => {
+test("final action handoff callback routes one cut to the next specialist", async () => {
   const prompts: string[] = [];
   const { bot } = createDependencies({
     sendPrompt: async (_ctx: unknown, prompt: string) => {
@@ -1862,6 +2493,476 @@ test("final action execute callback sends an approval prompt from the finalized 
       return {
         started: true,
         mode: "sdk"
+      };
+    },
+    audioSummaryManager: {
+      isEnabled: () => true,
+      createSummaryRequest: () => "req-1",
+      resolveRequest: () => ({
+        chatId: "1",
+        text: [
+          "A implementacao precisa de revisao antes de seguir.",
+          "",
+          "**Proximo passo**",
+          "Revisar os diffs do CTA final.",
+          "",
+          "**Proximo especialista indicado**",
+          "Renata Review"
+        ].join("\n"),
+        workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
+        createdAt: Date.now()
+      }),
+      offerForContext: async () => false,
+      offerFinalActionsForChat: async () => false,
+      sendSummaryForChat: async () => false,
+      handleCallback: async () => false
+    }
+  });
+  const ctx = createContext("", 1, { text: undefined });
+  ctx.callbackQuery = {
+    data: "final_action:sp:req-1"
+  };
+  const handler = bot.events.get("callback_query");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.match(prompts[0] || "", /encaminhamento de um unico proximo corte/i);
+  assert.match(prompts[0] || "", /\$ancora-fluxo/i);
+  assert.match(prompts[0] || "", /Renata Review/i);
+  assert.match(prompts[0] || "", /Nao replaneje o bloco/i);
+  assert.match(prompts[0] || "", /Seguir, segurar ou retornar/i);
+  assert.ok(
+    ctx.replies.some((reply) =>
+      /Send to Renata Review received/i.test(reply.text || "")
+    )
+  );
+  assert.ok(
+    ctx.replies.some((reply) =>
+      /Callback do botao Encaminhar para Renata Review recebido/i.test(
+        reply.text || ""
+      )
+    )
+  );
+  assert.ok(
+    ctx.replies.some((reply) =>
+      /Pedido enviado ao Codex/i.test(reply.text || "")
+    )
+  );
+});
+
+test("final action continue short callback sends a safe next-step prompt from the finalized result", async () => {
+  const prompts: string[] = [];
+  const { bot } = createDependencies({
+    sendPrompt: async (_ctx: unknown, prompt: string) => {
+      prompts.push(prompt);
+      return {
+        started: true,
+        mode: "sdk"
+      };
+    },
+    audioSummaryManager: {
+      isEnabled: () => true,
+      createSummaryRequest: () => "req-1",
+      resolveRequest: () => ({
+        chatId: "1",
+        text: [
+          "Implementacao aprovada e sprint encerrado.",
+          "",
+          "**Proximo passo**",
+          "Comecar pela fase 1 com o garimpeiro."
+        ].join("\n"),
+        workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
+        createdAt: Date.now()
+      }),
+      offerForContext: async () => false,
+      offerFinalActionsForChat: async () => false,
+      sendSummaryForChat: async () => false,
+      handleCallback: async () => false
+    }
+  });
+  const ctx = createContext("", 1, { text: undefined });
+  ctx.callbackQuery = {
+    data: "final_action:c1:req-1"
+  };
+  const handler = bot.events.get("callback_query");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.match(
+    prompts[0] || "",
+    /approval for exactly one small and safe follow-up execution scoped to the finalized conclusion/i
+  );
+  assert.match(
+    prompts[0] || "",
+    /Execute exactly this next safe step if it is still valid: Comecar pela fase 1 com o garimpeiro\./i
+  );
+  assert.match(
+    prompts[0] || "",
+    /Do not reinterpret this click as blanket approval for unrelated work, a new meeting, or a full replan/i
+  );
+  assert.match(prompts[0] || "", /Implementacao aprovada e sprint encerrado/i);
+  assert.ok(
+    ctx.replies.some((reply) =>
+      /Short continue received/i.test(reply.text || "")
+    )
+  );
+  assert.ok(
+    ctx.replies.some((reply) =>
+      /Callback do botao Proximo passo recebido/i.test(reply.text || "")
+    )
+  );
+  assert.ok(
+    ctx.replies.some((reply) =>
+      /Botao Proximo passo acionado/i.test(reply.text || "")
+    )
+  );
+});
+
+test("final action continue short callback pulls suggested specialists from the finalized result when present", async () => {
+  const prompts: string[] = [];
+  const { bot } = createDependencies({
+    sendPrompt: async (_ctx: unknown, prompt: string) => {
+      prompts.push(prompt);
+      return {
+        started: true,
+        mode: "sdk"
+      };
+    },
+    audioSummaryManager: {
+      isEnabled: () => true,
+      createSummaryRequest: () => "req-1",
+      resolveRequest: () => ({
+        chatId: "1",
+        text: [
+          "**Current block status**",
+          "- Nome: `ux Telegram - poluicao visual residual`",
+          "- sugestao_especialistas_sessao: `organizador-ao-vivo`, `questionador`, `chato`"
+        ].join("\n"),
+        workdir: "C:/CodexProjetos/dex-agent",
+        createdAt: Date.now()
+      }),
+      offerForContext: async () => false,
+      offerFinalActionsForChat: async () => false,
+      sendSummaryForChat: async () => false,
+      handleCallback: async () => false
+    }
+  });
+  const ctx = createContext("", 1, { text: undefined });
+  ctx.callbackQuery = {
+    data: "final_action:c1:req-1"
+  };
+  const handler = bot.events.get("callback_query");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.match(
+    prompts[0] || "",
+    /Adicione os especialistas sugeridos para sessao antes de executar/i
+  );
+  assert.match(prompts[0] || "", /organizador-ao-vivo/i);
+  assert.match(prompts[0] || "", /questionador/i);
+  assert.match(prompts[0] || "", /chato/i);
+});
+
+test("final action continue medium callback approves closing the current sprint or block", async () => {
+  const prompts: string[] = [];
+  const { bot } = createDependencies({
+    sendPrompt: async (_ctx: unknown, prompt: string) => {
+      prompts.push(prompt);
+      return {
+        started: true,
+        mode: "sdk"
+      };
+    },
+    audioSummaryManager: {
+      isEnabled: () => true,
+      createSummaryRequest: () => "req-1",
+      resolveRequest: () => ({
+        chatId: "1",
+        text: "Implementacao aprovada e sprint atual em andamento.",
+        workdir: "C:/CodexProjetos/dex-agent",
+        createdAt: Date.now()
+      }),
+      offerForContext: async () => false,
+      offerFinalActionsForChat: async () => false,
+      sendSummaryForChat: async () => false,
+      handleCallback: async () => false
+    }
+  });
+  const ctx = createContext("", 1, { text: undefined });
+  ctx.callbackQuery = {
+    data: "final_action:c2:req-1"
+  };
+  const handler = bot.events.get("callback_query");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.match(
+    prompts[0] || "",
+    /continue beyond a single micro-step and close the current sprint or current open block/i
+  );
+  assert.match(
+    prompts[0] || "",
+    /without stopping after the first tiny follow-up/i
+  );
+  assert.match(
+    prompts[0] || "",
+    /Do not reinterpret this click as approval for all future open sprints/i
+  );
+  assert.ok(
+    ctx.replies.some((reply) =>
+      /Sprint continue received/i.test(reply.text || "")
+    )
+  );
+  assert.ok(
+    ctx.replies.some((reply) =>
+      /Callback do botao Continuar sprint recebido/i.test(reply.text || "")
+    )
+  );
+  assert.ok(
+    ctx.replies.some((reply) =>
+      /Botao Continuar sprint acionado/i.test(reply.text || "")
+    )
+  );
+});
+
+test("final action continue full callback approves all open planned sprints until 100 percent or blocker", async () => {
+  const prompts: string[] = [];
+  const { bot } = createDependencies({
+    sendPrompt: async (_ctx: unknown, prompt: string) => {
+      prompts.push(prompt);
+      return {
+        started: true,
+        mode: "sdk"
+      };
+    },
+    audioSummaryManager: {
+      isEnabled: () => true,
+      createSummaryRequest: () => "req-1",
+      resolveRequest: () => ({
+        chatId: "1",
+        text: "Sprint atual concluido e fila aberta para os proximos cortes.",
+        workdir: "C:/CodexProjetos/dex-agent",
+        createdAt: Date.now()
+      }),
+      offerForContext: async () => false,
+      offerFinalActionsForChat: async () => false,
+      sendSummaryForChat: async () => false,
+      handleCallback: async () => false
+    }
+  });
+  const ctx = createContext("", 1, { text: undefined });
+  ctx.callbackQuery = {
+    data: "final_action:c3:req-1"
+  };
+  const handler = bot.events.get("callback_query");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.match(prompts[0] || "", /conclude the entire current open block/i);
+  assert.match(
+    prompts[0] || "",
+    /implementation, review, test, and honest verdict/i
+  );
+  assert.match(
+    prompts[0] || "",
+    /Do not reinterpret this click as approval for future blocks/i
+  );
+  assert.ok(
+    ctx.replies.some((reply) =>
+      /Finish whole block received/i.test(reply.text || "")
+    )
+  );
+  assert.ok(
+    ctx.replies.some((reply) =>
+      /Callback do botao Concluir bloco todo recebido/i.test(reply.text || "")
+    )
+  );
+  assert.ok(
+    ctx.replies.some((reply) =>
+      /Botao Concluir bloco todo acionado/i.test(reply.text || "")
+    )
+  );
+});
+
+test("final action autopilot callback activates anchor-flow guidance and specialist support", async () => {
+  const prompts: string[] = [];
+  const { bot } = createDependencies({
+    sendPrompt: async (_ctx: unknown, prompt: string) => {
+      prompts.push(prompt);
+      return {
+        started: true,
+        mode: "sdk"
+      };
+    },
+    audioSummaryManager: {
+      isEnabled: () => true,
+      createSummaryRequest: () => "req-1",
+      resolveRequest: () => ({
+        chatId: "1",
+        text: "A linha atual ja tem contexto aprovado e precisa seguir ate o fim.",
+        workdir: "C:/CodexProjetos/dex-agent",
+        createdAt: Date.now()
+      }),
+      offerForContext: async () => false,
+      offerFinalActionsForChat: async () => false,
+      sendSummaryForChat: async () => false,
+      handleCallback: async () => false
+    }
+  });
+  const ctx = createContext("", 1, { text: undefined });
+  ctx.callbackQuery = {
+    data: "final_action:ap:req-1"
+  };
+  const handler = bot.events.get("callback_query");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.match(prompts[0] || "", /Ative \$ancora-fluxo/i);
+  assert.match(
+    prompts[0] || "",
+    /Use reunioes rapidas e concisas de especialistas/i
+  );
+  assert.match(prompts[0] || "", /\$kant/i);
+  assert.match(prompts[0] || "", /\$chato/i);
+  assert.match(prompts[0] || "", /\$focado/i);
+  assert.match(prompts[0] || "", /\$garimpeiro/i);
+  assert.match(prompts[0] || "", /\$estacionamento/i);
+  assert.match(prompts[0] || "", /\$bruno-brain/i);
+  assert.match(
+    prompts[0] || "",
+    /Cada fase, especialista ou reuniao deve indicar explicitamente Proximo passo, Proximo especialista indicado/i
+  );
+  assert.match(
+    prompts[0] || "",
+    /Se o trabalho travar por escopo aberto, falta de opcoes ou falta de caminho claro/i
+  );
+  assert.match(
+    prompts[0] || "",
+    /INDEX\.md raiz -> AGENTS\.md -> INDEX\.md local relevante -> arquivo alvo -> ACTIVE\.md \+ HANDOFF\.md/i
+  );
+  assert.match(prompts[0] || "", /\.codex\/napkin\.md/i);
+  assert.match(
+    prompts[0] || "",
+    /\.agents\/ESTACIONAMENTO\.md quando houver residuo\/reabertura/i
+  );
+  assert.match(prompts[0] || "", /\.agents\/MEMORY\.ndjson como ledger/i);
+  assert.match(prompts[0] || "", /So use busca textual como fallback/i);
+  assert.match(prompts[0] || "", /Resultado real/i);
+  assert.match(
+    prompts[0] || "",
+    /Decisao do piloto: seguir \| parar \| retornar/i
+  );
+  assert.match(prompts[0] || "", /Por que segui ou parei/i);
+  assert.match(prompts[0] || "", /Ponto cego/i);
+  assert.match(prompts[0] || "", /Dica de ouro/i);
+  assert.match(prompts[0] || "", /Opcoes seguras/i);
+  assert.match(prompts[0] || "", /Proximo passo recomendado/i);
+  assert.match(prompts[0] || "", /Proximo especialista indicado/i);
+  assert.ok(
+    ctx.replies.some((reply) => /Autopilot received/i.test(reply.text || ""))
+  );
+  assert.ok(
+    ctx.replies.some((reply) =>
+      /Callback do botao Piloto automatico recebido/i.test(reply.text || "")
+    )
+  );
+  assert.ok(
+    ctx.replies.some((reply) =>
+      /Botao Piloto automatico acionado/i.test(reply.text || "")
+    )
+  );
+});
+
+test("final action autopilot x3 arms and starts a controlled autopilot run", async () => {
+  const prompts: string[] = [];
+  let armedCount = 0;
+  let consumed = 0;
+  const { bot, ptyManager } = createDependencies({
+    sendPrompt: async (_ctx: unknown, prompt: string) => {
+      prompts.push(prompt);
+      return {
+        started: true,
+        mode: "sdk"
+      };
+    },
+    audioSummaryManager: {
+      isEnabled: () => true,
+      createSummaryRequest: () => "req-1",
+      resolveRequest: () => ({
+        chatId: "1",
+        text: "A linha atual precisa de piloto controlado ate fechar o bloco.",
+        workdir: "C:/CodexProjetos/dex-agent",
+        createdAt: Date.now()
+      }),
+      offerForContext: async () => false,
+      offerFinalActionsForChat: async () => false,
+      sendSummaryForChat: async () => false,
+      handleCallback: async () => false
+    }
+  });
+  (ptyManager.getLanguage as any) = () => "pt-BR";
+  (ptyManager.setSpecialAutopilot as any) = (
+    _chatId: number,
+    remainingResponses: number
+  ) => {
+    armedCount = remainingResponses;
+    return {
+      enabled: true,
+      remainingResponses
+    };
+  };
+  (ptyManager.consumeSpecialAutopilotStep as any) = () => {
+    consumed += 1;
+    return {
+      enabled: true,
+      remainingResponses: 2
+    };
+  };
+  const ctx = createContext("", 1, { text: undefined });
+  ctx.callbackQuery = {
+    data: "final_action:ax:req-1"
+  };
+  const handler = bot.events.get("callback_query");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.equal(armedCount, 3);
+  assert.equal(consumed, 1);
+  assert.match(prompts[0] || "", /autopilot execution run/i);
+  assert.ok(
+    ctx.replies.some((reply) => /Piloto x3 acionado/i.test(reply.text || ""))
+  );
+  assert.ok(
+    ctx.replies.some((reply) => /Restantes: 2/i.test(reply.text || ""))
+  );
+});
+
+test("final action legacy execute callback maps to short continue and keeps a distinct queue label when Codex is busy", async () => {
+  const prompts: string[] = [];
+  const { bot } = createDependencies({
+    sendPrompt: async (_ctx: unknown, prompt: string) => {
+      prompts.push(prompt);
+      return {
+        started: false,
+        reason: "queued",
+        activeMode: "sdk",
+        queueLength: 1,
+        item: {
+          id: "queue-1",
+          index: 1,
+          text: "Botao Proximo passo acionado",
+          workdir: "C:/CodexProjetos/dex-agent",
+          relativeWorkdir: "dex-agent",
+          createdAt: new Date().toISOString()
+        }
       };
     },
     audioSummaryManager: {
@@ -1890,19 +2991,22 @@ test("final action execute callback sends an approval prompt from the finalized 
 
   assert.match(
     prompts[0] || "",
-    /approval for exactly one follow-up execution scoped to the finalized conclusion/i
+    /approval for exactly one small and safe follow-up execution scoped to the finalized conclusion/i
   );
-  assert.match(
-    prompts[0] || "",
-    /Do not reinterpret this click as blanket approval for unrelated work, a new meeting, or a full replan/i
-  );
-  assert.match(
-    prompts[0] || "",
-    /Execute only the next eligible block or next concrete implementation step/i
-  );
-  assert.match(prompts[0] || "", /Implementacao aprovada e sprint encerrado/i);
   assert.ok(
-    ctx.replies.some((reply) => reply.text.includes("Pedido enviado ao Codex"))
+    ctx.replies.some((reply) =>
+      /Short continue received/i.test(reply.text || "")
+    )
+  );
+  assert.ok(
+    ctx.replies.some((reply) =>
+      /Callback do botao Proximo passo recebido/i.test(reply.text || "")
+    )
+  );
+  assert.ok(
+    ctx.replies.some((reply) =>
+      /Botao Proximo passo acionado/i.test(reply.text || "")
+    )
   );
 });
 
@@ -1933,7 +3037,7 @@ test("final action review callback sends a specialist review prompt from the fin
   });
   const ctx = createContext("", 1, { text: undefined });
   ctx.callbackQuery = {
-    data: "final_action:review:req-1"
+    data: "final_action:rv:req-1"
   };
   const handler = bot.events.get("callback_query");
 
@@ -1977,7 +3081,7 @@ test("final action organize callback opens the inbox overview for the stored wor
   });
   const ctx = createContext("", 1, { text: undefined });
   ctx.callbackQuery = {
-    data: "final_action:organize:req-1"
+    data: "final_action:ib:req-1"
   };
   const handler = bot.events.get("callback_query");
 

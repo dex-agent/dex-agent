@@ -3,10 +3,16 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { ProjectStatusSkill } from "../src/orchestrator/skills/projectStatusSkill.js";
+import {
+  ProjectStatusSkill,
+  buildProjectPromptPresets
+} from "../src/orchestrator/skills/projectStatusSkill.js";
 import { buildProjectUnderstanding } from "../src/orchestrator/projectIntelligence.js";
 import { ProjectMemoryService } from "../src/orchestrator/memoryService.js";
+import { ProjectReuseEngine } from "../src/orchestrator/reuseEngine.js";
 import { PromptLibraryService } from "../src/orchestrator/promptLibraryService.js";
+
+const DISABLE_GLOBAL_MEMORY = { globalMemoriesRoot: null } as const;
 
 async function createMemoriaVivaWorkspace(): Promise<{
   workdir: string;
@@ -25,6 +31,13 @@ async function createMemoriaVivaWorkspace(): Promise<{
       "- Objetivo atual: governanca de retomada.",
       "- Proximo passo indicado: validar motor e superficie."
     ].join("\n"),
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(workdir, "AGENTS.md"),
+    ["# AGENTS", "", "- Sempre leia o contrato local antes da retomada."].join(
+      "\n"
+    ),
     "utf8"
   );
   await fs.writeFile(
@@ -104,6 +117,30 @@ async function createMemoriaVivaWorkspace(): Promise<{
     ].join("\n"),
     "utf8"
   );
+  await fs.mkdir(path.join(workdir, ".agents", "sprints"), {
+    recursive: true
+  });
+  await fs.writeFile(
+    path.join(workdir, ".agents", "sprints", "INDEX.md"),
+    [
+      "# Sprints Index",
+      "",
+      "## Catalogo",
+      "- `docs-governanca` | status: `ativo` | tipo: `sprint` | resumo: alinhar retomada | abre: `docs-governanca.md` | fallback: `.agents/HANDOFF.md`"
+    ].join("\n"),
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(workdir, ".agents", "ESTACIONAMENTO.md"),
+    [
+      "# Estacionamento",
+      "",
+      "## Ativos",
+      "",
+      "- [est-001] [governanca] Evitar divergencia entre prompt e runtime. | destino: monitorar"
+    ].join("\n"),
+    "utf8"
+  );
 
   const ledgerEntries = [
     {
@@ -137,7 +174,7 @@ async function createMemoriaVivaWorkspace(): Promise<{
 
   return {
     workdir,
-    memoryService: new ProjectMemoryService()
+    memoryService: new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY)
   };
 }
 
@@ -180,8 +217,34 @@ test("project status skill reads canonical memoria-viva files and memory ledger"
   assert.match(result.text, /\*Memory used:\*/i);
   assert.match(result.text, /\.agents\/MEMORY\.ndjson/i);
   assert.match(result.text, /INDEX\.md/i);
+  assert.match(result.text, /AGENTS\.md/i);
   assert.match(result.text, /\.agents\/PROJECT\.md/i);
+  assert.match(result.text, /\.agents\/sprints\/INDEX\.md/i);
+  assert.match(result.text, /\.agents\/ESTACIONAMENTO\.md/i);
   assert.doesNotMatch(result.text, /C:\\/i);
+});
+
+test("project status and reuse resolve the same primary memory through the shared retrieval policy", async () => {
+  const { workdir, memoryService } = await createMemoriaVivaWorkspace();
+  const reuseEngine = new ProjectReuseEngine(memoryService);
+
+  const understanding = await buildProjectUnderstanding({
+    workdir,
+    memoryService,
+    variant: "next"
+  });
+  const prepared = await reuseEngine.preparePrompt({
+    workdir,
+    prompt: "continue the current memory runtime hardening work",
+    intent: "continue"
+  });
+
+  assert.ok(understanding.relevantMemory.length >= 1);
+  assert.ok(prepared.packet?.relevantMemory.length);
+  assert.equal(
+    prepared.packet?.relevantMemory[0]?.id,
+    understanding.relevantMemory[0]?.id
+  );
 });
 
 test("project status skill renders explicit variants only", async () => {
@@ -234,10 +297,15 @@ test("project status skill renders explicit variants only", async () => {
   assert.match(prompts.text, /\*Execucao\*/i);
   assert.match(queue.text, /\*Fila de Proximos Blocos\*/i);
   assert.match(sources.text, /\*Fontes Canonicas Priorizadas\*/i);
+  assert.match(sources.text, /AGENTS\.md/i);
+  assert.match(sources.text, /\.agents\/ACTIVE\.md/i);
+  assert.match(sources.text, /\.agents\/HANDOFF\.md/i);
+  assert.match(sources.text, /\.agents\/sprints\/INDEX\.md/i);
+  assert.match(sources.text, /\.agents\/ESTACIONAMENTO\.md/i);
   assert.match(sources.text, /\*Memory ledger used:\*/i);
 });
 
-test("project status commands variant exposes clickable preset command buttons", async () => {
+test("project status commands variant keeps clickable preset buttons and compact operational shortcuts", async () => {
   const { workdir, memoryService } = await createMemoriaVivaWorkspace();
   const skill = new ProjectStatusSkill(memoryService);
 
@@ -251,23 +319,9 @@ test("project status commands variant exposes clickable preset command buttons",
     commands.buttons?.[0]?.[0]?.callbackData,
     "project_status:command:0"
   );
-  assert.equal(commands.buttons?.at(-2)?.[0]?.callbackData, "inbox:show");
-  assert.equal(commands.buttons?.at(-2)?.[1]?.callbackData, "memory:show");
-  assert.equal(
-    commands.buttons?.at(-2)?.[2]?.callbackData,
-    "memory:view:active"
-  );
-  assert.equal(
-    commands.buttons?.at(-2)?.[3]?.callbackData,
-    "memory:view:handoff"
-  );
-  assert.equal(
-    commands.buttons?.at(-1)?.[0]?.callbackData,
-    "memory:view:index"
-  );
-  assert.equal(
-    commands.buttons?.at(-1)?.[1]?.callbackData,
-    "memory:view:project"
+  assert.deepEqual(
+    commands.buttons?.at(-1)?.map((button) => button.callbackData),
+    ["inbox:show", "memory:show"]
   );
 });
 
@@ -302,6 +356,24 @@ test("project status prompts variant exposes clickable preset prompt buttons", a
   );
 });
 
+test("project e2e preset stays generic to the current workspace instead of reusing a foreign fixed flow", async () => {
+  const { workdir, memoryService } = await createMemoriaVivaWorkspace();
+  const contract = await buildProjectUnderstanding({
+    workdir,
+    memoryService
+  });
+  const presets = buildProjectPromptPresets(contract);
+  const preset = presets.find((entry) => entry.selector === "builtin:19");
+
+  assert.ok(preset);
+  assert.equal(preset.label, "Teste ponta a ponta");
+  assert.match(preset.prompt, /fluxo principal deste workspace/i);
+  assert.doesNotMatch(
+    preset.prompt,
+    /iniciar,\s*orientar,\s*marcar,\s*confirmar,\s*consultar,\s*remarcar/i
+  );
+});
+
 test("project understanding handles partial memoria-viva profile without inventing sections", async () => {
   const workdir = await fs.mkdtemp(
     path.join(os.tmpdir(), "dex-agent-partial-")
@@ -325,7 +397,7 @@ test("project understanding handles partial memoria-viva profile without inventi
 
   const contract = await buildProjectUnderstanding({
     workdir,
-    memoryService: new ProjectMemoryService()
+    memoryService: new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY)
   });
 
   assert.equal(contract.projectProfile, "memoria-viva-project-profile");
@@ -381,7 +453,7 @@ test("project understanding returns safe fallback when no canonical profile exis
   );
   const contract = await buildProjectUnderstanding({
     workdir,
-    memoryService: new ProjectMemoryService()
+    memoryService: new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY)
   });
 
   assert.equal(contract.projectProfile, null);

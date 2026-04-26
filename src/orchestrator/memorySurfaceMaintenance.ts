@@ -59,12 +59,18 @@ export interface MemorySurfaceNormalizationResult {
   write: boolean;
   repoResults: RepoSurfaceNormalizationResult[];
   globalResults: GlobalSurfaceNormalizationResult[];
+  sprintArchiveResults: SprintArchiveResult[];
   changedFiles: string[];
 }
 
 export interface NormalizeMemorySurfacesOptions extends AuditMemorySurfacesOptions {
   write?: boolean;
   now?: Date;
+}
+
+export interface ArchiveCompletedSprintSurfacesOptions {
+  repoRoots: string[];
+  write?: boolean;
 }
 
 export interface RepoSurfaceNormalizationResult {
@@ -79,6 +85,26 @@ export interface RepoSurfaceNormalizationResult {
 export interface GlobalSurfaceNormalizationResult {
   filePath: string;
   changed: boolean;
+}
+
+export interface SprintArchiveMove {
+  from: string;
+  to: string;
+}
+
+export interface SprintArchiveResult {
+  repoRoot: string;
+  changedFiles: string[];
+  movedFiles: SprintArchiveMove[];
+  archivedEntries: number;
+}
+
+interface SprintIndexEntry {
+  line: string;
+  lineNumber: number;
+  id: string;
+  status: string;
+  openPath: string;
 }
 
 interface MarkdownRule {
@@ -793,6 +819,262 @@ async function auditRepoLedger(repoRoot: string): Promise<{
   };
 }
 
+function stripMarkdownTicks(value: string): string {
+  return value.trim().replace(/^`|`$/g, "").trim();
+}
+
+function normalizeStatusValue(value: string): string {
+  return stripMarkdownTicks(value)
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+}
+
+function isCompletedSprintStatus(status: string): boolean {
+  const normalized = normalizeStatusValue(status);
+  return (
+    normalized.includes("fechado") ||
+    normalized.includes("concluido") ||
+    normalized.includes("finalizado") ||
+    normalized === "closed" ||
+    normalized === "done"
+  );
+}
+
+function isArchivedSprintStatus(status: string): boolean {
+  return normalizeStatusValue(status).includes("arquivado");
+}
+
+function isArchivedSprintPath(openPath: string): boolean {
+  return /(^|[\\/])\.agents[\\/]ARQUIVADO[\\/]/i.test(openPath);
+}
+
+function parseSprintIndexEntry(
+  line: string,
+  lineNumber: number
+): SprintIndexEntry | null {
+  const match = line.match(/^\s*-\s*`([^`]+)`\s*\|\s*(.+)$/);
+  if (!match) {
+    return null;
+  }
+
+  const fields = match[2].split("|").map((field) => field.trim());
+  const statusField = fields.find((field) => /^status\s*:/i.test(field));
+  const openField = fields.find((field) => /^abre\s*:/i.test(field));
+  if (!statusField || !openField) {
+    return null;
+  }
+
+  return {
+    line,
+    lineNumber,
+    id: match[1],
+    status: stripMarkdownTicks(statusField.replace(/^status\s*:/i, "")),
+    openPath: stripMarkdownTicks(openField.replace(/^abre\s*:/i, ""))
+  };
+}
+
+function parseSprintIndexEntries(content: string): SprintIndexEntry[] {
+  return content
+    .split(/\r?\n/)
+    .map((line, index) => parseSprintIndexEntry(line, index + 1))
+    .filter((entry): entry is SprintIndexEntry => Boolean(entry));
+}
+
+function toSafeRepoRelativePath(value: string): string | null {
+  const normalized = stripMarkdownTicks(value).replace(/\\/g, "/");
+  if (!normalized || path.isAbsolute(normalized)) {
+    return null;
+  }
+  const relativePath = path.normalize(normalized);
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    return null;
+  }
+  return relativePath;
+}
+
+function isPathInside(parent: string, child: string): boolean {
+  const relative = path.relative(parent, child);
+  return (
+    Boolean(relative) &&
+    !relative.startsWith("..") &&
+    !path.isAbsolute(relative)
+  );
+}
+
+function toArchiveRelativePath(sprintRelativePath: string): string {
+  const normalized = sprintRelativePath.replace(/\\/g, "/");
+  const prefix = ".agents/sprints/";
+  const suffix = normalized.toLowerCase().startsWith(prefix)
+    ? normalized.slice(prefix.length)
+    : path.basename(normalized);
+  return path.join(".agents", "ARQUIVADO", "sprints", suffix);
+}
+
+async function listSprintSidecarPaths(sourcePath: string): Promise<string[]> {
+  const parent = path.dirname(sourcePath);
+  const parsed = path.parse(sourcePath);
+  const entries = await fs
+    .readdir(parent, { withFileTypes: true })
+    .catch(() => []);
+  const sidecars = entries
+    .filter((entry) => entry.name !== parsed.base)
+    .filter(
+      (entry) =>
+        entry.name === parsed.name || entry.name.startsWith(`${parsed.name}.`)
+    )
+    .map((entry) => path.join(parent, entry.name));
+  return [sourcePath, ...sidecars];
+}
+
+async function nextAvailableArchivePath(targetPath: string): Promise<string> {
+  if (!(await pathExists(targetPath))) {
+    return targetPath;
+  }
+
+  const parsed = path.parse(targetPath);
+  for (let index = 2; index < 1000; index += 1) {
+    const candidate = path.join(
+      parsed.dir,
+      `${parsed.name}-${index}${parsed.ext}`
+    );
+    if (!(await pathExists(candidate))) {
+      return candidate;
+    }
+  }
+
+  throw new Error(`Could not find available archive path for ${targetPath}`);
+}
+
+function updateSprintIndexLine(line: string, archivedOpenPath: string): string {
+  return line
+    .replace(/status:\s*`[^`]+`/i, "status: `arquivado`")
+    .replace(
+      /abre:\s*`[^`]+`/i,
+      `abre: \`${archivedOpenPath.replace(/\\/g, "/")}\``
+    );
+}
+
+async function auditRepoCompletedSprints(
+  repoRoot: string
+): Promise<MemorySurfaceFinding[]> {
+  const indexPath = path.join(repoRoot, ".agents", "sprints", "INDEX.md");
+  if (!(await pathExists(indexPath))) {
+    return [];
+  }
+
+  const content = await fs.readFile(indexPath, "utf8");
+  return parseSprintIndexEntries(content)
+    .filter((entry) => isCompletedSprintStatus(entry.status))
+    .filter((entry) => !isArchivedSprintStatus(entry.status))
+    .filter((entry) => !isArchivedSprintPath(entry.openPath))
+    .map((entry) =>
+      createFinding(
+        "medium",
+        "completed_sprint_not_archived",
+        `Completed sprint ${entry.id} is still indexed outside .agents/ARQUIVADO.`,
+        indexPath,
+        {
+          line: entry.lineNumber,
+          repoRoot
+        }
+      )
+    );
+}
+
+async function archiveCompletedSprints(
+  repoRoot: string,
+  write: boolean
+): Promise<SprintArchiveResult> {
+  const resolvedRoot = path.resolve(repoRoot);
+  const sprintsDir = path.join(resolvedRoot, ".agents", "sprints");
+  const indexPath = path.join(sprintsDir, "INDEX.md");
+  if (!(await pathExists(indexPath))) {
+    return {
+      repoRoot: resolvedRoot,
+      changedFiles: [],
+      movedFiles: [],
+      archivedEntries: 0
+    };
+  }
+
+  const content = await fs.readFile(indexPath, "utf8");
+  const lines = content.split(/\r?\n/);
+  const entries = parseSprintIndexEntries(content).filter(
+    (entry) =>
+      isCompletedSprintStatus(entry.status) &&
+      !isArchivedSprintStatus(entry.status) &&
+      !isArchivedSprintPath(entry.openPath)
+  );
+  const movedFiles: SprintArchiveMove[] = [];
+  let archivedEntries = 0;
+
+  for (const entry of entries) {
+    const relativeOpenPath = toSafeRepoRelativePath(entry.openPath);
+    if (!relativeOpenPath) {
+      continue;
+    }
+    const sourcePath = path.resolve(resolvedRoot, relativeOpenPath);
+    if (!isPathInside(sprintsDir, sourcePath) || sourcePath === indexPath) {
+      continue;
+    }
+
+    const archiveRelativePath = toArchiveRelativePath(relativeOpenPath);
+    const archivePath = path.resolve(resolvedRoot, archiveRelativePath);
+    const archivedOpenPath = path.relative(resolvedRoot, archivePath);
+    lines[entry.lineNumber - 1] = updateSprintIndexLine(
+      entry.line,
+      archivedOpenPath
+    );
+    archivedEntries += 1;
+
+    const pathsToMove = await listSprintSidecarPaths(sourcePath);
+    for (const filePath of pathsToMove) {
+      if (!(await pathExists(filePath))) {
+        continue;
+      }
+      const archiveItemPath = await nextAvailableArchivePath(
+        path.join(
+          path.dirname(archivePath),
+          path.relative(path.dirname(sourcePath), filePath)
+        )
+      );
+      movedFiles.push({
+        from: filePath,
+        to: archiveItemPath
+      });
+      if (write) {
+        await fs.mkdir(path.dirname(archiveItemPath), { recursive: true });
+        await fs.rename(filePath, archiveItemPath);
+      }
+    }
+  }
+
+  const nextContent = `${lines.join("\n").replace(/\s+$/g, "")}\n`;
+  const indexChanged = nextContent !== content;
+  if (write && indexChanged) {
+    await fs.writeFile(indexPath, nextContent, "utf8");
+  }
+
+  return {
+    repoRoot: resolvedRoot,
+    changedFiles: indexChanged ? [indexPath] : [],
+    movedFiles,
+    archivedEntries
+  };
+}
+
+export async function archiveCompletedSprintSurfaces(
+  options: ArchiveCompletedSprintSurfacesOptions
+): Promise<SprintArchiveResult[]> {
+  const write = Boolean(options.write);
+  return Promise.all(
+    options.repoRoots.map((repoRoot) =>
+      archiveCompletedSprints(repoRoot, write)
+    )
+  );
+}
+
 async function auditRepoRoot(
   repoRoot: string
 ): Promise<RepoSurfaceAuditReport> {
@@ -809,10 +1091,11 @@ async function auditRepoRoot(
     )
   ).flat();
   const ledgerAudit = await auditRepoLedger(resolvedRoot);
+  const sprintFindings = await auditRepoCompletedSprints(resolvedRoot);
 
   return {
     repoRoot: resolvedRoot,
-    findings: [...ledgerAudit.findings, ...markdownFindings],
+    findings: [...ledgerAudit.findings, ...markdownFindings, ...sprintFindings],
     ledger: ledgerAudit.ledger
   };
 }
@@ -1031,6 +1314,11 @@ export async function normalizeMemorySurfaces(
       normalizeRepoLedger(repoRoot, write, now)
     )
   );
+  const sprintArchiveResults = await Promise.all(
+    options.repoRoots.map((repoRoot) =>
+      archiveCompletedSprints(repoRoot, write)
+    )
+  );
   const globalResults = await Promise.all(
     ["MEMORY.md", "memory_summary.md"].map((relativePath) =>
       normalizeGlobalMarkdownFile(options.globalMemoryRoot, relativePath, write)
@@ -1041,8 +1329,13 @@ export async function normalizeMemorySurfaces(
     write,
     repoResults,
     globalResults,
+    sprintArchiveResults,
     changedFiles: [
       ...repoResults.flatMap((result) => result.changedFiles),
+      ...sprintArchiveResults.flatMap((result) => [
+        ...result.changedFiles,
+        ...result.movedFiles.map((move) => move.to)
+      ]),
       ...globalResults
         .filter((result) => result.changed)
         .map((result) => result.filePath)
@@ -1075,6 +1368,13 @@ export function formatNormalizationReportMarkdown(
     }
     if (repoResult.backups.length) {
       lines.push(`- backups: ${repoResult.backups.join(", ")}`);
+    }
+    const sprintArchive = result.sprintArchiveResults.find(
+      (archiveResult) => archiveResult.repoRoot === repoResult.repoRoot
+    );
+    if (sprintArchive) {
+      lines.push(`- archived sprint entries: ${sprintArchive.archivedEntries}`);
+      lines.push(`- moved sprint files: ${sprintArchive.movedFiles.length}`);
     }
     lines.push("");
   });

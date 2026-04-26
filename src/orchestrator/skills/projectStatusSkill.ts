@@ -397,7 +397,7 @@ export function buildProjectPromptPresets(
       group: "Testes",
       source: "builtin",
       prompt: buildExecutionPrompt(
-        `No projeto ${projectName}, faça um teste ponta a ponta real: iniciar, orientar, marcar, confirmar, consultar, remarcar, consultar de novo, cancelar e verificar limpeza correta.`
+        `No projeto ${projectName}, faça um teste ponta a ponta real do fluxo principal deste workspace. Primeiro identifique o fluxo principal atual; depois execute iniciar ou abrir a superfície correta, orientar ou preparar o contexto se isso existir, criar ou acionar a entidade principal, confirmar o resultado, consultar o estado, editar ou avançar o mesmo fluxo, consultar de novo, desfazer, remover ou cancelar quando fizer sentido e verificar limpeza correta de estado, fila e artefatos temporários.`
       )
     },
     {
@@ -489,7 +489,7 @@ export function buildProjectPromptPresets(
       source: "builtin",
       featured: true,
       prompt: buildPlanningPrompt(
-        `No projeto ${projectName}, monte um prompt de retomada para nova conversa usando memoria viva, confirmando o estado real no workspace e so depois planejando o proximo bloco. Cite ACTIVE.md, HANDOFF.md, MEMORY.ndjson, o bloco fechado ${latestClosedBlock} e o proximo bloco ${nextBlock}.`
+        `No projeto ${projectName}, monte um prompt de retomada para nova conversa usando memoria viva. Leia primeiro INDEX.md, depois AGENTS.md se existir, depois o INDEX.md local relevante, e so entao ACTIVE.md, HANDOFF.md, .codex/napkin.md, .agents/sprints/INDEX.md quando houver sprint/bloco e .agents/ESTACIONAMENTO.md quando houver residuo/reabertura. Use MEMORY.ndjson como ledger, nao como fonte primaria do proximo passo. Cite o bloco fechado ${latestClosedBlock}, o proximo bloco ${nextBlock} e qualquer INDEX local usado.`
       )
     },
     {
@@ -500,7 +500,7 @@ export function buildProjectPromptPresets(
       source: "builtin",
       featured: true,
       prompt: buildPlanningPrompt(
-        `No projeto ${projectName}, retome exatamente do ponto onde a outra janela parou, usando memoria viva como fonte principal, confirmando o estado real, resumindo o que esta provado e planejando o proximo bloco antes de executar.`
+        `No projeto ${projectName}, retome exatamente do ponto onde a outra janela parou. Use a ordem INDEX.md raiz -> AGENTS.md -> INDEX.md local relevante -> arquivo alvo -> ACTIVE.md + HANDOFF.md -> .codex/napkin.md -> .agents/sprints/INDEX.md quando houver sprint/bloco -> .agents/ESTACIONAMENTO.md quando houver residuo/reabertura; trate MEMORY.ndjson como ledger. Confirme o estado real, resuma o que esta provado e planeje o proximo bloco antes de executar.`
       )
     }
   ];
@@ -614,24 +614,6 @@ function buildButtons(
       {
         text: "\u{1F9E0} Memoria",
         callbackData: "memory:show"
-      },
-      {
-        text: "ACTIVE",
-        callbackData: "memory:view:active"
-      },
-      {
-        text: "HANDOFF",
-        callbackData: "memory:view:handoff"
-      }
-    ],
-    [
-      {
-        text: "INDEX",
-        callbackData: "memory:view:index"
-      },
-      {
-        text: "PROJECT",
-        callbackData: "memory:view:project"
       }
     ]
   ];
@@ -656,7 +638,7 @@ function buildPromptsVariantButtons(
 function buildSourcesLines(
   workdir: string,
   sources: string[],
-  limit = 4
+  limit = sources.length
 ): string[] {
   return sources.slice(0, limit).map((source) => {
     const relativePath = toProjectRelativePath(workdir, source)
@@ -698,7 +680,6 @@ function buildMemoryDisclosure(
 
   if (contract.memorySources.length) {
     const sources = contract.memorySources
-      .slice(0, 3)
       .map((source) => toProjectRelativePath(workdir, source))
       .map(
         (source) => `\`${source.replace(/\\/g, "\\\\").replace(/`/g, "\\`")}\``
@@ -939,12 +920,12 @@ function renderContract(
       text: [
         "\u{1F5C2}\u{FE0F} *Fontes Canonicas Priorizadas*",
         "",
-        ...buildSourcesLines(workdir, contract.canonicalSources, 6),
+        ...buildSourcesLines(workdir, contract.canonicalSources),
         ...(contract.memorySources.length
           ? [
               "",
               "\u{1F9E0} *Memory ledger used:*",
-              ...buildSourcesLines(workdir, contract.memorySources, 3)
+              ...buildSourcesLines(workdir, contract.memorySources)
             ]
           : []),
         "",
@@ -1118,7 +1099,7 @@ function renderContract(
   }
 
   lines.push("", "\u{1F5C2}\u{FE0F} *Fontes priorizadas:*");
-  lines.push(...buildSourcesLines(workdir, contract.canonicalSources, 4));
+  lines.push(...buildSourcesLines(workdir, contract.canonicalSources));
   lines.push(...buildSkillReuseDisclosure(skillStatus));
   lines.push(...buildMemoryDisclosure(contract, workdir));
   lines.push(

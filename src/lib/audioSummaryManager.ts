@@ -3,6 +3,11 @@ import { Markup } from "telegraf";
 import type { Locale } from "../bot/i18n.js";
 import { t } from "../bot/i18n.js";
 import { AudioTts, type AudioSummaryMode } from "./audioTts.js";
+import {
+  extractFinalResponseNextSpecialist,
+  extractFinalResponseRecommendedStep,
+  extractFinalResponseNextStep
+} from "./finalActionContext.js";
 
 interface SummaryRecord {
   chatId: string;
@@ -11,7 +16,30 @@ interface SummaryRecord {
   createdAt: number;
 }
 
-type FinalActionKind = "execute" | "review" | "organize";
+type FinalActionKindV2 =
+  | "plan"
+  | "handoff"
+  | "continue_short"
+  | "continue_medium"
+  | "continue_full"
+  | "autopilot"
+  | "autopilot_arm"
+  | "meeting"
+  | "review"
+  | "organize";
+
+const FINAL_ACTION_CODES: Record<FinalActionKindV2, string> = {
+  plan: "pl",
+  handoff: "sp",
+  continue_short: "c1",
+  continue_medium: "c2",
+  continue_full: "c3",
+  autopilot: "ap",
+  autopilot_arm: "ax",
+  meeting: "mt",
+  review: "rv",
+  organize: "ib"
+};
 
 interface TelegramAudioLike {
   sendMessage(
@@ -56,6 +84,13 @@ export class AudioSummaryManager {
 
     await this.bot.telegram.sendMessage(chatId, offer.text, offer.options);
     return true;
+  }
+
+  getLatestFinalActionText(
+    chatId: string | number,
+    workdir?: string
+  ): string | null {
+    return this.findRecentRecord(chatId, workdir)?.text || null;
   }
 
   async offerFinalActionsForChat(
@@ -216,13 +251,20 @@ export class AudioSummaryManager {
       return null;
     }
 
+    const recentRecord = this.findRecentRecord(chatId, workdir);
     const requestId = this.storeRequest(chatId, normalized, workdir);
     if (!requestId) {
       return null;
     }
 
     const rows: ReturnType<typeof Markup.button.callback>[][] = [];
-    const finalActionChoices = this.buildFinalActionChoices(locale, normalized);
+    const recommended = this.inferRecommendedFinalAction(normalized);
+    const nextStep = this.extractActionStep(normalized);
+    const finalActionRows = this.buildFinalActionRows(normalized);
+    const suggestedPrompt = this.buildSuggestedReplyPrompt(
+      normalized,
+      recentRecord?.text
+    );
 
     if (this.tts.isEnabled()) {
       rows.push([
@@ -238,18 +280,49 @@ export class AudioSummaryManager {
     }
 
     rows.push(
-      finalActionChoices.map((choice) =>
-        Markup.button.callback(
-          choice.label,
-          `final_action:${choice.kind}:${requestId}`
+      ...finalActionRows.map((row) =>
+        row.map((kind) =>
+          Markup.button.callback(
+            this.buildFinalActionButtonLabel(
+              locale,
+              kind,
+              recommended,
+              nextStep
+            ),
+            `final_action:${FINAL_ACTION_CODES[kind]}:${requestId}`
+          )
         )
       )
     );
 
     return {
-      text: t(locale, "finalActionsOffer"),
+      text: t(locale, "finalActionsOffer", {
+        suggestedPrompt,
+        recommendedAction: this.buildFinalActionButtonLabel(
+          locale,
+          recommended,
+          recommended,
+          nextStep
+        )
+      }),
       options: Markup.inlineKeyboard(rows) as unknown as Record<string, unknown>
     };
+  }
+
+  private findRecentRecord(
+    chatId: string | number,
+    workdir?: string
+  ): SummaryRecord | null {
+    this.pruneExpired();
+    const records = Array.from(this.records.values())
+      .filter(
+        (record) =>
+          record.chatId === String(chatId) &&
+          (!workdir || !record.workdir || record.workdir === workdir)
+      )
+      .sort((left, right) => right.createdAt - left.createdAt);
+
+    return records[0] || null;
   }
 
   private storeRequest(
@@ -277,71 +350,272 @@ export class AudioSummaryManager {
     }
   }
 
-  private buildFinalActionChoices(
-    locale: Locale,
-    text: string
-  ): Array<{ kind: FinalActionKind; label: string }> {
-    const recommended = this.inferRecommendedFinalAction(text);
-    const order: FinalActionKind[] = [
-      recommended,
-      ...(["execute", "review", "organize"] as FinalActionKind[]).filter(
-        (kind) => kind !== recommended
-      )
-    ];
+  private buildFinalActionRows(text: string): FinalActionKindV2[][] {
+    const contextualAction = this.resolveContextualFinalAction(text);
+    const supportRow = this.buildDynamicSupportRow(text);
 
-    return order.map((kind) => ({
-      kind,
-      label:
-        kind === recommended
-          ? t(locale, this.recommendedLabelKey(kind))
-          : t(locale, this.defaultLabelKey(kind))
-    }));
+    return [
+      ["continue_short", contextualAction],
+      ...(supportRow.length ? [supportRow] : []),
+      ["continue_full", "autopilot"],
+      ["autopilot_arm"]
+    ];
   }
 
-  private inferRecommendedFinalAction(text: string): FinalActionKind {
+  private buildDynamicSupportRow(text: string): FinalActionKindV2[] {
+    const normalized = this.normalizeForActionHeuristics(text);
+    const row: FinalActionKindV2[] = [];
+
+    if (
+      /\b(revisao|review|risco|risk|teste|test|validar|validacao|regressao|diff|bug)\b/i.test(
+        normalized
+      )
+    ) {
+      row.push("review");
+    }
+
+    if (
+      /\b(travado|stuck|divergencia|tensao|reuniao|ideias|brainstorm|quebra gelo|bloqueio)\b/i.test(
+        normalized
+      )
+    ) {
+      row.push("meeting");
+    }
+
+    if (
+      row.length < 2 &&
+      /\b(inbox|memoria|memory|residuo|residuos|estacionamento|candidate|proposal)\b/i.test(
+        normalized
+      )
+    ) {
+      row.push("organize");
+    }
+
+    return row.slice(0, 2);
+  }
+
+  private buildSuggestedReplyPrompt(text: string, recentText?: string): string {
+    const recommended = this.inferRecommendedFinalAction(text);
+    const nextStep = this.extractActionStep(text);
+    const nextSpecialist = extractFinalResponseNextSpecialist(text);
+    const recentNextStep =
+      recentText && recentText !== text
+        ? this.extractActionStep(recentText)
+        : null;
+    const baseAction = nextStep || "seguir o menor proximo passo seguro";
+    const historyHint =
+      recentNextStep && recentNextStep !== nextStep
+        ? ` Contexto recente: vinha de "${this.compactButtonText(recentNextStep, 90)}".`
+        : "";
+
+    switch (recommended) {
+      case "plan":
+        return this.compactSuggestedPrompt(
+          `/plan usando $sprinter ${baseAction}.${historyHint}`
+        );
+      case "handoff":
+        return this.compactSuggestedPrompt(
+          `Encaminhar para ${nextSpecialist || "o especialista indicado"}: ${baseAction}.${historyHint}`
+        );
+      case "autopilot":
+      case "autopilot_arm":
+        return this.compactSuggestedPrompt(
+          `Ativar piloto automatico: ${baseAction}.${historyHint}`
+        );
+      case "continue_full":
+        return this.compactSuggestedPrompt(
+          `Concluir bloco todo: ${baseAction}.${historyHint}`
+        );
+      default:
+        return this.compactSuggestedPrompt(`${baseAction}.${historyHint}`);
+    }
+  }
+
+  private buildFinalActionButtonLabel(
+    locale: Locale,
+    kind: FinalActionKindV2,
+    recommended: FinalActionKindV2,
+    nextStep: string | null
+  ): string {
+    if (kind === "continue_short" && nextStep) {
+      return kind === recommended ? `-> ${nextStep}` : nextStep;
+    }
+
+    return kind === recommended
+      ? t(locale, this.recommendedLabelKey(kind))
+      : t(locale, this.defaultLabelKey(kind));
+  }
+
+  private inferRecommendedFinalAction(text: string): FinalActionKindV2 {
     const normalized = String(text || "")
+      .normalize("NFD")
+      .replace(/\p{Diacritic}/gu, "")
+      .toLowerCase();
+    const recommendedStep = extractFinalResponseRecommendedStep(text);
+    const nextStep = this.extractActionStep(text);
+    const normalizedNextStep = String(nextStep || "")
       .normalize("NFD")
       .replace(/\p{Diacritic}/gu, "")
       .toLowerCase();
 
     if (
-      /\b(candidate|candidato|proposal|proposta|inbox|destino sugerido|skill candidate|skill candidata|promov(?:er|ida|ido|ida|idas|idos)?)\b/i.test(
+      /\b(nao e execucao|nao eh execucao|use \/plan|usar \/plan|planejamento|transformar em planejamento|abrir explicitamente outro bloco|abrir outro bloco)\b/i.test(
         normalized
-      )
+      ) ||
+      /\b(planejamento|plan|abrir outro bloco)\b/i.test(normalizedNextStep)
     ) {
-      return "organize";
+      return "plan";
+    }
+
+    if (recommendedStep && normalizedNextStep) {
+      return "continue_short";
+    }
+
+    if (this.resolveContextualFinalAction(text) === "handoff") {
+      return "handoff";
+    }
+
+    if (/\b(autopilot|piloto automatico)\b/i.test(normalized)) {
+      return "autopilot";
     }
 
     if (
-      /\b(revis|review|especialist|especialista|governanc|governanca|auditoria|tensao|risco|arquitet|ecossistema|familia|localiz)/i.test(
+      /\b(concluir bloco todo|fechar bloco inteiro|bloco inteiro|fechar este bloco|close the whole block)\b/i.test(
         normalized
       )
     ) {
-      return "review";
+      return "continue_full";
     }
 
-    return "execute";
+    return "continue_short";
   }
 
-  private defaultLabelKey(kind: FinalActionKind): string {
+  private resolveContextualFinalAction(text: string): "plan" | "handoff" {
+    const nextSpecialist = this.extractSingleHandoffSpecialist(text);
+    const nextStep = this.extractActionStep(text);
+    const normalizedNextStep = this.normalizeForActionHeuristics(nextStep);
+
+    if (!nextSpecialist) {
+      return "plan";
+    }
+
+    if (
+      /\b(sprinter|paula planeja|planejamento|planner)\b/i.test(
+        this.normalizeForActionHeuristics(nextSpecialist)
+      )
+    ) {
+      return "plan";
+    }
+
+    if (
+      /\b(\/plan|planejamento|plan|abrir outro bloco|abrir explicitamente outro bloco)\b/i.test(
+        normalizedNextStep
+      )
+    ) {
+      return "plan";
+    }
+
+    return "handoff";
+  }
+
+  private extractSingleHandoffSpecialist(text: string): string | null {
+    const specialist = extractFinalResponseNextSpecialist(text);
+    if (!specialist) {
+      return null;
+    }
+
+    const normalized = specialist.trim();
+    if (/\s*(?:,|;|\+|\/|\be\b|\band\b)\s*/i.test(normalized)) {
+      return null;
+    }
+
+    return normalized;
+  }
+
+  private normalizeForActionHeuristics(value: string | null): string {
+    return String(value || "")
+      .normalize("NFD")
+      .replace(/\p{Diacritic}/gu, "")
+      .toLowerCase();
+  }
+
+  private extractActionStep(text: string): string | null {
+    return (
+      extractFinalResponseRecommendedStep(text) ||
+      extractFinalResponseNextStep(text)
+    );
+  }
+
+  private compactSuggestedPrompt(value: string, maxLength = 180): string {
+    const normalized = String(value || "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (normalized.length <= maxLength) {
+      return normalized;
+    }
+
+    return `${normalized.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
+  }
+
+  private compactButtonText(value: string, maxLength: number): string {
+    const normalized = String(value || "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (normalized.length <= maxLength) {
+      return normalized;
+    }
+
+    return `${normalized.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
+  }
+
+  private defaultLabelKey(kind: FinalActionKindV2): string {
     switch (kind) {
+      case "plan":
+        return "buttonQuickPlan";
+      case "handoff":
+        return "buttonQuickHandoff";
+      case "continue_medium":
+        return "buttonQuickContinueMedium";
+      case "continue_full":
+        return "buttonQuickContinueFull";
+      case "autopilot":
+        return "buttonQuickAutopilot";
+      case "autopilot_arm":
+        return "buttonQuickAutopilotArm";
+      case "meeting":
+        return "buttonQuickMeeting";
       case "review":
         return "buttonQuickReview";
       case "organize":
         return "buttonQuickOrganize";
       default:
-        return "buttonQuickExecute";
+        return "buttonQuickContinueShort";
     }
   }
 
-  private recommendedLabelKey(kind: FinalActionKind): string {
+  private recommendedLabelKey(kind: FinalActionKindV2): string {
     switch (kind) {
+      case "plan":
+        return "buttonQuickPlanRecommended";
+      case "handoff":
+        return "buttonQuickHandoffRecommended";
+      case "continue_medium":
+        return "buttonQuickContinueMediumRecommended";
+      case "continue_full":
+        return "buttonQuickContinueFullRecommended";
+      case "autopilot":
+        return "buttonQuickAutopilotRecommended";
+      case "autopilot_arm":
+        return "buttonQuickAutopilotArmRecommended";
+      case "meeting":
+        return "buttonQuickMeetingRecommended";
       case "review":
         return "buttonQuickReviewRecommended";
       case "organize":
         return "buttonQuickOrganizeRecommended";
       default:
-        return "buttonQuickExecuteRecommended";
+        return "buttonQuickContinueShortRecommended";
     }
   }
 }

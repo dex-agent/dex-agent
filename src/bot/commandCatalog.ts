@@ -105,6 +105,13 @@ export const COMMAND_CATALOG: CommandSpec[] = [
     group: "Execucao"
   },
   {
+    command: "autopilot",
+    description:
+      "Arma, retoma ou desarma o piloto automatico especial por um numero fixo de respostas",
+    usage: "/autopilot [status|resume|off|<count>|on <count>]",
+    group: "Execucao"
+  },
+  {
     command: "plan",
     description: "Pede plano ao Codex sem editar",
     usage: "/plan <task>",
@@ -138,6 +145,12 @@ export const COMMAND_CATALOG: CommandSpec[] = [
     command: "model",
     description: "Consulta ou fixa o modelo do chat",
     usage: "/model [name|reset]",
+    group: "Estado"
+  },
+  {
+    command: "reasoning",
+    description: "Consulta ou fixa o raciocinio do chat",
+    usage: "/reasoning [baixa|media|alta|altissimo|reset]",
     group: "Estado"
   },
   {
@@ -245,6 +258,7 @@ export function buildMenuText(): string {
     "- /status",
     "- /dev",
     "- /model",
+    "- /reasoning",
     "- /language",
     "- /verbose",
     "- /gh",

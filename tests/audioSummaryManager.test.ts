@@ -136,22 +136,28 @@ test("audio summary manager can publish final action buttons for a finalized res
 
   const sent = await manager.offerFinalActionsForChat(
     1,
-    "Sprint concluido com sucesso.",
+    ["**Proximo passo**", "Comecar pela fase 1 com o garimpeiro."].join("\n"),
     "en",
     "C:/CodexProjetos/AgendadorConsultasOticas"
   );
 
   assert.equal(sent, true);
   assert.equal(messageCalls.length, 1);
-  assert.match(messageCalls[0].text, /How should I proceed from here/i);
+  assert.match(messageCalls[0].text, /Short suggestion:/i);
+  assert.match(messageCalls[0].text, /Comecar pela fase 1/i);
   const inlineKeyboard = (
     messageCalls[0].options?.reply_markup as {
       inline_keyboard?: Array<Array<{ text?: string; callback_data?: string }>>;
     }
   )?.inline_keyboard;
-  assert.equal(inlineKeyboard?.[1]?.[0]?.text, "✅ Execute next step");
-  assert.equal(inlineKeyboard?.[1]?.[1]?.text, "🧠 Start review");
-  assert.equal(inlineKeyboard?.[1]?.[2]?.text, "📥 Open inbox now");
+  assert.equal(
+    inlineKeyboard?.[1]?.[0]?.text,
+    "-> Comecar pela fase 1 com o garimpeiro."
+  );
+  assert.equal(inlineKeyboard?.[1]?.[1]?.text, "Transform into planning");
+  assert.equal(inlineKeyboard?.[2]?.[0]?.text, "Finish whole block");
+  assert.equal(inlineKeyboard?.[2]?.[1]?.text, "Autopilot");
+  assert.equal(inlineKeyboard?.[3]?.[0]?.text, "Autopilot x3");
   assert.match(
     inlineKeyboard?.[0]?.[0]?.callback_data || "",
     /^audio:summary:concise:/
@@ -162,14 +168,371 @@ test("audio summary manager can publish final action buttons for a finalized res
   );
   assert.match(
     inlineKeyboard?.[1]?.[0]?.callback_data || "",
-    /^final_action:execute:/
+    /^final_action:c1:/
   );
   assert.match(
     inlineKeyboard?.[1]?.[1]?.callback_data || "",
-    /^final_action:review:/
+    /^final_action:pl:/
   );
   assert.match(
-    inlineKeyboard?.[1]?.[2]?.callback_data || "",
-    /^final_action:organize:/
+    inlineKeyboard?.[2]?.[0]?.callback_data || "",
+    /^final_action:c3:/
+  );
+  assert.match(
+    inlineKeyboard?.[2]?.[1]?.callback_data || "",
+    /^final_action:ap:/
+  );
+  assert.match(
+    inlineKeyboard?.[3]?.[0]?.callback_data || "",
+    /^final_action:ax:/
+  );
+  for (const row of inlineKeyboard || []) {
+    for (const button of row) {
+      assert.ok(
+        (button.callback_data || "").length <= 64,
+        `callback_data too long: ${button.callback_data}`
+      );
+    }
+  }
+});
+
+test("audio summary manager can recommend planning when the next step is no longer execution", async () => {
+  const messageCalls: Array<{
+    chatId: string | number;
+    text: string;
+    options?: Record<string, unknown>;
+  }> = [];
+
+  const manager = new AudioSummaryManager({
+    bot: {
+      telegram: {
+        sendMessage: async (
+          chatId: string | number,
+          text: string,
+          options?: Record<string, unknown>
+        ) => {
+          messageCalls.push({ chatId, text, options });
+          return {};
+        },
+        sendVoice: async () => ({})
+      }
+    } as any,
+    tts: {
+      config: {
+        cacheTtlMs: 1000
+      },
+      isEnabled: () => true,
+      shouldOfferSummary: () => true,
+      summarize: (text: string) => text,
+      synthesize: async () => ({
+        filePath: "/tmp/dex-agent-resumo.ogg",
+        fileName: "dex-agent-resumo.ogg",
+        cleanup: async () => {}
+      })
+    } as any
+  });
+
+  const sent = await manager.offerFinalActionsForChat(
+    1,
+    [
+      "O proximo passo seguro nao e execucao.",
+      "",
+      "**Proximo passo**",
+      "Abrir explicitamente outro bloco."
+    ].join("\n"),
+    "en",
+    "C:/CodexProjetos/dex-agent"
+  );
+
+  assert.equal(sent, true);
+  const inlineKeyboard = (
+    messageCalls[0]?.options?.reply_markup as {
+      inline_keyboard?: Array<Array<{ text?: string; callback_data?: string }>>;
+    }
+  )?.inline_keyboard;
+  assert.equal(
+    inlineKeyboard?.[1]?.[0]?.text,
+    "Abrir explicitamente outro bloco."
+  );
+  assert.equal(inlineKeyboard?.[1]?.[1]?.text, "-> Transform into planning");
+  assert.match(messageCalls[0]?.text || "", /^How should I proceed/m);
+  assert.match(messageCalls[0]?.text || "", /Short suggestion: \/plan/i);
+});
+
+test("audio summary manager shows handoff only for a single non-planning next specialist", async () => {
+  const messageCalls: Array<{
+    chatId: string | number;
+    text: string;
+    options?: Record<string, unknown>;
+  }> = [];
+
+  const manager = new AudioSummaryManager({
+    bot: {
+      telegram: {
+        sendMessage: async (
+          chatId: string | number,
+          text: string,
+          options?: Record<string, unknown>
+        ) => {
+          messageCalls.push({ chatId, text, options });
+          return {};
+        },
+        sendVoice: async () => ({})
+      }
+    } as any,
+    tts: {
+      config: {
+        cacheTtlMs: 1000
+      },
+      isEnabled: () => false,
+      shouldOfferSummary: () => true,
+      summarize: (text: string) => text,
+      synthesize: async () => ({
+        filePath: "/tmp/dex-agent-resumo.ogg",
+        fileName: "dex-agent-resumo.ogg",
+        cleanup: async () => {}
+      })
+    } as any
+  });
+
+  const sent = await manager.offerFinalActionsForChat(
+    1,
+    [
+      "**Proximo passo**",
+      "Revisar os diffs do CTA final.",
+      "",
+      "**Proximo especialista indicado**",
+      "Renata Review"
+    ].join("\n"),
+    "en",
+    "C:/CodexProjetos/dex-agent"
+  );
+
+  assert.equal(sent, true);
+  const inlineKeyboard = (
+    messageCalls[0]?.options?.reply_markup as {
+      inline_keyboard?: Array<Array<{ text?: string; callback_data?: string }>>;
+    }
+  )?.inline_keyboard;
+  assert.equal(
+    inlineKeyboard?.[0]?.[0]?.text,
+    "Revisar os diffs do CTA final."
+  );
+  assert.equal(inlineKeyboard?.[0]?.[1]?.text, "-> Send to specialist");
+  assert.match(inlineKeyboard?.[1]?.[0]?.text || "", /Start review/i);
+  assert.match(
+    inlineKeyboard?.[0]?.[1]?.callback_data || "",
+    /^final_action:sp:/
+  );
+
+  messageCalls.length = 0;
+  await manager.offerFinalActionsForChat(
+    1,
+    [
+      "**Proximo passo**",
+      "Abrir explicitamente outro bloco.",
+      "",
+      "**Proximo especialista indicado**",
+      "$sprinter"
+    ].join("\n"),
+    "en",
+    "C:/CodexProjetos/dex-agent"
+  );
+
+  const planningKeyboard = (
+    messageCalls[0]?.options?.reply_markup as {
+      inline_keyboard?: Array<Array<{ text?: string; callback_data?: string }>>;
+    }
+  )?.inline_keyboard;
+  assert.equal(planningKeyboard?.[0]?.[1]?.text, "-> Transform into planning");
+  assert.match(
+    planningKeyboard?.[0]?.[1]?.callback_data || "",
+    /^final_action:pl:/
+  );
+});
+
+test("audio summary manager prefers explicit recommended next step over generic decision text", async () => {
+  const messageCalls: Array<{
+    chatId: string | number;
+    text: string;
+    options?: Record<string, unknown>;
+  }> = [];
+
+  const manager = new AudioSummaryManager({
+    bot: {
+      telegram: {
+        sendMessage: async (
+          chatId: string | number,
+          text: string,
+          options?: Record<string, unknown>
+        ) => {
+          messageCalls.push({ chatId, text, options });
+          return {};
+        },
+        sendVoice: async () => ({})
+      }
+    } as any,
+    tts: {
+      config: {
+        cacheTtlMs: 1000
+      },
+      isEnabled: () => false,
+      shouldOfferSummary: () => true,
+      summarize: (text: string) => text,
+      synthesize: async () => ({
+        filePath: "/tmp/dex-agent-resumo.ogg",
+        fileName: "dex-agent-resumo.ogg",
+        cleanup: async () => {}
+      })
+    } as any
+  });
+
+  const sent = await manager.offerFinalActionsForChat(
+    1,
+    [
+      "Proximo passo: decidir se vamos executar o replay vivo isolado.",
+      "",
+      "Proximo Passo Recomendado: Tereza Testa, execute o near_term_slot_duplo_lu_souza.",
+      "",
+      "Proximo especialista indicado: Tereza Testa."
+    ].join("\n"),
+    "pt-BR",
+    "C:/CodexProjetos/AgendadorConsultasOticas"
+  );
+
+  assert.equal(sent, true);
+  assert.match(messageCalls[0]?.text || "", /Recomendado: -> Tereza Testa/i);
+  assert.match(messageCalls[0]?.text || "", /Sugestao curta: Tereza Testa/i);
+  assert.doesNotMatch(messageCalls[0]?.text || "", /Prompt sugerido:/i);
+  assert.doesNotMatch(messageCalls[0]?.text || "", /\/plan modo planejamento/i);
+
+  const inlineKeyboard = (
+    messageCalls[0]?.options?.reply_markup as {
+      inline_keyboard?: Array<Array<{ text?: string; callback_data?: string }>>;
+    }
+  )?.inline_keyboard;
+
+  assert.equal(
+    inlineKeyboard?.[0]?.[0]?.text,
+    "-> Tereza Testa, execute o near_term_slot_duplo_lu_souza."
+  );
+  assert.equal(inlineKeyboard?.[0]?.[1]?.text, "Encaminhar");
+});
+
+test("audio summary manager truncates suggested prompts without mojibake", async () => {
+  const messageCalls: Array<{
+    chatId: string | number;
+    text: string;
+    options?: Record<string, unknown>;
+  }> = [];
+
+  const manager = new AudioSummaryManager({
+    bot: {
+      telegram: {
+        sendMessage: async (
+          chatId: string | number,
+          text: string,
+          options?: Record<string, unknown>
+        ) => {
+          messageCalls.push({ chatId, text, options });
+          return {};
+        },
+        sendVoice: async () => ({})
+      }
+    } as any,
+    tts: {
+      config: {
+        cacheTtlMs: 1000
+      },
+      isEnabled: () => false,
+      shouldOfferSummary: () => true,
+      summarize: (text: string) => text,
+      synthesize: async () => ({
+        filePath: "/tmp/dex-agent-resumo.ogg",
+        fileName: "dex-agent-resumo.ogg",
+        cleanup: async () => {}
+      })
+    } as any
+  });
+
+  const longStep = `Próximo passo: ${"validar o texto real do Telegram ".repeat(10)}`;
+  const sent = await manager.offerFinalActionsForChat(
+    1,
+    longStep,
+    "pt-BR",
+    "C:/CodexProjetos/dex-agent"
+  );
+
+  assert.equal(sent, true);
+  assert.doesNotMatch(messageCalls[0]?.text || "", /Ã|Â|ā|â/);
+  assert.match(messageCalls[0]?.text || "", /\.\.\./);
+});
+
+test("audio summary manager adds dynamic support buttons and recent-history prompt hints", async () => {
+  const messageCalls: Array<{
+    chatId: string | number;
+    text: string;
+    options?: Record<string, unknown>;
+  }> = [];
+
+  const manager = new AudioSummaryManager({
+    bot: {
+      telegram: {
+        sendMessage: async (
+          chatId: string | number,
+          text: string,
+          options?: Record<string, unknown>
+        ) => {
+          messageCalls.push({ chatId, text, options });
+          return {};
+        },
+        sendVoice: async () => ({})
+      }
+    } as any,
+    tts: {
+      config: {
+        cacheTtlMs: 60_000
+      },
+      isEnabled: () => false,
+      shouldOfferSummary: () => true,
+      summarize: (text: string) => text,
+      synthesize: async () => ({
+        filePath: "/tmp/dex-agent-resumo.ogg",
+        fileName: "dex-agent-resumo.ogg",
+        cleanup: async () => {}
+      })
+    } as any
+  });
+
+  await manager.offerFinalActionsForChat(
+    1,
+    ["**Proximo passo**", "Fechar o bloco anterior."].join("\n"),
+    "pt-BR",
+    "C:/CodexProjetos/dex-agent"
+  );
+  await manager.offerFinalActionsForChat(
+    1,
+    [
+      "Ha divergencia e risco de regressao.",
+      "",
+      "**Proximo passo**",
+      "Revisar o deploy com Renata Review."
+    ].join("\n"),
+    "pt-BR",
+    "C:/CodexProjetos/dex-agent"
+  );
+
+  assert.match(messageCalls[1]?.text || "", /Sugestao curta:/i);
+  assert.match(messageCalls[1]?.text || "", /Contexto recente:/i);
+  const inlineKeyboard = (
+    messageCalls[1]?.options?.reply_markup as {
+      inline_keyboard?: Array<Array<{ text?: string; callback_data?: string }>>;
+    }
+  )?.inline_keyboard;
+  assert.match(inlineKeyboard?.[1]?.[0]?.text || "", /Iniciar revisao/i);
+  assert.equal(inlineKeyboard?.[1]?.[1]?.text, "Reuniao rapida");
+  assert.match(
+    inlineKeyboard?.[1]?.[1]?.callback_data || "",
+    /^final_action:mt:/
   );
 });

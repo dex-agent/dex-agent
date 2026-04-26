@@ -32,7 +32,7 @@ test("t falls back through locale catalogs in the documented order", () => {
     "Dex Agent 已就绪。",
     "普通消息和编码任务会路由到 Codex。",
     "Bot 侧 MCP 仅通过显式 /mcp 命令调用。",
-    "试试: /status, /repo, /pwd, /exec, /auto, /plan, /model, /language, /verbose, /skill, /new, /sh",
+    "试试: /status, /repo, /pwd, /exec, /auto, /plan, /model, /reasoning, /language, /verbose, /skill, /new, /sh",
     'GitHub 示例: /gh commit "feat: init"'
   ]);
 });

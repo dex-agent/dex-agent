@@ -12,6 +12,10 @@ import {
 } from "./skillPromotionService.js";
 import { MemoryRecallEngine } from "./memoryRecallEngine.js";
 import {
+  resolveOperationalRecoverySources,
+  type OperationalRecoveryTarget
+} from "./operationalRecoverySources.js";
+import {
   buildRetrievalQuery as buildSharedRetrievalQuery,
   extractStructuredMemoryLine,
   hasExplicitMemoryCaptureIntent
@@ -877,26 +881,6 @@ export class ProjectMemoryService {
     return path.join(this.inboxDir(workdir), "proposals.ndjson");
   }
 
-  private activePath(workdir: string): string {
-    return path.join(workdir, ".agents", "ACTIVE.md");
-  }
-
-  private indexPath(workdir: string): string {
-    return path.join(workdir, "INDEX.md");
-  }
-
-  private projectPath(workdir: string): string {
-    return path.join(workdir, ".agents", "PROJECT.md");
-  }
-
-  private handoffPath(workdir: string): string {
-    return path.join(workdir, ".agents", "HANDOFF.md");
-  }
-
-  private napkinPath(workdir: string): string {
-    return path.join(workdir, ".codex", "napkin.md");
-  }
-
   private buildGlobalMemoryEntry(input: {
     sourcePath: string;
     sourceLabel: string;
@@ -948,31 +932,23 @@ export class ProjectMemoryService {
     sources: string[];
     usedOperationalState: boolean;
   }> {
-    const indexPath = this.indexPath(workdir);
-    const projectPath = this.projectPath(workdir);
-    const activePath = this.activePath(workdir);
-    const handoffPath = this.handoffPath(workdir);
-    const napkinPath = this.napkinPath(workdir);
+    const recoverySources = await resolveOperationalRecoverySources(workdir);
+    const { indexPath, projectPath, activePath, handoffPath, napkinPath } =
+      recoverySources.paths;
 
-    const hasIndex = await pathExists(indexPath);
-    const hasProject = await pathExists(projectPath);
-    const hasActive = await pathExists(activePath);
-    const hasHandoff = await pathExists(handoffPath);
-    const hasNapkin = await pathExists(napkinPath);
-
-    const indexContent = hasIndex ? await fs.readFile(indexPath, "utf8") : "";
-    const projectContent = hasProject
-      ? await fs.readFile(projectPath, "utf8")
-      : "";
-    const activeContent = hasActive
-      ? await fs.readFile(activePath, "utf8")
-      : "";
-    const handoffContent = hasHandoff
-      ? await fs.readFile(handoffPath, "utf8")
-      : "";
-    const napkinContent = hasNapkin
-      ? await fs.readFile(napkinPath, "utf8")
-      : "";
+    const [
+      indexContent,
+      projectContent,
+      activeContent,
+      handoffContent,
+      napkinContent
+    ] = await Promise.all([
+      fs.readFile(indexPath, "utf8").catch(() => ""),
+      fs.readFile(projectPath, "utf8").catch(() => ""),
+      fs.readFile(activePath, "utf8").catch(() => ""),
+      fs.readFile(handoffPath, "utf8").catch(() => ""),
+      fs.readFile(napkinPath, "utf8").catch(() => "")
+    ]);
 
     const currentObjectiveLines = extractSectionLines(
       activeContent,
@@ -1009,21 +985,13 @@ export class ProjectMemoryService {
     const tacticalNotes = compactSectionLines(napkinContent.split("\n"))
       .filter((line) => !line.startsWith("#"))
       .slice(0, 3);
-    const sources = [
-      ...(hasIndex ? [indexPath] : []),
-      ...(hasProject ? [projectPath] : []),
-      ...(hasActive ? [activePath] : []),
-      ...(hasHandoff ? [handoffPath] : []),
-      ...(hasNapkin ? [napkinPath] : [])
-    ];
-
     return {
       currentObjective,
       latestClosedBlock,
       nextEligibleBlock,
       tacticalNotes,
-      sources,
-      usedOperationalState: sources.length > 0
+      sources: recoverySources.sources,
+      usedOperationalState: recoverySources.sources.length > 0
     };
   }
 
@@ -2013,7 +1981,7 @@ export class ProjectMemoryService {
 
   async readOperationalFile(
     workdir: string,
-    target: "index" | "project" | "active" | "handoff" | "napkin" | "ledger"
+    target: OperationalRecoveryTarget
   ): Promise<string | null> {
     return this.recallEngine.readOperationalFile(workdir, target);
   }

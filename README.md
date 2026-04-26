@@ -170,7 +170,11 @@ Telegram text/audio/image
   -> Telegram sendMessage/editMessageText
 ```
 
-Finalized responses can also surface a compact follow-up block with explicit quick actions: `run next step`, `request review`, `open inbox`, plus optional audio summary buttons when TTS is enabled.
+Finalized responses can also surface a compact follow-up keyboard with optional audio summary buttons, a short suggested reply prompt, and focused actions: the exact extracted `next step`, a contextual route that is either `transform into planning` or `send to specialist`, dynamic support buttons such as review/quick meeting/inbox when the text calls for them, `finish whole block`, `autopilot`, and `autopilot x3`. The short action button mirrors the concrete `next step` already stated in the finalized response, planning uses `$sprinter`, and specialist handoff appears only when the finalized response names one non-planning `Proximo especialista indicado`.
+
+When a finalized response includes both `Proximo passo` and `Proximo Passo Recomendado`, the follow-up keyboard prioritizes the recommended step as the primary button and keeps the panel compact: `Recomendado`, `Sugestao curta`, and the `->` marker. Example: `Proximo Passo Recomendado: Tereza Testa, execute o near_term_slot_duplo_lu_souza.` becomes the primary `->` action instead of falling back to a generic `/plan`.
+
+The `/project prompts` built-ins must stay anchored to the current workspace contract. Do not hardcode a domain flow from another repo into a generic preset; prompts like end-to-end testing should tell Codex to identify the project's own main flow first.
 
 Core modules:
 
@@ -240,6 +244,7 @@ This prevents:
 The bot now has a file-based reuse loop on top of project memory:
 
 - finalized Codex responses can become durable memory candidates
+- finalized Codex responses now auto-capture only in strict cases: explicit memory/promotion asks or structured lines like `Decision:` and `Rule:`
 - repeated or explicit reusable flows can become `skill_candidate`
 - strong and clear cases can auto-promote into a reusable skill
 - global skills born from this repo are mirrored back into `skills/`
@@ -250,6 +255,7 @@ What changes in practice:
 - `/inbox` remains the review surface for candidates and proposals
 - `/memory` remains the technical inspection surface
 - `/project` now exposes a `Reuso Rapido` block with recent promoted skills and pending skill candidates
+- recall now uses one shared retrieval query plus live operational context instead of separate ad hoc query strings per caller
 - finalized runtime closeouts, verdict wrappers, meeting wrappers, and phase-labelled narration are now filtered before they can become `skill_candidate`
 
 ## Skill Governance
@@ -274,9 +280,9 @@ General:
 
 - `/start` - bootstrap message
 - `/menu` - deterministic dashboard with clickable shortcuts
-- `/help` - command summary
 - `/admin [show|link|prompts|prompts add ...|prompts remove ...|history|history explain ...|history discard ...|history propose ...|history cancel ...]` - show the internal admin dashboard snapshot, open a real local dashboard link, manage custom admin prompts, or inspect and mutate the focused history module for the current project
-- `/status` - show current chat status, active runner mode, workdir, model override, MCP servers, the internal superpowers workflow phase, and the derived operational posture (`working`, `queued`, `awaiting closeout`, `prolonged silence`, etc.)
+- `/help` - command summary
+- `/status` - show current chat status, active runner mode, workdir, model override, reasoning-effort override, MCP servers, the internal superpowers workflow phase, and the derived operational posture (`working`, `queued`, `awaiting closeout`, `prolonged silence`, etc.)
 - `/pwd` - show the current project directory for this chat
 - `/repo` - list switchable git projects under `WORKSPACE_ROOT`
 - `/repo <name>` - switch the current chat to another project
@@ -285,7 +291,7 @@ General:
 - `/repo recent` - show recent projects for the current chat
 - `/repo -` - switch back to the previous project
 - `/project` - show the current project card with deterministic action buttons
-- `/project [default|executive|next|sources|steps|commands|prompts|queue]` - open a specific project card variant; the card now reads `INDEX`, `PROJECT`, and `Current block status`, and exposes direct buttons for `INDEX`, `PROJECT`, `ACTIVE`, and `HANDOFF`
+- `/project [default|executive|next|sources|steps|commands|prompts|queue]` - open a specific project card variant; the card now reads `INDEX`, `PROJECT`, and `Current block status`, keeps the primary surface focused on action and navigation, and leaves raw file inspection to `/memory view ...`
 - `/inbox` - show the durable memory inbox for the current project, including `skill_candidate`
 - `/inbox [candidates|proposals|promote|discard|why|confirm|cancel|help]` - review and promote durable memory or reusable-skill candidates
 - `/memory` - inspect project memory usage, operational memory state, and the surfaced files `INDEX`, `PROJECT`, `ACTIVE`, `HANDOFF`, `napkin`, or `ledger`
@@ -293,9 +299,11 @@ General:
 - `/new` - clear the saved Codex conversation for the current project and start fresh on the next message
 - `/exec <task>` - force a one-off Codex run without saving project context
 - `/auto <task>` - force a one-off fully automatic Codex run without saving project context
+- `/autopilot [status|resume|off|<count>|on <count>]` - arm, resume, or disable the special autopilot for a fixed number of finalized responses in the current chat
 - `/plan <task>` - ask Codex for a plan only, without direct file modification intent
 - `/continue` - replay the last blocked same-workdir Codex request once
 - `/model [name|reset]` - show or set the model override for the current chat
+- `/reasoning [low|medium|high|xhigh|reset]` - show or set the reasoning-effort override for the current chat; PT-BR aliases like `baixa`, `media`, `alta`, and `altissimo` also work
 - `/language [en|zh|zh-HK]` - show or set the system language for the current chat
 - `/verbose [on|off]` - show or toggle system notices for the current chat
 - `/skill list` - show skill switches for the current chat
@@ -341,6 +349,11 @@ Telegram adaptation notes:
 - Structured bot actions are deterministic: command, menu, or button only
 - `/exec` runs a one-off Codex task and does not overwrite the saved project conversation slot
 - `/auto` runs a one-off Codex task with `approvalPolicy=never` on the SDK backend, or `codex exec --full-auto` on the CLI backend
+- `/autopilot <count>` arms a persistent per-chat test mode that automatically follows the `Piloto automatico` path after each finalized response until the configured counter reaches zero or you run `/autopilot off`
+- `/autopilot resume` asks the armed autopilot to continue from the last saved finalized response after a restart, consuming one configured auto-followup only if the resume run actually starts
+- the `Piloto x3` final-action button arms a short three-step autopilot run and starts it from the current finalized context; it decrements the counter only when the first run actually starts
+- the armed autopilot stops instead of spending remaining steps when the finalized response says there is no open block or sprint, the line is already at `100%`, or the safe next step is explicitly to stay closed
+- when the armed autopilot stops, it sends a useful stop card with the reason, blind spot, golden tip, and safe options instead of silently leaving the chat without direction
 - `/new` is implemented by the bot and resets the current chat session
 - `/new` only clears the current project's saved Codex conversation slot
 - `/status` is implemented by the bot and reports local runtime state
@@ -348,12 +361,14 @@ Telegram adaptation notes:
 - `/repo` is implemented by the bot and switches the per-chat working directory inside `WORKSPACE_ROOT`
 - `/skill` is implemented by the bot and keeps per-chat skill switches in runtime state
 - `/skill` only lists toggleable bot skills; `superpowers` is shown as an internal workflow, not a toggleable skill
+- after startup or restart, if this chat still has a recoverable prompt queue, the bot now describes the real boot source, auto-runs the next queued item when possible, and skips the generic "ready" notice for that same chat
 - reusable-flow learning is file-based and auditable; there is no hidden state, embeddings, or vector DB behind it
 - `/dev` is implemented by the bot and manages one frontend server per repo workdir, shared across chats
 - `/dev start` prefers `package.json` script `dev` and falls back to `start`
 - `/sh` is implemented by the bot, never invokes a shell interpreter, and only accepts configured command prefixes
 - `/sh` is read-only by default; dangerous prefixes can be configured and require `--confirm` when writable mode is enabled
 - `/plan` translates to a planning-only prompt instead of passing a raw `/plan` slash command to Codex
+- contextual `/plan` requests such as "em cima daqui", "achados", "findings", or "consolidar tudo que ja foi levantado" attach the latest finalized action text as the primary planning source before falling back to durable project memory
 - If another chat already has an active Codex run in the same workdir, the bot blocks the new request and requires `/continue` for a one-shot override
 - The default bot language is `pt-BR`; use `/language` to switch the chat locale
 - `/verbose off` keeps Telegram output quiet by hiding fallback, startup, and session-exit notices for the current chat
@@ -572,7 +587,7 @@ Release references:
 Current local Windows baseline on this machine:
 
 - autostart via the current user's Windows Startup folder
-- hidden restart via `restart-dex-agent-hidden.vbs -> restart-dex-agent-hidden.ps1`
+- hidden restart via `restart-dex-agent-hidden.vbs -> restart-dex-agent-hidden.ps1 -> start-dex-agent.ps1`
 - one polling process per bot token
 
 PM2 remains a supported supervisor for server-style or always-on hosts, but it is not the only valid deployment path.
@@ -604,6 +619,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\unregister-dex-agent-autostar
 ```
 
 The registered autostart uses the current user's Windows Startup folder and creates `start-dex-agent.cmd`, which calls `scripts/boot-dex-agent-autostart.ps1`. That boot script waits 45 seconds after logon and then retries up to 6 times with progressive backoff if the network is not ready yet.
+
+`scripts/start-dex-agent.ps1` is the canonical singleton entrypoint for local Windows operation: it clears stale `src/index.ts` processes for this repo before starting a fresh one. The hidden restart path now reuses that same script, and `scripts/status-dex-agent.ps1` warns when multiple polling processes are still alive instead of silently picking one.
 
 ## Publication Hygiene
 
@@ -637,7 +654,7 @@ Telegram can manage runtime usage of Bot-side MCP and skills, but not install ar
 - MCP servers are process-level runtime resources: list, inspect, reconnect, enable, disable
 - Skills are chat-level routing switches: each chat can enable or disable `github` and `mcp` independently
 - Codex's own MCP remains separate and is not managed through these bot commands
-- Runtime state is persisted to `STATE_FILE`, so `/mcp enable|disable`, `/skill on|off`, `/language`, `/verbose`, and per-project Codex conversation slots survive bot restarts
+- Runtime state is persisted to `STATE_FILE`, so `/mcp enable|disable`, `/skill on|off`, `/language`, `/verbose`, `/reasoning`, and per-project Codex conversation slots survive bot restarts
 
 ## Troubleshooting
 

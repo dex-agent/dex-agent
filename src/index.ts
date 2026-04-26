@@ -31,7 +31,9 @@ import { AudioTts } from "./lib/audioTts.js";
 import { AudioSummaryManager } from "./lib/audioSummaryManager.js";
 import { AdminWebServer } from "./lib/adminWebServer.js";
 import { ImageAttachmentManager } from "./lib/imageAttachmentManager.js";
+import { maybeRunSpecialAutopilotAfterFinalized } from "./lib/specialAutopilot.js";
 import { createTelegramApiAgent } from "./lib/telegramApi.js";
+import { archiveCompletedSprintSurfaces } from "./orchestrator/memorySurfaceMaintenance.js";
 import { createRestartBootstrapScript } from "./restartBootstrap.js";
 import { launchTelegramBotWithRetry } from "./telegramLaunch.js";
 
@@ -89,7 +91,36 @@ async function restartBotProcess(): Promise<void> {
   await shutdown("RESTART");
 }
 
+async function runStartupMemorySurfaceMaintenance(): Promise<void> {
+  try {
+    const results = await archiveCompletedSprintSurfaces({
+      repoRoots: [config.runner.cwd],
+      write: true
+    });
+    const archivedEntries = results.reduce(
+      (total, result) => total + result.archivedEntries,
+      0
+    );
+    const movedFiles = results.reduce(
+      (total, result) => total + result.movedFiles.length,
+      0
+    );
+    if (archivedEntries || movedFiles) {
+      console.log(
+        `[memory] archived completed sprint surfaces: entries=${archivedEntries}, files=${movedFiles}`
+      );
+    }
+  } catch (error) {
+    console.error(
+      "[memory] startup sprint archive maintenance failed:",
+      toErrorMessage(error)
+    );
+  }
+}
+
 bot.use(createAuthMiddleware(config));
+
+await runStartupMemorySurfaceMaintenance();
 
 const runtimeState = await stateStore.load();
 mcpClient = new McpClient(config, {
@@ -154,12 +185,31 @@ ptyManager = new PtyManager({
       text,
       workdir
     });
-    await audioSummaryManager.offerFinalActionsForChat(
+    const runner = ptyManager;
+    if (!runner) {
+      await audioSummaryManager.offerFinalActionsForChat(
+        chatId,
+        text,
+        locale,
+        workdir
+      );
+      return;
+    }
+    const autopilotResult = await maybeRunSpecialAutopilotAfterFinalized({
+      bot,
+      ptyManager: runner,
       chatId,
-      text,
       locale,
-      workdir
-    );
+      text
+    });
+    if (!autopilotResult.triggered && !autopilotResult.stopped) {
+      await audioSummaryManager.offerFinalActionsForChat(
+        chatId,
+        text,
+        locale,
+        workdir
+      );
+    }
   }
 });
 ptyManager.restoreState(runtimeState.runner);
@@ -204,6 +254,7 @@ registerHandlers({
     botToken: config.telegram.botToken,
     proxyUrl: config.telegram.proxyUrl
   },
+  instance: config.instance,
   adminActions: {
     restart: restartBotProcess
   }
@@ -247,17 +298,24 @@ await bot.telegram
   .catch((error) =>
     console.warn("[telegram] setChatMenuButton failed:", toErrorMessage(error))
   );
-await notifyRecoverableQueuesOnStartup(bot, ptyManager).catch((error) =>
+const bootMode = dropPendingUpdates ? "restart" : "startup";
+const queueRecoveryHandledChatIds = await notifyRecoverableQueuesOnStartup(
+  bot,
+  ptyManager,
+  bootMode
+).catch((error) => {
   console.warn(
     "[startup] queue recovery notification failed:",
     toErrorMessage(error)
-  )
-);
+  );
+  return new Set<string>();
+});
 await notifyBootReadyOnStartup(
   bot,
   ptyManager,
   config.telegram.proactiveUserIds,
-  dropPendingUpdates ? "restart" : "startup"
+  bootMode,
+  queueRecoveryHandledChatIds
 ).catch((error) =>
   console.warn(
     "[startup] boot-ready notification failed:",

@@ -180,6 +180,7 @@ Regras:
 
 Arquivos canonicos:
 
+- `AGENTS.md`
 - `.agents/PROJECT.md`
 - `.agents/ACTIVE.md`
 - `.agents/HANDOFF.md`
@@ -187,6 +188,7 @@ Arquivos canonicos:
 
 Papel:
 
+- `AGENTS.md`: contrato local obrigatorio de operacao, comandos, restricoes e skills
 - `PROJECT.md`: identidade, escopo e restricoes estaveis
 - `ACTIVE.md`: objetivo atual, loops abertos, bloqueios e notas vivas
 - `HANDOFF.md`: protocolo de retomada e proximo bloco
@@ -200,6 +202,7 @@ Regra:
 
 Contrato canonico da camada 2:
 
+- `AGENTS.md` define o contrato local obrigatorio antes de qualquer execucao
 - `PROJECT.md` define identidade, escopo, referencias principais e restricoes estaveis
 - `ACTIVE.md` define objetivo atual, loops abertos, proximas acoes, blockers e notas vivas
 - `HANDOFF.md` define protocolo de retomada, fila seguinte, snapshot de progresso e o cartao canonico do bloco atual
@@ -207,7 +210,8 @@ Contrato canonico da camada 2:
 
 Regra de leitura:
 
-- abrir apenas o arquivo da camada 2 que o `INDEX.md` apontar
+- abrir `AGENTS.md` antes de transformar retomada em execucao
+- abrir apenas os demais arquivos da camada 2 que o `INDEX.md` apontar
 - se a duvida for "onde estou e o que faco agora", priorizar `HANDOFF.md`
 - se a duvida for "qual e o objetivo e o que continua aberto", priorizar `ACTIVE.md`
 - se a duvida for "o que nunca devo esquecer sobre este repo", priorizar `.codex/napkin.md`
@@ -250,6 +254,7 @@ Exemplos:
 - `docs/`
 - `skills/`
 - `.agents/sprints/`
+- `.agents/ARQUIVADO/`
 - `.agents/archive/`
 - relatórios, artefatos e tutoriais mais densos
 
@@ -264,6 +269,9 @@ Papel:
 Regra:
 
 - so abrir quando a camada 1 e a camada 2 nao bastarem
+- sprint ou trabalho fechado/concluido sai da pasta viva e vai para `.agents/ARQUIVADO/`
+- `.agents/sprints/INDEX.md` deve trocar a entrada para `status: arquivado` e apontar `abre:` para o destino arquivado
+- artefatos lado a lado com o mesmo slug do sprint fechado acompanham o arquivo principal para o mesmo destino
 
 ### Eixo B - Camadas de armazenamento operacional
 
@@ -373,12 +381,25 @@ Fronteira read-only do recall.
 
 Responsabilidades:
 
-- ler `INDEX.md`, `.agents/PROJECT.md`, `.agents/ACTIVE.md`, `.agents/HANDOFF.md` e `.codex/napkin.md`
+- ler as fontes resolvidas por `operationalRecoverySources`: `INDEX.md`, `AGENTS.md`, `.agents/PROJECT.md`, `.agents/ACTIVE.md`, `.agents/HANDOFF.md`, `.codex/napkin.md`, `.agents/sprints/INDEX.md` quando existir sprint/bloco, `.agents/ESTACIONAMENTO.md` quando houver ativos e `.agents/MEMORY.ndjson` como ledger
 - ler o ledger local `.agents/MEMORY.ndjson`
 - ler memoria global markdown read-only (`MEMORY.md` e `memory_summary.md`)
 - usar uma `buildRetrievalQuery(...)` unica com `projectName`, `currentObjective`, `nextEligibleBlock` e `latestClosedBlock`
 - ranquear memoria de forma lexical, mas com priors de escopo e contexto operacional
 - montar `MemoryPacket`, renderizar disclosure e manter cache por `mtime` para a memoria global markdown
+
+### `src/orchestrator/memorySurfaceMaintenance.ts`
+
+Manutencao mecanica das superficies de memoria.
+
+Responsabilidades:
+
+- auditar ledger, camadas vivas e markdown global
+- detectar sprint `fechado`, `concluido` ou `finalizado` ainda apontado para `.agents/sprints/`
+- no `normalizeMemorySurfaces(..., write: true)`, mover automaticamente o sprint fechado e artefatos lado a lado com o mesmo slug para `.agents/ARQUIVADO/sprints/`
+- no startup do Dex Agent, executar `archiveCompletedSprintSurfaces(..., write: true)` contra o `CODEX_WORKDIR` da instancia para manter a pasta viva limpa sem depender de prompt manual
+- atualizar `.agents/sprints/INDEX.md` para `status: arquivado` e `abre: .agents/ARQUIVADO/sprints/<arquivo>`
+- preservar sprints `planejado`, `em_execucao`, `ativo` ou `legado` na pasta viva
 
 ### `src/orchestrator/skillPromotionService.ts`
 
@@ -619,6 +640,12 @@ Quando o runtime resolve usar memoria, ele monta um pacote compacto com:
 Esse pacote e injetado no prompt final de forma curta.
 
 Nao e dump bruto de arquivo.
+
+### Modos de retomada
+
+- `retomada curta`: pode responder com `INDEX.md`, `ACTIVE.md` e `HANDOFF.md` quando o usuario so quer "onde paramos" e nao ha sprint, residuo ou reabertura em disputa.
+- `auditoria de protocolo`: deve conferir `AGENTS.md`, os ponteiros do `INDEX.md`, `.agents/sprints/INDEX.md` quando houver sprint/bloco e `.agents/ESTACIONAMENTO.md` quando houver residuos ativos.
+- `retomada operacional completa`: deve usar o resolvedor unico de fontes e nunca tratar `ACTIVE.md` como opcional; `HANDOFF.md` continua dono do proximo passo seguro, e `ACTIVE.md` continua dono do objetivo vivo e loops abertos.
 
 ## Politica de escrita
 
