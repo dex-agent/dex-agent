@@ -1,0 +1,30 @@
+{
+  "description": "Example registry for Dex Agent project-to-project messaging. Copy to dex-agent-network.local.json and adjust local paths on each machine.",
+  "chatIdEnvPriority": ["PROACTIVE_USER_IDS", "ALLOWED_USER_IDS"],
+  "instances": [
+    {
+      "projectLabel": "DexAgentPai",
+      "botUsername": "codex10_bot",
+      "envPath": "C:\\CodexProjetos\\dex-agent\\.env",
+      "aliases": ["dex-pai", "pai", "codex10", "codex10_bot"]
+    },
+    {
+      "projectLabel": "AgendadorConsultasOticas",
+      "botUsername": "dex_agendadorconsultas_bot",
+      "envPath": "C:\\CodexProjetos\\AgendadorConsultasOticas\\skills\\dex-agent\\.env",
+      "aliases": ["agendador", "agendadorconsultas", "dex-agendador", "dex_agendadorconsultas_bot"]
+    },
+    {
+      "projectLabel": "ControlePessoal",
+      "botUsername": "dex_controlepessoal_bot",
+      "envPath": "C:\\CodexProjetos\\ControlePessoal\\skills\\dex-agent\\.env",
+      "aliases": ["controle", "controlepessoal", "dex-controlepessoal", "dex_controlepessoal_bot", "opusclip"]
+    },
+    {
+      "projectLabel": "MemoriaGeral",
+      "botUsername": "crsantosxxbot",
+      "envPath": "D:\\Drive\\SegundaMente\\CrSantos\\skills\\dex-agent\\.env",
+      "aliases": ["memoria", "memoriageral", "segunda-mente", "obsidian", "crsantosxxbot"]
+    }
+  ]
+}

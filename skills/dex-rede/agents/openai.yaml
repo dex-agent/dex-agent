@@ -1,0 +1,4 @@
+interface:
+  display_name: "Dex Rede"
+  short_description: "Encaminha mensagens entre instancias Dex Agent por alias."
+  default_prompt: "Use dex-rede para enviar uma mensagem de um projeto Dex Agent para outro projeto por alias, criando ou referenciando artefato local e retornando message_id."

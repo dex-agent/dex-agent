@@ -1,12 +1,13 @@
 ---
 name: dex-agent-audio-summary
-description: Use quando o usuario pedir resumo ou explicacao em audio enviado pelo proprio bot via Dex Agent. Esta e a skill global canonica para esse fluxo, usa `C:\CodexProjetos\dex-agent` como repo operacional de transporte, envia `voice note` no Telegram via `bot.telegram.sendVoice(...)`, usa `pt-BR-FranciscaNeural` quando suportado, e deve confirmar entrega por `message_id` em vez de parar num arquivo local.
+description: Use quando o usuario pedir resumo ou explicacao em audio enviado pelo proprio bot via Dex Agent. Alias curto oficial: `dex-audio`. Esta e a skill global canonica para esse fluxo, usa `C:\CodexProjetos\dex-agent` como repo operacional de transporte, envia `voice note` no Telegram via `bot.telegram.sendVoice(...)`, usa `pt-BR-FranciscaNeural` quando suportado, e deve confirmar entrega por `message_id` em vez de parar num arquivo local.
 ---
 
 # Dex Agent Audio Summary
 
 Use esta skill quando o pedido for:
 
+- "dex-audio"
 - "me manda um resumo em audio"
 - "me explica isso em audio"
 - "manda um audio explicando como usar"
@@ -22,6 +23,7 @@ Nao use esta skill para:
 
 ## Contrato verificado
 
+- alias curto oficial: `dex-audio`
 - skill canonica: global
 - transporte correto: `Dex Agent`
 - repo operacional canonico: `C:\CodexProjetos\dex-agent`

@@ -9,3 +9,4 @@ bot.log
 .codex/
 .playwright-cli/
 docs/audio-exemplos/
+config/*.local.json
