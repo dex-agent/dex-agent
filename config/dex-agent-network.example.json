@@ -12,19 +12,36 @@
       "projectLabel": "AgendadorConsultasOticas",
       "botUsername": "dex_agendadorconsultas_bot",
       "envPath": "C:\\CodexProjetos\\AgendadorConsultasOticas\\skills\\dex-agent\\.env",
-      "aliases": ["agendador", "agendadorconsultas", "dex-agendador", "dex_agendadorconsultas_bot"]
+      "aliases": [
+        "agendador",
+        "agendadorconsultas",
+        "dex-agendador",
+        "dex_agendadorconsultas_bot"
+      ]
     },
     {
       "projectLabel": "ControlePessoal",
       "botUsername": "dex_controlepessoal_bot",
       "envPath": "C:\\CodexProjetos\\ControlePessoal\\skills\\dex-agent\\.env",
-      "aliases": ["controle", "controlepessoal", "dex-controlepessoal", "dex_controlepessoal_bot", "opusclip"]
+      "aliases": [
+        "controle",
+        "controlepessoal",
+        "dex-controlepessoal",
+        "dex_controlepessoal_bot",
+        "opusclip"
+      ]
     },
     {
       "projectLabel": "MemoriaGeral",
       "botUsername": "crsantosxxbot",
       "envPath": "D:\\Drive\\SegundaMente\\CrSantos\\skills\\dex-agent\\.env",
-      "aliases": ["memoria", "memoriageral", "segunda-mente", "obsidian", "crsantosxxbot"]
+      "aliases": [
+        "memoria",
+        "memoriageral",
+        "segunda-mente",
+        "obsidian",
+        "crsantosxxbot"
+      ]
     }
   ]
 }
