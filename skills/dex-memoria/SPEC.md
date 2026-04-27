@@ -36,7 +36,8 @@ Inclui:
 
 Nao inclui agora:
 
-- scripts automaticos `add`, `resolve`, `archive`, `status`;
+- scripts automaticos `add`, `resolve`, `archive`, `status`, `audit`;
+- hooks automaticos de abertura/fechamento de contexto;
 - mudanca no runtime de recall;
 - alteracao em `memoryRecallEngine`;
 - migracao de memoria antiga;
@@ -53,6 +54,8 @@ Nao inclui agora:
 - como resolver memoria;
 - como impedir memoria stale;
 - como ensinar repos filhos a usar o mesmo ritual.
+
+Ela substitui o uso operacional solto de `docs/memory-system`, mas nao substitui nem remove a documentacao tecnica do runtime.
 
 Regra:
 

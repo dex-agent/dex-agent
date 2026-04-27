@@ -5,6 +5,10 @@ description: Use quando for preciso criar, revisar, resolver, arquivar ou supers
 
 # Dex Memoria
 
+`dex-memoria` e o ponto de entrada pratico para operar o ciclo de vida da memoria.
+Ela substitui o uso operacional solto de `docs/memory-system`, mas nao substitui a documentacao tecnica do runtime.
+Quando a pergunta for sobre arquitetura, recall automatico ou funcionamento interno, use `docs/memory-system/README.md`.
+
 Use esta skill quando o usuario, um repo filho ou o proprio Dex Agent precisar decidir:
 
 - se algo deve virar memoria viva, ledger historico, skill, estacionamento ou descarte;
@@ -79,6 +83,7 @@ Regra pratica:
 
 ## Limite da v1
 
-Esta skill v1 e contrato, template e exemplo. Ela nao executa comandos `add`, `resolve`, `archive` ou `status`.
+Esta skill v1 e contrato, template e exemplo. Ela nao executa comandos `add`, `resolve`, `archive`, `status` ou `audit`.
+Ela tambem nao e hook automatico e nao roda sozinha ao abrir ou fechar janela de contexto.
 
 Scripts so entram numa v2 depois que o contrato tiver sido usado em casos reais sem ambiguidade.

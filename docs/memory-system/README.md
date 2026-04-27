@@ -2,6 +2,12 @@
 
 Este documento descreve o runtime atual da memoria de projeto no `Dex Agent`.
 
+Uso correto:
+
+- leia este documento quando precisar entender arquitetura, recall automatico, superficies de memoria, ledger, manutencao e runtime;
+- use `skills/dex-memoria/SKILL.md` quando precisar operar o ciclo de vida de uma memoria: criar, lembrar, resolver, arquivar, superseder ou parar de lembrar;
+- `dex-memoria` substitui o uso operacional solto deste documento, mas nao substitui esta documentacao tecnica.
+
 Objetivo do v1:
 
 - usar arquivos canonicos como fonte de verdade

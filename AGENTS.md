@@ -22,6 +22,15 @@
 - Do not satisfy bot-audio requests with a local `.wav`, `.mp3`, text-only handoff, `audio-direcao-voz`, or `tele-codex`; the expected proof is a Telegram `voice note` with `message_id`.
 - `tele-codex` may prepare short Telegram text/status messages, but audio ownership stays with `dex-agent-audio-summary`. If routing is unclear, return to flow governance/Fernanda instead of guessing.
 
+## Operational Memory Lifecycle
+
+- Use `skills/dex-memoria/SKILL.md` when work touches operational memory, resolved findings, `MEMORY.ndjson`, handoff state, `dex-pai`, `dex-rede`, or child-to-child memory routing.
+- Treat `docs/memory-system/README.md` as the runtime/architecture reference. Treat `skills/dex-memoria` as the practical lifecycle protocol for creating, remembering, resolving, archiving, superseding, and stopping operational memories from being remembered.
+- `dex-memoria` replaces loose operational use of the memory-system docs; it does not remove or supersede the runtime documentation.
+- `dex-memoria` v1 is a manual/documented lifecycle contract, not an automatic hook or script runner.
+- Do not assume memory lifecycle scripts exist. Future scripts such as `add`, `resolve`, `archive`, `status`, or `audit` belong to a later V2 after repeated real use with low ambiguity.
+- For live next-step recovery, `HANDOFF.md` wins over `MEMORY.ndjson`; `ACTIVE.md` owns the live objective and open loops; resolved or archived memory must not reopen work by itself.
+
 ## Test Commands
 
 - `npm test`: run the full unit test suite with the Node test runner plus `tsx`.

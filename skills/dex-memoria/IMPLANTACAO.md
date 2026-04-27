@@ -8,6 +8,9 @@ Owner: `Dex Agent pai`
 
 Implantar `dex-memoria` como contrato padrao para memoria operacional no Dex Agent pai e nos projetos filhos.
 
+`dex-memoria` substitui o uso pratico/operacional solto do `docs/memory-system`.
+Ela nao remove nem substitui a documentacao tecnica do runtime: `docs/memory-system/README.md` continua sendo a referencia de arquitetura, recall automatico e funcionamento interno.
+
 O alvo da V1 e simples:
 
 - ensinar quando usar `dex-memoria`;
@@ -54,6 +57,7 @@ Nao chame `dex-memoria` para:
 - comando tecnico simples;
 - pergunta que nao precise sobreviver;
 - resumo sem consequencia operacional;
+- entender arquitetura/runtime do sistema de memoria; nesse caso leia `docs/memory-system/README.md`;
 - script automatico de memoria, porque a V1 nao tem scripts.
 
 ## Fluxo De Decisao Rapido
@@ -234,6 +238,7 @@ Falhou se:
 ## Fora Do Corte V1
 
 - scripts `add`, `resolve`, `archive`, `status`, `audit`;
+- hooks automaticos de abertura/fechamento de contexto;
 - migracao de memorias antigas;
 - mudanca no runtime;
 - mudanca em `memoryRecallEngine`;
