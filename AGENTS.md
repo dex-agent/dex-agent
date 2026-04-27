@@ -22,6 +22,12 @@
 - Do not satisfy bot-audio requests with a local `.wav`, `.mp3`, text-only handoff, `audio-direcao-voz`, or `tele-codex`; the expected proof is a Telegram `voice note` with `message_id`.
 - `tele-codex` may prepare short Telegram text/status messages, but audio ownership stays with `dex-agent-audio-summary`. If routing is unclear, return to flow governance/Fernanda instead of guessing.
 
+## Cross-Project Visual Print Requests
+
+- If any workspace asks for a print/screenshot/image delivered through Telegram, Dex, bot, or `codex10_bot`, route to `dex-print`.
+- Do not satisfy bot-print requests with only a local screenshot, Codex attachment, or Telegram Web manual send; the expected proof is a Bot API `photo` or `document` response with `message_id`.
+- Keep audio and print separate: audio uses `dex-agent-audio-summary` / `dex-audio`; visual image delivery uses `dex-print`.
+
 ## Operational Memory Lifecycle
 
 - Use `skills/dex-memoria/SKILL.md` when work touches operational memory, resolved findings, `MEMORY.ndjson`, handoff state, `dex-pai`, `dex-rede`, or child-to-child memory routing.

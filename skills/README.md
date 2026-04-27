@@ -25,6 +25,7 @@ Skills espelhadas:
 - `avaliador-memory-candidate`
 - `dex-agent-audio-summary`
 - `dex-pai`
+- `dex-print`
 - `dex-rede`
 - `promocao-memoria-para-skill`
 
@@ -34,6 +35,7 @@ Detalhe importante:
 - alias curto oficial dessa skill: `dex-audio`
 - pedidos de audio real, nota de voz, TTS ou explicacao falada pelo bot devem ir para `dex-agent-audio-summary`; `tele-codex` nao e dona desse envio e deve encaminhar para `dex-audio` ou governanca de fluxo quando o contrato estiver ambiguo
 - `skills/dex-pai/SKILL.md` e espelho fiel da skill global canonica para encaminhar achados de repos filhos ao Dex Agent pai (`codex10_bot`) com artefato local e envio por helper, sem depender de aba do Telegram Web
+- `skills/dex-print/SKILL.md` e espelho fiel da skill global canonica para enviar prints/screenshot pelo Dex Agent no Telegram como `photo`/`document`, com fallback e confirmacao por `message_id`; audio continua separado em `dex-agent-audio-summary` / `dex-audio`
 - `skills/dex-rede/SKILL.md` e a skill de roteamento entre projetos Dex Agent por alias (`memoria`, `controle/opusclip`, `agendador`, `dex-pai`), usando helper por API e retornando `message_id`
 - `skills/dex-memoria/SKILL.md` e a skill local de contrato de ciclo de vida da memoria operacional: criar, lembrar, resolver, arquivar ou superseder memoria sem deixar achado resolvido continuar vivo como proximo passo; ela substitui o uso pratico solto de `docs/memory-system`, mas nao a documentacao tecnica de runtime; o guia de implantacao fica em `skills/dex-memoria/IMPLANTACAO.md`
 - `skills/avaliador-memory-candidate/SKILL.md` e espelho fiel da skill global canonica dedicada a revisar `memory candidate` e `skill_candidate` com profundidade operacional, emitindo avancos e retrocessos via `ancora-fluxo`
