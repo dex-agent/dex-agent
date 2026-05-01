@@ -63,8 +63,10 @@ powershell -ExecutionPolicy Bypass -File "C:\CodexProjetos\dex-agent\skills\dex-
 O helper usa:
 
 - `BOT_TOKEN` ou `TELEGRAM_BOT_TOKEN`;
-- `-ChatId`, ou ambiente `DEX_PRINT_CHAT_ID`, `TELEGRAM_CHAT_ID`, `PROACTIVE_USER_IDS` ou `ALLOWED_USER_IDS`;
+- `-ChatId`, ou ambiente `DEX_REQUEST_CHAT_ID`, `DEX_CURRENT_CHAT_ID`, `DEX_PRINT_CHAT_ID`, `TELEGRAM_CHAT_ID`, `PROACTIVE_USER_IDS` ou `ALLOWED_USER_IDS`;
 - fallback opcional de `.env` em `C:\CodexProjetos\dex-agent\.env`.
+
+Em pedido iniciado por Telegram, o destino correto e o chat solicitante. `DEX_REQUEST_CHAT_ID` / `DEX_CURRENT_CHAT_ID` vence `PROACTIVE_USER_IDS` e `ALLOWED_USER_IDS`. O primeiro ID configurado so deve funcionar como fallback manual/proativo quando nao houver chat solicitante.
 
 Nunca exponha token na resposta ao usuario.
 
@@ -92,7 +94,7 @@ Envio feito por helper/API, nao Telegram Web.
 ## Recuperacao
 
 - `BOT_TOKEN ausente`: carregar `.env` do Dex Agent ou pedir token/configuracao.
-- `chat_id ausente`: passar `-ChatId` ou configurar `DEX_PRINT_CHAT_ID`.
+- `chat_id ausente`: passar `-ChatId` ou configurar `DEX_REQUEST_CHAT_ID`, `DEX_CURRENT_CHAT_ID` ou `DEX_PRINT_CHAT_ID`.
 - `photo` falhou: repetir em `document` ou usar `-Mode document`.
 - arquivo desatualizado: gerar screenshot novo antes de reenviar.
 - erro de rede/API: responder com a falha exata sem inventar `message_id`.

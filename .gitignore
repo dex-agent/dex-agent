@@ -5,7 +5,9 @@ npm-debug.log*
 .codex-telegram-claws-state.json
 bot.log
 .runtime/
-.agents/
+.agents/*
+!.agents/
+!.agents/CONTACTS.example.json
 .codex/
 .playwright-cli/
 docs/audio-exemplos/

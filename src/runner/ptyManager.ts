@@ -150,6 +150,16 @@ interface RunnerSession {
   workflowPhase: WorkflowPhase | null;
 }
 
+interface FinalizedResponsePayload {
+  chatId: string;
+  text: string;
+  promptText: string | null;
+  mode: SessionMode;
+  workdir: string;
+  exitCode: number | null;
+  signal: ExitSignal;
+}
+
 interface SessionOptions {
   workdir?: string;
   resumeSessionId?: string;
@@ -371,15 +381,7 @@ interface PtyManagerOptions {
     "runner" | "workspace" | "reasoning" | "mcp" | "instance"
   >;
   onChange?: (snapshot: PtyManagerSnapshot) => void;
-  onResponseFinalized?: (payload: {
-    chatId: string;
-    text: string;
-    promptText: string | null;
-    mode: SessionMode;
-    workdir: string;
-    exitCode: number | null;
-    signal: ExitSignal;
-  }) => Promise<void>;
+  onResponseFinalized?: (payload: FinalizedResponsePayload) => Promise<void>;
   codexClientFactory?: (options: CodexOptions) => CodexClientLike;
 }
 
@@ -895,16 +897,35 @@ export class PtyManager {
     return args;
   }
 
-  getCodexClient(): CodexClientLike {
-    if (this.codexClient) {
-      return this.codexClient;
-    }
-
+  getRunnerEnv(
+    chatId?: string | number,
+    workdir?: string
+  ): Record<string, string> {
     const childEnv = Object.fromEntries(
       Object.entries(process.env).filter(
         (entry): entry is [string, string] => entry[1] !== undefined
       )
     );
+    if (chatId !== undefined && chatId !== null && String(chatId).trim()) {
+      childEnv.DEX_REQUEST_CHAT_ID = String(chatId);
+      childEnv.DEX_CURRENT_CHAT_ID = String(chatId);
+    }
+    if (workdir) {
+      childEnv.DEX_REQUEST_WORKDIR = workdir;
+      childEnv.DEX_CURRENT_WORKDIR = workdir;
+    }
+    return childEnv;
+  }
+
+  getCodexClient(context?: {
+    chatId?: string | number;
+    workdir?: string;
+  }): CodexClientLike {
+    if (!context && this.codexClient) {
+      return this.codexClient;
+    }
+
+    const childEnv = this.getRunnerEnv(context?.chatId, context?.workdir);
     delete childEnv.CODEX_API_KEY;
     delete childEnv.OPENAI_API_KEY;
     delete childEnv.OPENAI_BASE_URL;
@@ -938,8 +959,11 @@ export class PtyManager {
       options.apiKey = this.config.runner.apiKey;
     }
 
-    this.codexClient = this.codexClientFactory(options);
-    return this.codexClient;
+    const client = this.codexClientFactory(options);
+    if (!context) {
+      this.codexClient = client;
+    }
+    return client;
   }
 
   getSdkThreadOptions(
@@ -1776,7 +1800,16 @@ export class PtyManager {
       }
     }
 
-    const finalResponseText = this.extractFinalResponseText(session);
+    let finalResponseText = this.extractFinalResponseText(session);
+    if (!finalResponseText && exitCode === 0 && !session.silentOutput) {
+      finalResponseText = t(
+        this.getLanguage(session.chatId),
+        "codexEmptyResponse"
+      );
+      await this.bot.telegram
+        .sendMessage(session.chatId, finalResponseText)
+        .catch(() => {});
+    }
     projectState.lastFinalResponseText =
       summarizeOperationalResultSnapshot(finalResponseText);
     projectState.lastFinalizedAt = new Date().toISOString();
@@ -1803,7 +1836,7 @@ export class PtyManager {
     }
 
     if (finalRendered && this.onResponseFinalized) {
-      await this.onResponseFinalized({
+      await this.runResponseFinalizedHook({
         chatId: session.chatId,
         text: finalResponseText || finalRendered,
         promptText: projectState.lastPromptText || null,
@@ -1811,7 +1844,7 @@ export class PtyManager {
         workdir: session.workdir,
         exitCode,
         signal
-      }).catch(() => {});
+      });
     }
     if (session.cleanupPaths.length) {
       await Promise.all(
@@ -1824,6 +1857,42 @@ export class PtyManager {
     await this.startNextQueuedPrompt(session.chatId, {
       announce: true
     }).catch(() => {});
+  }
+
+  private async runResponseFinalizedHook(
+    payload: FinalizedResponsePayload
+  ): Promise<void> {
+    if (!this.onResponseFinalized) {
+      return;
+    }
+
+    const timeoutMs = this.config.runner.finalizeHookTimeoutMs;
+    const hookPromise = this.onResponseFinalized(payload).catch((error) => {
+      console.error(
+        "[runner] finalized response hook failed:",
+        toErrorMessage(error)
+      );
+    });
+
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      await hookPromise;
+      return;
+    }
+
+    let timeout: NodeJS.Timeout | null = null;
+    const timeoutPromise = new Promise<"timeout">((resolve) => {
+      timeout = globalThis.setTimeout(() => resolve("timeout"), timeoutMs);
+    });
+
+    const result = await Promise.race([hookPromise, timeoutPromise]);
+    if (timeout) {
+      globalThis.clearTimeout(timeout);
+    }
+    if (result === "timeout") {
+      console.warn(
+        `[runner] finalized response hook timed out after ${timeoutMs}ms for chat ${payload.chatId}; continuing queue recovery.`
+      );
+    }
   }
 
   stringifyPromptInput(prompt: PromptInput): string {
@@ -1966,7 +2035,7 @@ export class PtyManager {
         rows: 32,
         cwd: session.workdir,
         env: {
-          ...process.env,
+          ...this.getRunnerEnv(chatId, session.workdir),
           FORCE_COLOR: "1"
         }
       }
@@ -2005,7 +2074,8 @@ export class PtyManager {
       this.getExecArgs(chatId, prompt, options),
       {
         cwd: session.workdir,
-        env: process.env
+        env: this.getRunnerEnv(chatId, session.workdir),
+        windowsHide: true
       }
     );
 
@@ -2072,7 +2142,10 @@ export class PtyManager {
           approvalPolicy: options.fullAuto ? "never" : undefined
         }
       );
-      const codex = this.getCodexClient();
+      const codex = this.getCodexClient({
+        chatId: session.chatId,
+        workdir: session.workdir
+      });
       const thread = options.resumeSessionId
         ? codex.resumeThread(options.resumeSessionId, threadOptions)
         : codex.startThread(threadOptions);

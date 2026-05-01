@@ -8,6 +8,7 @@ import { RuntimeStateStore } from "./runtimeStateStore.js";
 import { createAuthMiddleware } from "./bot/middleware.js";
 import { registerHandlers } from "./bot/handlers.js";
 import { getTelegramCommands } from "./bot/commandCatalog.js";
+import type { Locale } from "./bot/i18n.js";
 import {
   notifyRecoverableQueuesOnStartup,
   notifyBootReadyOnStartup
@@ -163,51 +164,137 @@ const imageAttachmentManager = new ImageAttachmentManager({
   bot
 });
 
+const FINALIZED_CAPTURE_TIMEOUT_MS = 15000;
+const FINALIZED_MEDIA_TIMEOUT_MS = 30000;
+const FINALIZED_ACTION_TIMEOUT_MS = 15000;
+
+async function offerFinalActionsIfEnabled({
+  chatId,
+  text,
+  locale,
+  workdir
+}: {
+  chatId: string | number;
+  text: string;
+  locale: Locale;
+  workdir: string;
+}): Promise<void> {
+  if (!config.finalActions.autoOffer) {
+    console.info(
+      `[finalized] final action auto-offer disabled for chat ${chatId}. Set FINAL_ACTIONS_AUTO_OFFER=true to enable.`
+    );
+    return;
+  }
+
+  await audioSummaryManager.offerFinalActionsForChat(
+    chatId,
+    text,
+    locale,
+    workdir
+  );
+}
+
+async function runFinalizedStep(
+  label: string,
+  step: () => Promise<void>,
+  timeoutMs: number
+): Promise<void> {
+  let timeout: NodeJS.Timeout | null = null;
+  const stepPromise = step().catch((error) => {
+    console.error(`[finalized] ${label} failed:`, toErrorMessage(error));
+  });
+  const timeoutPromise = new Promise<"timeout">((resolve) => {
+    timeout = globalThis.setTimeout(() => resolve("timeout"), timeoutMs);
+  });
+
+  const result = await Promise.race([stepPromise, timeoutPromise]);
+  if (timeout) {
+    globalThis.clearTimeout(timeout);
+  }
+  if (result === "timeout") {
+    console.warn(`[finalized] ${label} timed out after ${timeoutMs}ms.`);
+  }
+}
+
 ptyManager = new PtyManager({
   bot,
   config,
   onChange: () => void saveRuntimeState(),
   onResponseFinalized: async ({ chatId, text, workdir, promptText }) => {
     const locale = ptyManager?.getLanguage(chatId) || "en";
-    const captureResult = await reuseEngine.captureFinalizedResponse({
-      chatId,
-      workdir,
-      text,
-      promptText
-    });
-    if (captureResult.message) {
-      await bot.telegram
-        .sendMessage(chatId, captureResult.message)
-        .catch(() => {});
-    }
-    await imageAttachmentManager.sendReferencedImages({
-      chatId,
-      text,
-      workdir
-    });
+    await runFinalizedStep(
+      "memory capture",
+      async () => {
+        const captureResult = await reuseEngine.captureFinalizedResponse({
+          chatId,
+          workdir,
+          text,
+          promptText
+        });
+        if (captureResult.message) {
+          await bot.telegram
+            .sendMessage(chatId, captureResult.message)
+            .catch(() => {});
+        }
+      },
+      FINALIZED_CAPTURE_TIMEOUT_MS
+    );
+    await runFinalizedStep(
+      "referenced image delivery",
+      async () => {
+        await imageAttachmentManager.sendReferencedImages({
+          chatId,
+          text,
+          workdir
+        });
+      },
+      FINALIZED_MEDIA_TIMEOUT_MS
+    );
     const runner = ptyManager;
     if (!runner) {
-      await audioSummaryManager.offerFinalActionsForChat(
-        chatId,
-        text,
-        locale,
-        workdir
+      await runFinalizedStep(
+        "final action buttons",
+        async () => {
+          await offerFinalActionsIfEnabled({
+            chatId,
+            text,
+            locale,
+            workdir
+          });
+        },
+        FINALIZED_ACTION_TIMEOUT_MS
       );
       return;
     }
-    const autopilotResult = await maybeRunSpecialAutopilotAfterFinalized({
-      bot,
-      ptyManager: runner,
-      chatId,
-      locale,
-      text
-    });
+    let autopilotResult = {
+      triggered: false,
+      stopped: false
+    };
+    await runFinalizedStep(
+      "special autopilot",
+      async () => {
+        autopilotResult = await maybeRunSpecialAutopilotAfterFinalized({
+          bot,
+          ptyManager: runner,
+          chatId,
+          locale,
+          text
+        });
+      },
+      FINALIZED_ACTION_TIMEOUT_MS
+    );
     if (!autopilotResult.triggered && !autopilotResult.stopped) {
-      await audioSummaryManager.offerFinalActionsForChat(
-        chatId,
-        text,
-        locale,
-        workdir
+      await runFinalizedStep(
+        "final action buttons",
+        async () => {
+          await offerFinalActionsIfEnabled({
+            chatId,
+            text,
+            locale,
+            workdir
+          });
+        },
+        FINALIZED_ACTION_TIMEOUT_MS
       );
     }
   }

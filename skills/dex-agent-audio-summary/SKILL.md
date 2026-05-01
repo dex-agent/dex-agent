@@ -32,7 +32,8 @@ Nao use esta skill para:
 - envio verificado: `src/lib/audioSummaryManager.ts`
 - metodo real: `bot.telegram.sendVoice(...)`
 - artefato de voz: `dex-agent-resumo.ogg`
-- alvo padrao: `PROACTIVE_USER_IDS[0]` ou `ALLOWED_USER_IDS[0]`
+- destino em pedido Telegram: chat solicitante via `-ChatId`, `DEX_REQUEST_CHAT_ID` ou `DEX_CURRENT_CHAT_ID`
+- fallback sem chat solicitante: `PROACTIVE_USER_IDS[0]` e, por ultimo, `ALLOWED_USER_IDS[0]`
 - voz preferida do usuario: `pt-BR-FranciscaNeural`
 - estilo aprovado: calmo, tecnico e executivo, cobrindo `status atual`, `achados fortes` e `proximo passo`
 - normalizacao verificada antes da fala:
@@ -54,6 +55,8 @@ O fluxo correto e:
 4. enviar como `voice note` no Telegram
 5. confirmar entrega por `message_id`
 
+Regra multiusuario: em pedido iniciado por Telegram, enviar para o chat solicitante. `ALLOWED_USER_IDS` e lista de acesso, nao destino padrao de resposta quando `DEX_REQUEST_CHAT_ID` ou `DEX_CURRENT_CHAT_ID` estiver disponivel.
+
 ## Caminho rapido
 
 Se o objetivo for enviar agora um resumo ou audio explicativo a partir de qualquer workspace:
@@ -70,11 +73,17 @@ powershell -ExecutionPolicy Bypass -File "C:\Users\crsan\.codex\skills\dex-agent
 
 Dentro do proprio repo `Dex Agent`, o helper espelhado em `.\skills\dex-agent-audio-summary\scripts\send-dex-agent-audio-summary.ps1` continua sendo um atalho equivalente.
 
+Para validar roteamento sem enviar audio:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "C:\CodexProjetos\dex-agent\skills\dex-agent-audio-summary\scripts\send-dex-agent-audio-summary.ps1" -Text "teste" -DryRun
+```
+
 ## O que a skill deve fazer
 
 1. Montar o resumo ou explicacao em texto falavel.
 2. Rodar o pipeline canonico do repo `Dex Agent`, inclusive quando o pedido nascer em outro projeto.
-3. Enviar para o chat padrao configurado no bot, salvo override explicito.
+3. Enviar para o chat solicitante quando houver contexto Telegram; usar fallback configurado apenas em envio manual/proativo sem chat solicitante.
 4. Responder com o resultado objetivo:
    - `message_id`
    - arquivo enviado

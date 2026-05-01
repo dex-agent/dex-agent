@@ -1,6 +1,11 @@
 {
   "description": "Example registry for Dex Agent project-to-project messaging. Copy to dex-agent-network.local.json and adjust local paths on each machine.",
-  "chatIdEnvPriority": ["PROACTIVE_USER_IDS", "ALLOWED_USER_IDS"],
+  "chatIdEnvPriority": [
+    "DEX_REQUEST_CHAT_ID",
+    "DEX_CURRENT_CHAT_ID",
+    "PROACTIVE_USER_IDS",
+    "ALLOWED_USER_IDS"
+  ],
   "instances": [
     {
       "projectLabel": "DexAgentPai",
@@ -41,6 +46,18 @@
         "segunda-mente",
         "obsidian",
         "crsantosxxbot"
+      ]
+    },
+    {
+      "projectLabel": "PremierDashboard",
+      "botUsername": "premier_dashboardbot",
+      "envPath": "C:\\CodexProjetos\\PremierDashboard\\skills\\dex-agent\\.env",
+      "aliases": [
+        "premier",
+        "premierdashboard",
+        "dashboard-premier",
+        "otica-premier",
+        "premier_dashboardbot"
       ]
     }
   ]

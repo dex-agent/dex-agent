@@ -38,6 +38,8 @@ const ENV_KEYS = [
   "SHELL_MAX_OUTPUT_CHARS",
   "STREAM_THROTTLE_MS",
   "STREAM_BUFFER_CHARS",
+  "CODEX_FINALIZE_HOOK_TIMEOUT_MS",
+  "FINAL_ACTIONS_AUTO_OFFER",
   "REASONING_RENDER_MODE",
   "CRON_DAILY_SUMMARY",
   "CRON_TIMEZONE",
@@ -151,6 +153,8 @@ test("loadConfig parses env values into runtime config", () => {
       SHELL_MAX_OUTPUT_CHARS: "4096",
       STREAM_THROTTLE_MS: "1500",
       STREAM_BUFFER_CHARS: "2048",
+      CODEX_FINALIZE_HOOK_TIMEOUT_MS: "123456",
+      FINAL_ACTIONS_AUTO_OFFER: "true",
       REASONING_RENDER_MODE: "quote",
       CRON_DAILY_SUMMARY: "0 8 * * *",
       CRON_TIMEZONE: "Asia/Singapore",
@@ -202,6 +206,8 @@ test("loadConfig parses env values into runtime config", () => {
   ]);
   assert.equal(config.runner.throttleMs, 1500);
   assert.equal(config.runner.maxBufferChars, 2048);
+  assert.equal(config.runner.finalizeHookTimeoutMs, 123456);
+  assert.equal(config.finalActions.autoOffer, true);
   assert.deepEqual(config.runner.sdkConfig, {
     show_raw_agent_reasoning: true,
     sandbox_workspace_write: {

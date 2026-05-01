@@ -79,6 +79,7 @@ interface PackageJsonLike {
 
 interface DevServerManagerOptions {
   spawnProcess?: SpawnProcessLike;
+  killProcessTree?: KillProcessTreeLike;
   maxLogChars?: number;
 }
 
@@ -86,6 +87,7 @@ interface SpawnProcessOptions {
   cwd: string;
   env: NodeJS.ProcessEnv;
   shell: false;
+  windowsHide?: boolean;
 }
 
 type SpawnProcessLike = (
@@ -93,6 +95,22 @@ type SpawnProcessLike = (
   args: string[],
   options: SpawnProcessOptions
 ) => ChildProcess;
+
+type KillProcessTreeLike = (pid: number) => void;
+
+function defaultKillProcessTree(pid: number): void {
+  if (process.platform !== "win32") {
+    return;
+  }
+
+  const taskkill = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
+    stdio: "ignore",
+    windowsHide: true
+  });
+  taskkill.on("error", () => {
+    // Best-effort cleanup. The regular child.kill path still runs.
+  });
+}
 
 function defaultStatus(workdir: string): DevServerStatus {
   return {
@@ -190,14 +208,17 @@ function detectUrl(output: string): string | null {
 
 export class DevServerManager {
   private readonly spawnProcess: SpawnProcessLike;
+  private readonly killProcessTree: KillProcessTreeLike;
   private readonly maxLogChars: number;
   private readonly entries: Map<string, DevServerEntry>;
 
   constructor({
     spawnProcess = (command, args, options) => spawn(command, args, options),
+    killProcessTree = defaultKillProcessTree,
     maxLogChars = 12000
   }: DevServerManagerOptions = {}) {
     this.spawnProcess = spawnProcess;
+    this.killProcessTree = killProcessTree;
     this.maxLogChars = maxLogChars;
     this.entries = new Map();
   }
@@ -291,7 +312,8 @@ export class DevServerManager {
       const child = this.spawnProcess(commandInfo.command, commandInfo.args, {
         cwd: resolvedWorkdir,
         env: process.env,
-        shell: false
+        shell: false,
+        windowsHide: true
       });
 
       entry.child = child;
@@ -368,6 +390,9 @@ export class DevServerManager {
     }
 
     entry.stopRequested = true;
+    if (entry.child.pid) {
+      this.killProcessTree(entry.child.pid);
+    }
     return entry.child.kill("SIGTERM");
   }
 

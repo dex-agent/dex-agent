@@ -117,6 +117,8 @@ const MESSAGES: Record<string, TranslationCatalog> = {
       "/continue - Replay the last blocked same-workdir request once",
       "/queue [list|add|remove|clear|run] - Manage queued Codex requests for this chat",
       "/fila [listar|adicionar|remover|limpar|executar] - Alias for /queue",
+      "/agora <message> - Interrupt the current run in this chat and send an urgent instruction",
+      "/inject <message> - Alias for /agora",
       "/model [name|reset] - Show or set the model for this chat",
       "/reasoning [low|medium|high|xhigh|reset] - Show or set the reasoning effort for this chat",
       "/language [en|zh|zh-HK] - Show or set the system language for this chat",
@@ -343,6 +345,7 @@ const MESSAGES: Record<string, TranslationCatalog> = {
     usageSh: "Usage: /sh <command>",
     usageAuto: "Usage: /auto <task>",
     usagePlan: "Usage: /plan <task>",
+    usageUrgent: "Usage: /agora <message> or /inject <message>",
     usageQueue:
       "Usage: /queue [list|add <task>|add <project> :: <task>|remove <id|index>|clear|run]",
     usageReasoning: "Usage: /reasoning [low|medium|high|xhigh|reset]",
@@ -355,14 +358,40 @@ const MESSAGES: Record<string, TranslationCatalog> = {
     planNotice: "Running planning-only Codex task...",
     taskBusy: ({ mode }) =>
       `A ${mode || "unknown"} task is already running. Wait for it to finish or use /interrupt first.`,
+    promptStarted:
+      "Pedido enviado ao Codex. Vou te mostrando o andamento aqui. If you send another request while this one is running, it goes to this chat's /queue. Use /queue or /fila to check it.",
+    urgentStartedIdle:
+      "Urgent instruction sent to Codex. There was no active run in this chat, so it started as a normal request.",
+    urgentStartedAfterInterrupt: ({ queueCount }) =>
+      joinLines([
+        "I interrupted the active Codex run in this chat and sent your urgent instruction with a safe resume prompt.",
+        queueCount > 0
+          ? `The existing queue was preserved (${queueCount} pending). Use /queue or /fila to check it.`
+          : "The queue is still empty. Use /queue or /fila to check it."
+      ]),
     queueQueued: ({ index, id, queueLength, text }) =>
       joinLines([
-        "Recebi. Coloquei na fila para executar quando o Codex terminar.",
-        `posicao: ${index}`,
+        "Codex is already working in this chat, so I queued this request instead of losing it.",
+        `position: ${index}`,
         `id: ${id}`,
-        `itens na fila: ${queueLength}`,
-        `pedido: ${text}`,
-        "Use /queue para consultar ou /queue remove <id|posicao> para remover."
+        `items in queue: ${queueLength}`,
+        `request: ${text}`,
+        "Use /queue or /fila to check the queue. Use /queue remove <id|position> to remove an item."
+      ]),
+    progressFollowUpActive: ({ mode, lastPrompt, queueCount, nextQueued }) =>
+      joinLines([
+        `I am still processing the current Codex ${mode || "task"} in this chat.`,
+        ...(lastPrompt ? [`current request: ${lastPrompt}`] : []),
+        queueCount > 0
+          ? `queue: ${queueCount} pending${nextQueued ? ` (next: ${nextQueued})` : ""}`
+          : "queue: empty",
+        "Use /status for details, /queue or /fila for the queue, or /interrupt if you need to stop it."
+      ]),
+    progressFollowUpQueued: ({ queueCount, nextQueued }) =>
+      joinLines([
+        `There is no active Codex run now, but this chat has ${queueCount} queued request(s).`,
+        ...(nextQueued ? [`next queued request: ${nextQueued}`] : []),
+        "Use /queue run or /fila executar to run the next item."
       ]),
     queueAdded: ({ index, id, text }) =>
       joinLines([
@@ -687,6 +716,8 @@ const MESSAGES: Record<string, TranslationCatalog> = {
     codexSessionExited: ({ mode, exitCode, signal }) =>
       `Codex session exited (mode=${mode}, code=${exitCode}, signal=${signal}).`,
     codexExecFailed: ({ error }) => `Codex exec failed: ${error}`,
+    codexEmptyResponse:
+      "Codex finished this request, but did not return a visible final response. The chat is free again; send the next instruction or run /status if you want the current state.",
     execFallbackResume:
       "Interactive terminal is unavailable here. Using fallback mode and resuming this project's context.",
     execFallbackSingle:
@@ -1294,6 +1325,8 @@ const MESSAGES: Record<string, TranslationCatalog> = {
     codexSessionExited: ({ mode, exitCode, signal }) =>
       `Codex session exited (mode=${mode}, code=${exitCode}, signal=${signal}).`,
     codexExecFailed: ({ error }) => `Codex exec 执行失败: ${error}`,
+    codexEmptyResponse:
+      "Codex 已结束这次请求，但没有返回可见的最终回复。当前 chat 已空闲；可以发送下一条指令，或运行 /status 查看状态。",
     execFallbackResume:
       "当前环境不支持交互终端，已切到回退模式并恢复当前项目上下文。",
     execFallbackSingle: "当前环境不支持交互终端，本次请求已切到回退模式。",
@@ -1486,6 +1519,8 @@ MESSAGES["pt-BR"] = {
     "/continue - Reenvia uma vez o último pedido bloqueado por conflito no mesmo workdir",
     "/queue [list|add|remove|clear|run] - Gerencia a fila de pedidos do chat",
     "/fila [listar|adicionar|remover|limpar|executar] - Alias de /queue",
+    "/agora <mensagem> - Interrompe a execucao atual deste chat e envia uma instrucao urgente",
+    "/inject <mensagem> - Alias de /agora",
     "/model [name|reset] - Consulta ou fixa o modelo deste chat",
     "/reasoning [baixa|media|alta|altissimo|reset] - Consulta ou fixa o raciocinio deste chat",
     "/language [pt-BR|en|zh|zh-HK] - Consulta ou troca o idioma deste chat",
@@ -1624,6 +1659,18 @@ MESSAGES["pt-BR"] = {
     `Idioma alterado para ${language} (${languageLabel(language, "pt-BR")}).`,
   continueStarted: ({ mode }) =>
     `Retomando uma vez o pedido bloqueado (${mode}).`,
+  promptStarted:
+    "Pedido enviado ao Codex. Vou te mostrando o andamento aqui. Se voce mandar outro pedido enquanto este estiver rodando, ele entra na fila deste chat. Use /queue ou /fila para consultar.",
+  usageUrgent: "Uso: /agora <mensagem> ou /inject <mensagem>",
+  urgentStartedIdle:
+    "Instrucao urgente enviada ao Codex. Nao havia execucao ativa neste chat, entao ela iniciou como um pedido normal.",
+  urgentStartedAfterInterrupt: ({ queueCount }) =>
+    joinLines([
+      "Interrompi a execucao ativa do Codex neste chat e enviei sua instrucao urgente com um prompt seguro de retomada.",
+      queueCount > 0
+        ? `A fila existente foi preservada (${queueCount} pendente(s)). Use /queue ou /fila para consultar.`
+        : "A fila continua vazia. Use /queue ou /fila para consultar."
+    ]),
   startupReady: ({ relativeWorkdir }) =>
     joinLines([
       "Dex Agent iniciou e esta pronto.",
@@ -1637,6 +1684,30 @@ MESSAGES["pt-BR"] = {
     ]),
   queueRunStarted: ({ mode }) =>
     `Item da fila enviado ao Codex (${mode}). Vou mostrar o andamento aqui.`,
+  queueQueued: ({ index, id, queueLength, text }) =>
+    joinLines([
+      "O Codex ja esta trabalhando neste chat, entao coloquei este pedido na fila em vez de perder a mensagem.",
+      `posicao: ${index}`,
+      `id: ${id}`,
+      `itens na fila: ${queueLength}`,
+      `pedido: ${text}`,
+      "Use /queue ou /fila para consultar. Use /queue remove <id|posicao> para remover."
+    ]),
+  progressFollowUpActive: ({ mode, lastPrompt, queueCount, nextQueued }) =>
+    joinLines([
+      `Ainda estou processando a tarefa ${mode || "Codex"} atual deste chat.`,
+      ...(lastPrompt ? [`pedido atual: ${lastPrompt}`] : []),
+      queueCount > 0
+        ? `fila: ${queueCount} pendente(s)${nextQueued ? ` (proximo: ${nextQueued})` : ""}`
+        : "fila: vazia",
+      "Use /status para detalhes, /queue ou /fila para ver a fila, ou /interrupt se precisar parar."
+    ]),
+  progressFollowUpQueued: ({ queueCount, nextQueued }) =>
+    joinLines([
+      `Nao ha execucao ativa agora, mas este chat tem ${queueCount} pedido(s) na fila.`,
+      ...(nextQueued ? [`proximo da fila: ${nextQueued}`] : []),
+      "Use /queue run ou /fila executar para rodar o proximo item."
+    ]),
   finalActionsOffer: ({ ctaRef, suggestedPrompt, recommendedAction }) =>
     joinLines([
       "Como seguir daqui?",

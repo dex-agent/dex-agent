@@ -49,6 +49,7 @@ npm run start
 /repo
 /skill
 /dev status
+/agora revisar a regra urgente antes de continuar
 /gh create repo my-new-app
 ```
 
@@ -170,9 +171,9 @@ Telegram text/audio/image
   -> Telegram sendMessage/editMessageText
 ```
 
-Finalized responses can also surface a compact follow-up keyboard with optional audio summary buttons, a short suggested reply prompt, and focused actions: the exact extracted `next step`, a contextual route that is either `transform into planning` or `send to specialist`, dynamic support buttons such as review/quick meeting/inbox when the text calls for them, `finish whole block`, `autopilot`, and `autopilot x3`. The short action button mirrors the concrete `next step` already stated in the finalized response, planning uses `$sprinter`, and specialist handoff appears only when the finalized response names one non-planning `Proximo especialista indicado`.
+Finalized responses do not offer follow-up action buttons by default. If an operator explicitly enables `FINAL_ACTIONS_AUTO_OFFER=true`, the bot can surface a compact follow-up keyboard with optional audio summary buttons, a short suggested reply prompt, and focused actions: the exact extracted `next step`, a contextual route that is either `transform into planning` or `send to specialist`, dynamic support buttons such as review/quick meeting/inbox when the text calls for them, `finish whole block`, `autopilot`, and `autopilot x3`. The short action button mirrors the concrete `next step` already stated in the finalized response, planning uses `$sprinter`, and specialist handoff appears only when the finalized response names one non-planning `Proximo especialista indicado`.
 
-When a finalized response includes both `Proximo passo` and `Proximo Passo Recomendado`, the follow-up keyboard prioritizes the recommended step as the primary button and keeps the panel compact: `Recomendado`, `Sugestao curta`, and the `->` marker. Example: `Proximo Passo Recomendado: Tereza Testa, execute o near_term_slot_duplo_lu_souza.` becomes the primary `->` action instead of falling back to a generic `/plan`.
+When `FINAL_ACTIONS_AUTO_OFFER=true` and a finalized response includes both `Proximo passo` and `Proximo Passo Recomendado`, the follow-up keyboard prioritizes the recommended step as the primary button and keeps the panel compact: `Recomendado`, `Sugestao curta`, and the `->` marker. Example: `Proximo Passo Recomendado: Tereza Testa, execute o near_term_slot_duplo_lu_souza.` becomes the primary `->` action instead of falling back to a generic `/plan`.
 
 The `/project prompts` built-ins must stay anchored to the current workspace contract. Do not hardcode a domain flow from another repo into a generic preset; prompts like end-to-end testing should tell Codex to identify the project's own main flow first.
 
@@ -302,6 +303,8 @@ General:
 - `/autopilot [status|resume|off|<count>|on <count>]` - arm, resume, or disable the special autopilot for a fixed number of finalized responses in the current chat
 - `/plan <task>` - ask Codex for a plan only, without direct file modification intent
 - `/continue` - replay the last blocked same-workdir Codex request once
+- `/agora <message>` - interrupt the active Codex run in this same chat and send an urgent instruction with a safe resume prompt; example: `/agora antes de continuar, verifique a regra de permissao da aba Consultas`
+- `/inject <message>` - alias of `/agora`
 - `/model [name|reset]` - show or set the model override for the current chat
 - `/reasoning [low|medium|high|xhigh|reset]` - show or set the reasoning-effort override for the current chat; PT-BR aliases like `baixa`, `media`, `alta`, and `altissimo` also work
 - `/language [en|zh|zh-HK]` - show or set the system language for the current chat
@@ -504,6 +507,8 @@ SHELL_TIMEOUT_MS=20000
 SHELL_MAX_OUTPUT_CHARS=12000
 STREAM_THROTTLE_MS=1200
 STREAM_BUFFER_CHARS=120000
+CODEX_FINALIZE_HOOK_TIMEOUT_MS=120000
+FINAL_ACTIONS_AUTO_OFFER=false
 REASONING_RENDER_MODE=spoiler
 
 CRON_DAILY_SUMMARY=0 9 * * *

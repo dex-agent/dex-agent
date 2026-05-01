@@ -1,0 +1,20 @@
+{
+  "contacts": [
+    {
+      "chat_id": "123456789",
+      "nome": "Nome da pessoa",
+      "chamar_como": "Nome",
+      "papel": "usuario do projeto",
+      "projeto_padrao": "NomeDoProjeto",
+      "tom": "simples, paciente e explicativo",
+      "nivel_detalhe": "curto primeiro; detalhar se pedir",
+      "midia_preferida": ["texto", "prints_mobile", "audio_curto"],
+      "evitar": [
+        "tokens",
+        "caminhos internos desnecessarios",
+        "termos tecnicos sem explicacao"
+      ],
+      "ultima_revisao": "2026-04-28"
+    }
+  ]
+}

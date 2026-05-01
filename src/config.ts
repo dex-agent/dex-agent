@@ -73,6 +73,9 @@ export interface AppConfig {
       cacheTtlMs: number;
     };
   };
+  finalActions: {
+    autoOffer: boolean;
+  };
   workspace: {
     root: string;
   };
@@ -98,6 +101,7 @@ export interface AppConfig {
     throttleMs: number;
     maxBufferChars: number;
     telegramChunkSize: number;
+    finalizeHookTimeoutMs: number;
     sdkConfig: Record<string, CodexConfigValue>;
     sdkThreadOptions: {
       skipGitRepoCheck: boolean;
@@ -485,6 +489,9 @@ export function loadConfig(): AppConfig {
     workspace: {
       root: workspaceRoot
     },
+    finalActions: {
+      autoOffer: parseBoolean(process.env.FINAL_ACTIONS_AUTO_OFFER, false)
+    },
     instance: {
       contextMode: parseDexContextMode(process.env.DEX_CONTEXT_MODE),
       id: parseText(process.env.DEX_INSTANCE_ID, "dex-agent"),
@@ -510,6 +517,10 @@ export function loadConfig(): AppConfig {
       throttleMs: parseNumber(process.env.STREAM_THROTTLE_MS, 1200),
       maxBufferChars: parseNumber(process.env.STREAM_BUFFER_CHARS, 120000),
       telegramChunkSize: 3900,
+      finalizeHookTimeoutMs: parseNumber(
+        process.env.CODEX_FINALIZE_HOOK_TIMEOUT_MS,
+        120000
+      ),
       sdkConfig,
       sdkThreadOptions
     },

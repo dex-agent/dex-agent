@@ -51,11 +51,21 @@ test("dev server manager prefers the dev script and captures a detected URL", as
     dev: "vite",
     start: "node server.js"
   });
-  const spawned: Array<{ command: string; args: string[]; cwd?: string }> = [];
+  const spawned: Array<{
+    command: string;
+    args: string[];
+    cwd?: string;
+    windowsHide?: boolean;
+  }> = [];
   const child = new FakeChildProcess(111);
   const manager = new DevServerManager({
     spawnProcess: (command, args, options) => {
-      spawned.push({ command, args, cwd: options.cwd });
+      spawned.push({
+        command,
+        args,
+        cwd: options.cwd,
+        windowsHide: options.windowsHide
+      });
       return child as any;
     }
   });
@@ -70,7 +80,8 @@ test("dev server manager prefers the dev script and captures a detected URL", as
     {
       command: "npm",
       args: ["run", "dev"],
-      cwd: workdir
+      cwd: workdir,
+      windowsHide: true
     }
   ]);
 
@@ -115,8 +126,10 @@ test("dev server manager keeps one running server per repo workdir", async () =>
     dev: "vite"
   });
   const child = new FakeChildProcess(333);
+  const killedTrees: number[] = [];
   const manager = new DevServerManager({
-    spawnProcess: () => child as any
+    spawnProcess: () => child as any,
+    killProcessTree: (pid) => killedTrees.push(pid)
   });
 
   const first = await manager.start({
@@ -136,4 +149,5 @@ test("dev server manager keeps one running server per repo workdir", async () =>
   const stopped = manager.stop(workdir);
   assert.equal(stopped, true);
   assert.equal(child.killedWith, "SIGTERM");
+  assert.deepEqual(killedTrees, [333]);
 });

@@ -1,7 +1,8 @@
 param(
     [string]$Text,
     [string]$TextPath,
-    [string]$ChatId
+    [string]$ChatId,
+    [switch]$DryRun
 )
 
 $ErrorActionPreference = "Stop"
@@ -34,13 +35,34 @@ import { createTelegramApiAgent } from "./src/lib/telegramApi.js";
 
 const payload = JSON.parse(process.env.DEX_AGENT_AUDIO_SUMMARY_PAYLOAD || "{}");
 const config = loadConfig();
-const chatId =
-  String(payload.chatId || "").trim() ||
-  config.telegram.proactiveUserIds[0] ||
-  config.telegram.allowedUserIds[0];
+const chatCandidates = [
+  ["-ChatId", payload.chatId],
+  ["DEX_REQUEST_CHAT_ID", process.env.DEX_REQUEST_CHAT_ID],
+  ["DEX_CURRENT_CHAT_ID", process.env.DEX_CURRENT_CHAT_ID],
+  ["TELEGRAM_CHAT_ID", process.env.TELEGRAM_CHAT_ID],
+  ["PROACTIVE_USER_IDS", config.telegram.proactiveUserIds[0]],
+  ["ALLOWED_USER_IDS", config.telegram.allowedUserIds[0]]
+];
+const target = chatCandidates
+  .map(([source, value]) => ({ source, chatId: String(value || "").trim() }))
+  .find((candidate) => candidate.chatId);
+const chatId = target?.chatId || "";
 
 if (!chatId) {
   throw new Error("No Telegram target chat configured.");
+}
+
+if (payload.dryRun) {
+  console.log(
+    JSON.stringify({
+      ok: true,
+      dryRun: true,
+      chatId,
+      chatIdSource: target.source,
+      textLength: String(payload.text || "").length
+    })
+  );
+  process.exit(0);
 }
 
 const telegramApiAgent = createTelegramApiAgent(config.telegram.proxyUrl);
@@ -68,6 +90,7 @@ try {
     JSON.stringify({
       ok: true,
       chatId,
+      chatIdSource: target.source,
       messageId: result.message_id,
       fileName: artifact.fileName
     })
@@ -80,6 +103,7 @@ try {
 $payload = @{
     text = $normalizedText
     chatId = $ChatId
+    dryRun = [bool]$DryRun
 } | ConvertTo-Json -Compress
 
 Push-Location $repoRoot

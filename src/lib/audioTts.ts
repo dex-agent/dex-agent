@@ -271,7 +271,8 @@ export class AudioTts {
         outputPath
       ];
       const child = spawn(this.config.pythonCommand, args, {
-        stdio: ["ignore", "pipe", "pipe"]
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true
       });
       let stderr = "";
       let stdout = "";
@@ -324,7 +325,8 @@ export class AudioTts {
         outputPath
       ];
       const child = spawn(this.config.ffmpegCommand, args, {
-        stdio: ["ignore", "pipe", "pipe"]
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true
       });
       let stderr = "";
       let stdout = "";

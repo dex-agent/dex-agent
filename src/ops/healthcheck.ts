@@ -229,7 +229,8 @@ function runCliCodexLiveCheck(
       [...(config.runner.args || []), "exec", prompt],
       {
         cwd: config.runner.cwd,
-        env: process.env
+        env: process.env,
+        windowsHide: true
       }
     );
 

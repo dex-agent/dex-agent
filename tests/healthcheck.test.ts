@@ -38,6 +38,9 @@ function createConfig(root: string): AppConfig {
     workspace: {
       root
     },
+    finalActions: {
+      autoOffer: false
+    },
     instance: {
       contextMode: "workspace",
       id: "dex-agent",
@@ -61,6 +64,7 @@ function createConfig(root: string): AppConfig {
       throttleMs: 10,
       maxBufferChars: 1000,
       telegramChunkSize: 3900,
+      finalizeHookTimeoutMs: 120000,
       sdkThreadOptions: {
         skipGitRepoCheck: true,
         additionalDirectories: []
@@ -182,11 +186,14 @@ test("runHealthcheck accepts fixed instance workdirs without canonical drift war
 test("runHealthcheck warns on legacy path drift in non-strict mode", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "claws-health-"));
   const config = createConfig(root);
-  config.runner.cwd = "C:/CodexProjetos/ConfiguracoesWindows/DexAgent";
-  config.github.defaultWorkdir =
-    "C:/CodexProjetos/ConfiguracoesWindows/DexAgent";
-  config.app.stateFile =
-    "C:/CodexProjetos/ConfiguracoesWindows/DexAgent/.codex-telegram-claws-state.json";
+  const legacyRoot = path.join(root, "ConfiguracoesWindows", "DexAgent");
+  fs.mkdirSync(legacyRoot, { recursive: true });
+  config.runner.cwd = legacyRoot;
+  config.github.defaultWorkdir = legacyRoot;
+  config.app.stateFile = path.join(
+    legacyRoot,
+    ".codex-telegram-claws-state.json"
+  );
 
   const result = await runHealthcheck(config, {
     env: process.env,

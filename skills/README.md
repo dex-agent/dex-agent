@@ -17,7 +17,11 @@ Regras:
 
 Skills locais do repo:
 
+- `dex-acesso`
+- `dex-contatos`
+- `dex-install`
 - `dex-memoria`
+- `dex-update`
 - `refinador-intencao`
 
 Skills espelhadas:
@@ -34,9 +38,14 @@ Detalhe importante:
 - `skills/dex-agent-audio-summary/SKILL.md` e espelho fiel da skill global canonica; ela cobre resumo em audio e audio explicativo enviado pelo proprio bot via `Dex Agent`
 - alias curto oficial dessa skill: `dex-audio`
 - pedidos de audio real, nota de voz, TTS ou explicacao falada pelo bot devem ir para `dex-agent-audio-summary`; `tele-codex` nao e dona desse envio e deve encaminhar para `dex-audio` ou governanca de fluxo quando o contrato estiver ambiguo
+- em pedido iniciado por Telegram, `dex-audio` e `dex-print` devem responder no chat solicitante; `ALLOWED_USER_IDS` e lista de acesso, nao destino padrao de midia quando ha chat atual
 - `skills/dex-pai/SKILL.md` e espelho fiel da skill global canonica para encaminhar achados de repos filhos ao Dex Agent pai (`codex10_bot`) com artefato local e envio por helper, sem depender de aba do Telegram Web
 - `skills/dex-print/SKILL.md` e espelho fiel da skill global canonica para enviar prints/screenshot pelo Dex Agent no Telegram como `photo`/`document`, com fallback e confirmacao por `message_id`; audio continua separado em `dex-agent-audio-summary` / `dex-audio`
 - `skills/dex-rede/SKILL.md` e a skill de roteamento entre projetos Dex Agent por alias (`memoria`, `controle/opusclip`, `agendador`, `dex-pai`), usando helper por API e retornando `message_id`
+- `skills/dex-acesso/SKILL.md` e a skill local de contrato para acesso multiusuario, IDs permitidos, destino proativo/admin e prevencao de midia enviada ao chat errado
+- `skills/dex-contatos/SKILL.md` e a skill local de contrato para perfil humano por `chat_id`: como chamar a pessoa, tom, nivel de detalhe e preferencias de midia, sem alterar acesso, destino de midia ou memoria operacional
+- `skills/dex-install/SKILL.md` e a skill local de contrato para instalar o Dex Agent em novo projeto filho com bot dedicado, bootstrap local, registry de aliases e evidencia real
+- `skills/dex-update/SKILL.md` e a skill local de contrato para sincronizar instalacoes filhas existentes preservando `.env`, `.runtime`, tokens e estado local
 - `skills/dex-memoria/SKILL.md` e a skill local de contrato de ciclo de vida da memoria operacional: criar, lembrar, resolver, arquivar ou superseder memoria sem deixar achado resolvido continuar vivo como proximo passo; ela substitui o uso pratico solto de `docs/memory-system`, mas nao a documentacao tecnica de runtime; o guia de implantacao fica em `skills/dex-memoria/IMPLANTACAO.md`
 - `skills/avaliador-memory-candidate/SKILL.md` e espelho fiel da skill global canonica dedicada a revisar `memory candidate` e `skill_candidate` com profundidade operacional, emitindo avancos e retrocessos via `ancora-fluxo`
 - `skills/refinador-intencao/SKILL.md` e a skill local para capturas soltas ou confusas; gatilhos comuns: `guarda isso`, `isso devia virar skill`, `nao sei se isso e memoria ou skill`; use-a antes de `/remember` quando o destino ainda estiver nebuloso

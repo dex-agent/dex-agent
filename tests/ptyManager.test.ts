@@ -17,6 +17,7 @@ interface ManagerOverrides {
   instanceMode?: "workspace" | "instance";
   telegram?: TelegramStub;
   backend?: PtyManagerConstructorOptions["config"]["runner"]["backend"];
+  finalizeHookTimeoutMs?: number;
   sdkThreadOptions?: Partial<
     PtyManagerConstructorOptions["config"]["runner"]["sdkThreadOptions"]
   >;
@@ -63,6 +64,7 @@ function createManager(overrides: ManagerOverrides = {}) {
         throttleMs: 10,
         maxBufferChars: 1000,
         telegramChunkSize: 3900,
+        finalizeHookTimeoutMs: overrides.finalizeHookTimeoutMs ?? 120000,
         sdkConfig: {},
         sdkThreadOptions: {
           skipGitRepoCheck: true,
@@ -156,6 +158,39 @@ function createFakeCodexClient(
     }
   })) as CodexClientFactory;
 }
+
+test("runner env exposes current Telegram chat for media helpers", () => {
+  const manager = createManager();
+  const env = manager.getRunnerEnv("222", process.cwd());
+
+  assert.equal(env.DEX_REQUEST_CHAT_ID, "222");
+  assert.equal(env.DEX_CURRENT_CHAT_ID, "222");
+  assert.equal(env.DEX_REQUEST_WORKDIR, process.cwd());
+});
+
+test("SDK client receives current Telegram chat in its environment", () => {
+  let capturedEnv: Record<string, string> | undefined;
+  const manager = createManager({
+    backend: "sdk",
+    codexClientFactory: ((options: { env?: Record<string, string> }) => {
+      capturedEnv = options.env;
+      return {
+        startThread: () => {
+          throw new Error("not used");
+        },
+        resumeThread: () => {
+          throw new Error("not used");
+        }
+      };
+    }) as CodexClientFactory
+  });
+
+  manager.getCodexClient({ chatId: "222", workdir: process.cwd() });
+
+  assert.equal(capturedEnv?.DEX_REQUEST_CHAT_ID, "222");
+  assert.equal(capturedEnv?.DEX_CURRENT_CHAT_ID, "222");
+  assert.equal(capturedEnv?.DEX_REQUEST_WORKDIR, process.cwd());
+});
 
 function createExecFallbackSession(
   chatId: string,
@@ -1381,6 +1416,96 @@ test("pty manager sends unescaped final text to post-response hooks", async () =
 
   assert.equal(finalized.length, 1);
   assert.equal(finalized[0], "Print salvo em C:/tmp/frontend-agenda_v2.png");
+});
+
+test("pty manager does not let a stuck finalized hook block queued prompts", async () => {
+  const calls: FakeCall[] = [];
+  const manager = createManager({
+    backend: "sdk",
+    finalizeHookTimeoutMs: 5,
+    onResponseFinalized: async () => {
+      await new Promise(() => {});
+    },
+    codexClientFactory: createFakeCodexClient(
+      [
+        {
+          events: async function* () {
+            yield {
+              type: "item.completed",
+              item: {
+                id: "item-first-finalized",
+                type: "agent_message",
+                text: "First finalized response."
+              }
+            };
+          }
+        },
+        {
+          events: async function* () {
+            yield {
+              type: "item.completed",
+              item: {
+                id: "item-second-finalized",
+                type: "agent_message",
+                text: "Second finalized response."
+              }
+            };
+          }
+        }
+      ],
+      calls
+    )
+  });
+
+  const first = await manager.sendPrompt({ chat: { id: 184 } }, "first");
+  const queued = await manager.sendPrompt({ chat: { id: 184 } }, "second");
+
+  assert.equal(first.started, true);
+  assert.equal(queued.started, false);
+  assert.equal(queued.reason, "queued");
+
+  await waitFor(() =>
+    /Second finalized response/i.test(
+      manager.getProjectState(184, process.cwd()).lastFinalResponseText || ""
+    )
+  );
+
+  assert.equal(calls.length, 2);
+  assert.equal(manager.listPromptQueue(184).length, 0);
+});
+
+test("pty manager reports when an sdk turn finishes without visible output", async () => {
+  const sentMessages: SentMessageRecord[] = [];
+  const manager = createManager({
+    backend: "sdk",
+    telegram: {
+      sendMessage: async (chatId: string | number, text: string) => {
+        sentMessages.push({ chatId, text });
+        return { message_id: sentMessages.length };
+      },
+      editMessageText: async () => ({}),
+      deleteMessage: async () => ({})
+    },
+    codexClientFactory: createFakeCodexClient([
+      {
+        events: async function* () {}
+      }
+    ])
+  });
+
+  await manager.sendPrompt({ chat: { id: 185 } }, "empty result");
+  await waitFor(() => !manager.getStatus(185).active);
+
+  assert.ok(sentMessages.length >= 1);
+  assert.ok(
+    sentMessages.some((message) =>
+      /did not return a visible final response/i.test(message.text)
+    )
+  );
+  assert.match(
+    manager.getProjectState(185, process.cwd()).lastFinalResponseText || "",
+    /did not return a visible final response/i
+  );
 });
 
 test("pty manager stores a compact finalized snapshot instead of the full narrated response", async () => {

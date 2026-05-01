@@ -466,7 +466,8 @@ export class GitHubSkill {
     const child = spawn(binary, args, {
       cwd: workdir || this.config.github.defaultWorkdir,
       env: process.env,
-      shell: false
+      shell: false,
+      windowsHide: true
     });
 
     const appendOutput = (chunk: string): void => {

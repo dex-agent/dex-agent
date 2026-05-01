@@ -194,6 +194,7 @@ function createDependencies(
     adminActions?: {
       restart?: () => Promise<void>;
     } | null;
+    operationalContinuationState?: Record<string, unknown>;
     instance?: {
       contextMode: "workspace" | "instance";
       id: string;
@@ -350,7 +351,8 @@ function createDependencies(
       lastPromptText: null,
       lastPromptAt: null,
       lastFinalResponseText: null,
-      lastFinalizedAt: null
+      lastFinalizedAt: null,
+      ...(overrides.operationalContinuationState || {})
     })
   };
 
@@ -3737,6 +3739,173 @@ test("queue command lists the current queue", async () => {
     inlineKeyboard?.[0]?.map((button) => button.text),
     ["▶️ Rodar proximo", "🔄 Atualizar"]
   );
+});
+
+test("fila alias lists the current queue", async () => {
+  const { bot } = createDependencies({
+    listPromptQueue: () => [
+      {
+        id: "queue-1",
+        index: 1,
+        text: "revisar permissoes",
+        relativeWorkdir: "PremierDashboard",
+        createdAt: new Date().toISOString()
+      }
+    ]
+  });
+  const ctx = createContext("/fila");
+  const handler = bot.commands.get("fila");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.match(ctx.replies[0].text, /revisar permissoes/i);
+  assert.match(ctx.replies[0].text, /PremierDashboard/i);
+});
+
+test("second text prompt while Codex is active gets clear queue feedback", async () => {
+  const { bot } = createDependencies({
+    sendPrompt: async () => ({
+      started: false,
+      reason: "queued",
+      activeMode: "sdk",
+      queueLength: 1,
+      item: {
+        id: "queue-1",
+        index: 1,
+        text: "novo pedido",
+        relativeWorkdir: ".",
+        createdAt: new Date().toISOString()
+      }
+    })
+  });
+  const ctx = createContext("novo pedido");
+  const handler = bot.events.get("text");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.match(ctx.replies.at(-1)?.text || "", /already working/i);
+  assert.match(ctx.replies.at(-1)?.text || "", /\/queue|\/fila/i);
+});
+
+test("short progress follow-up while active reports status instead of starting a run", async () => {
+  let promptCalls = 0;
+  const { bot } = createDependencies({
+    sendPrompt: async () => {
+      promptCalls += 1;
+      return {
+        started: true,
+        mode: "sdk"
+      };
+    },
+    operationalContinuationState: {
+      active: true,
+      activeMode: "sdk",
+      lastPromptText: "analisar permissao de consultas",
+      queuedItems: [
+        {
+          id: "queue-1",
+          index: 1,
+          text: "ajustar copy",
+          relativeWorkdir: ".",
+          createdAt: new Date().toISOString()
+        }
+      ]
+    }
+  });
+  const ctx = createContext("conseguiu ver?");
+  const handler = bot.events.get("text");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.equal(promptCalls, 0);
+  assert.match(ctx.replies[0].text, /still processing/i);
+  assert.match(ctx.replies[0].text, /analisar permissao/i);
+  assert.match(ctx.replies[0].text, /\/queue|\/fila/i);
+});
+
+test("same-workdir conflict still points to continue", async () => {
+  const { bot } = createDependencies({
+    sendPrompt: async () => ({
+      started: false,
+      reason: "workspace_busy",
+      activeMode: "sdk",
+      blockingChatId: "5334767037",
+      relativeWorkdir: "."
+    })
+  });
+  const ctx = createContext("editar painel");
+  const handler = bot.events.get("text");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.match(ctx.replies.at(-1)?.text || "", /Another chat/i);
+  assert.match(ctx.replies.at(-1)?.text || "", /\/continue/i);
+});
+
+test("agora command sends a normal prompt when this chat is idle", async () => {
+  const { bot, promptCalls } = createDependencies();
+  const ctx = createContext("/agora revisar copy do painel");
+  const handler = bot.commands.get("agora");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.equal(promptCalls.length, 1);
+  assert.match(String((promptCalls[0] as any[])[1]), /revisar copy do painel/i);
+  assert.match(ctx.replies.at(-1)?.text || "", /no active run/i);
+});
+
+test("inject alias interrupts the active same-chat run and sends an urgent resume prompt", async () => {
+  let interruptCalls = 0;
+  let closeCalls = 0;
+  const { bot, ptyManager, promptCalls } = createDependencies({
+    operationalContinuationState: {
+      active: true,
+      activeMode: "sdk",
+      lastPromptText: "implementar permissao de consultas",
+      queuedItems: [
+        {
+          id: "queue-1",
+          index: 1,
+          text: "ajustar copy depois",
+          relativeWorkdir: ".",
+          createdAt: new Date().toISOString()
+        }
+      ]
+    }
+  });
+  (ptyManager.interrupt as any) = () => {
+    interruptCalls += 1;
+    return true;
+  };
+  (ptyManager.closeSession as any) = () => {
+    closeCalls += 1;
+    return true;
+  };
+
+  const ctx = createContext("/inject antes veja esta regra urgente");
+  const handler = bot.commands.get("inject");
+
+  assert.ok(handler);
+  await handler!(ctx);
+
+  assert.equal(interruptCalls, 1);
+  assert.equal(closeCalls, 1);
+  assert.equal(promptCalls.length, 1);
+  const sentPrompt = String((promptCalls[0] as any[])[1]);
+  assert.match(sentPrompt, /Urgent Telegram instruction/i);
+  assert.match(sentPrompt, /implementar permissao de consultas/i);
+  assert.match(sentPrompt, /antes veja esta regra urgente/i);
+  assert.match(sentPrompt, /Existing queue: 1 pending/i);
+  assert.match(
+    ctx.replies.at(-1)?.text || "",
+    /interrupted the active Codex run/i
+  );
+  assert.match(ctx.replies.at(-1)?.text || "", /queue was preserved/i);
 });
 
 test("queue run executes the next queued item", async () => {

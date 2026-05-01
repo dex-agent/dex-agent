@@ -59,6 +59,10 @@ import {
   type ProjectPromptIntent
 } from "../orchestrator/promptLibraryService.js";
 import {
+  applyContactProfilePromptBlock,
+  ContactProfileService
+} from "../orchestrator/contactProfileService.js";
+import {
   DashboardAdminService,
   type DashboardAdminSnapshot
 } from "../orchestrator/dashboardAdminService.js";
@@ -91,6 +95,7 @@ interface RegisterHandlersOptions {
   reuseEngine?: ProjectReuseEngine;
   promptLibraryService: PromptLibraryService;
   dashboardAdminService?: DashboardAdminService;
+  contactProfileService?: ContactProfileService;
   adminWebServer?: AdminWebServerLike;
   audioTranscriber?: AudioTranscriber | null;
   audioSummaryManager?: AudioSummaryManager | null;
@@ -1047,6 +1052,96 @@ function compactStatusPreview(
   if (!normalized) return "";
   if (normalized.length <= max) return normalized;
   return `${normalized.slice(0, Math.max(0, max - 3)).trimEnd()}...`;
+}
+
+function isProgressFollowUpText(text: string): boolean {
+  const normalized = normalizeAscii(text)
+    .replace(/[?!.,;:]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized || normalized.length > 80) return false;
+
+  return [
+    /^conseguiu( ver)?$/,
+    /^conseguiu ver (isso|ai|a mensagem)?$/,
+    /^voce conseguiu ver$/,
+    /^viu$/,
+    /^viu ai$/,
+    /^deu certo$/,
+    /^e ai$/,
+    /^alguma novidade$/,
+    /^tem retorno$/,
+    /^ta processando$/,
+    /^esta processando$/,
+    /^ainda esta processando$/,
+    /^recebeu$/,
+    /^recebeu minha mensagem$/
+  ].some((pattern) => pattern.test(normalized));
+}
+
+function renderProgressFollowUp(
+  locale: Locale,
+  state: OperationalContinuationState
+): string | null {
+  const queueCount = state.queuedItems.length;
+  const nextQueued = compactStatusPreview(state.queuedItems[0]?.text, 140);
+
+  if (state.active) {
+    return t(locale, "progressFollowUpActive", {
+      mode: state.activeMode || "Codex",
+      lastPrompt: compactStatusPreview(state.lastPromptText, 160),
+      queueCount,
+      nextQueued
+    });
+  }
+
+  if (queueCount > 0) {
+    return t(locale, "progressFollowUpQueued", {
+      queueCount,
+      nextQueued
+    });
+  }
+
+  return null;
+}
+
+function buildUrgentResumePrompt(
+  urgentInstruction: string,
+  state: OperationalContinuationState
+): string {
+  const previousRequest =
+    compactStatusPreview(state.lastPromptText, 900) ||
+    compactStatusPreview(state.pendingPromptText, 900) ||
+    "(previous request not available)";
+  const lastVisibleResult = compactStatusPreview(
+    state.lastFinalResponseText,
+    900
+  );
+  const nextQueued = compactStatusPreview(state.queuedItems[0]?.text, 240);
+
+  return [
+    "Urgent Telegram instruction received while a Codex run was active in this same chat.",
+    "",
+    "The previous run was interrupted intentionally so this urgent instruction can be handled now.",
+    "",
+    "Previous request snapshot:",
+    previousRequest,
+    "",
+    ...(lastVisibleResult
+      ? ["Last visible finalized response snapshot:", lastVisibleResult, ""]
+      : []),
+    "Urgent instruction:",
+    urgentInstruction.trim(),
+    "",
+    "Execution contract:",
+    "- Continue from the safest point; do not restart from zero unless necessary.",
+    "- Preserve completed useful work and explain any lost partial context if it matters.",
+    "- If the urgent instruction changes scope, name the change before acting.",
+    "- Keep the existing chat queue untouched.",
+    state.queuedItems.length
+      ? `- Existing queue: ${state.queuedItems.length} pending item(s)${nextQueued ? `; next: ${nextQueued}` : ""}.`
+      : "- Existing queue: empty."
+  ].join("\n");
 }
 
 function formatRelativeTimestamp(
@@ -2470,6 +2565,7 @@ export function registerHandlers({
   reuseEngine,
   promptLibraryService,
   dashboardAdminService,
+  contactProfileService,
   adminWebServer,
   audioTranscriber,
   audioSummaryManager,
@@ -2485,6 +2581,8 @@ export function registerHandlers({
     reuseEngine || new ProjectReuseEngine(memoryService);
   const effectiveDashboardAdminService =
     dashboardAdminService || new DashboardAdminService();
+  const effectiveContactProfileService =
+    contactProfileService || new ContactProfileService();
   const effectiveAdminWebServer = adminWebServer;
   const effectiveHistoryAdminService = new HistoryAdminService(memoryService);
   const effectivePromptAdminService = new PromptAdminService(
@@ -2534,6 +2632,8 @@ export function registerHandlers({
       prompt,
       intent
     });
+    const contactPromptBlock =
+      await effectiveContactProfileService.buildPromptBlock(workdir, chatId);
 
     if (intent === "continue") {
       const operationalState = ptyManager.getOperationalContinuationState(
@@ -2542,11 +2642,15 @@ export function registerHandlers({
       );
 
       if (hasOperationalContinuationSignal(operationalState)) {
+        const continuationPrompt = buildContinuePromptFromState(
+          prepared.promptWithSkills,
+          operationalState,
+          prepared.packet
+        );
         return {
-          prompt: buildContinuePromptFromState(
-            prepared.promptWithSkills,
-            operationalState,
-            prepared.packet
+          prompt: applyContactProfilePromptBlock(
+            continuationPrompt,
+            contactPromptBlock
           ),
           disclosure: prepared.disclosure
         };
@@ -2554,9 +2658,21 @@ export function registerHandlers({
     }
 
     return {
-      prompt: prepared.prompt,
+      prompt: applyContactProfilePromptBlock(
+        prepared.prompt,
+        contactPromptBlock
+      ),
       disclosure: prepared.disclosure
     };
+  };
+  const buildPromptWithContactProfile = async (
+    chatId: string | number,
+    workdir: string,
+    prompt: string
+  ): Promise<string> => {
+    const contactPromptBlock =
+      await effectiveContactProfileService.buildPromptBlock(workdir, chatId);
+    return applyContactProfilePromptBlock(prompt, contactPromptBlock);
   };
   const handlePromptResult = async (
     ctx: any,
@@ -2714,8 +2830,7 @@ export function registerHandlers({
     if (result.started) {
       await sendChunkedMarkdown(
         ctx,
-        startedMessageText ||
-          "Pedido enviado ao Codex. Vou te mostrando o andamento aqui."
+        startedMessageText || t(locale, "promptStarted")
       );
       return result;
     }
@@ -3403,6 +3518,17 @@ export function registerHandlers({
     if (text.startsWith("/")) return;
 
     try {
+      if (isProgressFollowUpText(text)) {
+        const currentState = ptyManager.getOperationalContinuationState(
+          ctx.chat.id
+        );
+        const followUpStatus = renderProgressFollowUp(locale, currentState);
+        if (followUpStatus) {
+          await sendChunkedMarkdown(ctx, followUpStatus);
+          return;
+        }
+      }
+
       const rememberShortcut = extractRememberShortcut(text);
       if (rememberShortcut) {
         const workdir = ptyManager.getStatus(ctx.chat.id).workdir;
@@ -3516,12 +3642,18 @@ export function registerHandlers({
       const prompt =
         caption ||
         "Analise esta imagem enviada no Telegram e me diga claramente o que ela mostra. Se houver erro, interface, texto, alerta ou contexto visual importante, use isso na resposta.";
+      const workdir = ptyManager.getStatus(ctx.chat.id).workdir;
+      const promptWithContactProfile = await buildPromptWithContactProfile(
+        ctx.chat.id,
+        workdir,
+        prompt
+      );
       const result = await ptyManager.sendPrompt(
         ctx,
         [
           {
             type: "text",
-            text: prompt
+            text: promptWithContactProfile
           },
           {
             type: "local_image",
@@ -4501,6 +4633,56 @@ export function registerHandlers({
     });
   });
 
+  const handleUrgentCommand = async (
+    ctx: any,
+    commandName: "agora" | "inject"
+  ): Promise<void> => {
+    const locale = localeOf(ctx.chat.id);
+    const urgentInstruction = extractCommandPayload(
+      ctx.message.text,
+      commandName
+    ).trim();
+
+    if (!urgentInstruction) {
+      await sendChunkedMarkdown(ctx, t(locale, "usageUrgent"));
+      return;
+    }
+
+    const state = ptyManager.getOperationalContinuationState(ctx.chat.id);
+    if (!state.active) {
+      await executeActionPrompt(
+        ctx,
+        locale,
+        urgentInstruction,
+        inferMemoryIntent(urgentInstruction),
+        {
+          startedMessageText: t(locale, "urgentStartedIdle")
+        }
+      );
+      return;
+    }
+
+    const urgentPrompt = buildUrgentResumePrompt(urgentInstruction, state);
+    const queueCount = state.queuedItems.length;
+    const interrupted = ptyManager.interrupt(ctx.chat.id);
+    if (interrupted) {
+      ptyManager.closeSession(ctx.chat.id);
+    }
+
+    await executeActionPrompt(
+      ctx,
+      locale,
+      urgentPrompt,
+      inferMemoryIntent(urgentInstruction),
+      {
+        queueLabel: `Urgente: ${compactStatusPreview(urgentInstruction, 120)}`,
+        startedMessageText: interrupted
+          ? t(locale, "urgentStartedAfterInterrupt", { queueCount })
+          : t(locale, "urgentStartedIdle")
+      }
+    );
+  };
+
   const renderQueueList = async (ctx: any, locale: Locale): Promise<void> => {
     const items = ptyManager.listPromptQueue(ctx.chat.id);
     await sendSkillResult(
@@ -4635,6 +4817,8 @@ export function registerHandlers({
     await sendChunkedMarkdown(ctx, t(locale, "usageQueue"));
   };
 
+  bot.command("agora", async (ctx: any) => handleUrgentCommand(ctx, "agora"));
+  bot.command("inject", async (ctx: any) => handleUrgentCommand(ctx, "inject"));
   bot.command("queue", async (ctx: any) => handleQueueCommand(ctx, "queue"));
   bot.command("fila", async (ctx: any) => handleQueueCommand(ctx, "fila"));
 

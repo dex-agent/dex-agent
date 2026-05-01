@@ -93,6 +93,18 @@ export const COMMAND_CATALOG: CommandSpec[] = [
     group: "Fila"
   },
   {
+    command: "agora",
+    description: "Interrompe a execucao atual e envia uma instrucao urgente",
+    usage: "/agora <mensagem>",
+    group: "Execucao"
+  },
+  {
+    command: "inject",
+    description: "Alias de /agora",
+    usage: "/inject <message>",
+    group: "Execucao"
+  },
+  {
     command: "exec",
     description: "Executa uma tarefa unica no Codex",
     usage: "/exec <task>",
@@ -248,6 +260,8 @@ export function buildMenuText(): string {
     "- /continue",
     "",
     "Execucao:",
+    "- /agora <mensagem>",
+    "- /inject <message>",
     "- /exec <task>",
     "- /auto <task>",
     "- /plan <task>",

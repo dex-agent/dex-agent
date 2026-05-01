@@ -38,6 +38,20 @@ function trimOutputTail(value: string, maxChars: number): string {
   return value.slice(-maxChars);
 }
 
+function killProcessTree(pid: number): void {
+  if (process.platform !== "win32") {
+    return;
+  }
+
+  const taskkill = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
+    stdio: "ignore",
+    windowsHide: true
+  });
+  taskkill.on("error", () => {
+    // Best-effort cleanup. The direct kill path still runs.
+  });
+}
+
 export class ShellManager {
   readonly config: Pick<AppConfig, "shell">;
   readonly runningJobs: Map<string, ChildProcess>;
@@ -172,7 +186,8 @@ export class ShellManager {
       const child = spawn(command, args, {
         cwd: workdir,
         env: process.env,
-        shell: false
+        shell: false,
+        windowsHide: true
       });
 
       this.runningJobs.set(key, child);
@@ -183,6 +198,9 @@ export class ShellManager {
 
       const timeout = setTimeout(() => {
         timedOut = true;
+        if (child.pid) {
+          killProcessTree(child.pid);
+        }
         child.kill("SIGTERM");
         setTimeout(() => child.kill("SIGKILL"), 2000).unref();
       }, this.config.shell.timeoutMs);
