@@ -591,7 +591,9 @@ Release references:
 
 Current local Windows baseline on this machine:
 
-- autostart via the current user's Windows Startup folder
+- network autostart via the current user's Windows Startup folder:
+  `start-dex-agent-network.vbs -> scripts/boot-dex-agent-network-autostart.ps1 -> config/dex-agent-network.local.json -> scripts/start-dex-agent.ps1`
+  for each registered instance
 - hidden restart via `restart-dex-agent-hidden.vbs -> restart-dex-agent-hidden.ps1 -> start-dex-agent.ps1`
 - one polling process per bot token
 
@@ -613,17 +615,19 @@ Run exactly one polling process per bot token.
 Windows autostart for the current user:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\register-dex-agent-autostart.ps1
-Get-Content "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\start-dex-agent.cmd"
+Get-Content "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\start-dex-agent-network.vbs"
+Get-Content .\config\dex-agent-network.example.json
 ```
 
-Remove the autostart entry:
+The active network autostart uses the current user's Windows Startup folder and creates only `start-dex-agent-network.vbs` as the live Startup entry. The VBS launches `scripts/boot-dex-agent-network-autostart.ps1` hidden, and that script reads the local ignored registry at `config/dex-agent-network.local.json` before starting each registered instance through its own `scripts/start-dex-agent.ps1`.
+
+The old single-instance helper remains available for legacy/manual recovery only:
 
 ```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\register-dex-agent-autostart.ps1
+Get-Content "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\start-dex-agent.cmd"
 powershell -ExecutionPolicy Bypass -File .\scripts\unregister-dex-agent-autostart.ps1
 ```
-
-The registered autostart uses the current user's Windows Startup folder and creates `start-dex-agent.cmd`, which calls `scripts/boot-dex-agent-autostart.ps1`. That boot script waits 45 seconds after logon and then retries up to 6 times with progressive backoff if the network is not ready yet.
 
 `scripts/start-dex-agent.ps1` is the canonical singleton entrypoint for local Windows operation: it clears stale `src/index.ts` processes for this repo before starting a fresh one. The hidden restart path now reuses that same script, and `scripts/status-dex-agent.ps1` warns when multiple polling processes are still alive instead of silently picking one.
 
