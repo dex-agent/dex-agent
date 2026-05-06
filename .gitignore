@@ -5,6 +5,7 @@ npm-debug.log*
 .codex-telegram-claws-state.json
 bot.log
 .runtime/
+.harness/
 .agents/*
 !.agents/
 !.agents/CONTACTS.example.json

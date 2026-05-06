@@ -2071,7 +2071,7 @@ function buildMemoryHelpText(memoryReadmePath: string): string {
     "- memoria duravel do workspace fica em `.agents/MEMORY.ndjson`",
     "- skill candidate e o estagio entre memoria reutilizavel e skill pronta",
     "- escrita duravel segue `proposal-first writes`",
-    "- recall mistura estado operacional local, ledger duravel do workspace e memoria global read-only",
+    "- recall mistura estado operacional local, ledger duravel do workspace e memoria global como fonte separada",
     "- a query de recall agora e unificada com `projectName`, `currentObjective`, `nextEligibleBlock` e `latestClosedBlock`",
     "- captura automatica de resposta finalizada so entra quando o pedido original ja e de memoria/promocao ou quando a resposta traz uma linha estruturada como `Decision:` ou `Rule:`",
     "",

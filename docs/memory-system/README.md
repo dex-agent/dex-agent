@@ -102,11 +102,13 @@ Ele nao tenta resolver:
 - embeddings ou vector search
 - mutacao implicita de memoria
 
-Excecao explicita:
+Fronteira global:
 
-- o recall pode consultar memoria global read-only do operador quando ela estiver disponivel em `C:\Users\<usuario>\.codex\memories` ou `${CODEX_HOME}/memories`
+- memoria global do Codex e gravavel e deve receber ponteiros curtos quando houver valor real de lembranca ou indexacao
+- nao gravar conteudo grande, bruto, tutorial, historico completo ou material sensivel no caminho global do Codex
+- use `dex-memoria` como contrato para manter cada ponteiro global conciso, intuitivo e apontado para a fonte completa
 - essa memoria global nao substitui o ledger local do projeto
-- a escrita duravel continua local ao workspace em `.agents/MEMORY.ndjson`
+- a escrita duravel continua local ao workspace em `.agents/MEMORY.ndjson`, governada por `memoria-viva` ou `dex-memoria` conforme o caso
 
 ## Camadas
 
@@ -262,7 +264,7 @@ Exemplos:
 - `.agents/sprints/`
 - `.agents/ARQUIVADO/`
 - `.agents/archive/`
-- relatórios, artefatos e tutoriais mais densos
+- relatorios, artefatos e tutoriais mais densos
 
 Papel:
 
@@ -383,13 +385,13 @@ Principais tipos:
 
 ### `src/orchestrator/memoryRecallEngine.ts`
 
-Fronteira read-only do recall.
+Fronteira de recall.
 
 Responsabilidades:
 
 - ler as fontes resolvidas por `operationalRecoverySources`: `INDEX.md`, `AGENTS.md`, `.agents/PROJECT.md`, `.agents/ACTIVE.md`, `.agents/HANDOFF.md`, `.codex/napkin.md`, `.agents/sprints/INDEX.md` quando existir sprint/bloco, `.agents/ESTACIONAMENTO.md` quando houver ativos e `.agents/MEMORY.ndjson` como ledger
 - ler o ledger local `.agents/MEMORY.ndjson`
-- ler memoria global markdown read-only (`MEMORY.md` e `memory_summary.md`)
+- ler memoria global markdown como fonte de recall (`MEMORY.md` e `memory_summary.md`) e manter `MEMORY.md` como indice gravavel de ponteiros curtos para fontes completas
 - usar uma `buildRetrievalQuery(...)` unica com `projectName`, `currentObjective`, `nextEligibleBlock` e `latestClosedBlock`
 - ranquear memoria de forma lexical, mas com priors de escopo e contexto operacional
 - montar `MemoryPacket`, renderizar disclosure e manter cache por `mtime` para a memoria global markdown
@@ -440,7 +442,7 @@ Compoe o entendimento do projeto usando:
 - ledger duravel
 - heuristica lexical leve para recall
 
-Expõe:
+Expoe:
 
 - `relevantMemory`
 - `memorySources`
@@ -513,7 +515,7 @@ Callbacks suportados:
 
 #### 3. Comando `/memory`
 
-`/memory` continua existindo como superficie tecnica de inspeção e recall.
+`/memory` continua existindo como superficie tecnica de inspecao e recall.
 
 Comandos suportados:
 
@@ -532,7 +534,7 @@ Importante:
 - `/memory remember` cria candidate duravel na inbox
 - os atalhos de memoria no bot tambem podem abrir `INDEX`, `PROJECT`, `ACTIVE`, `HANDOFF`, `napkin` e `ledger`
 - `/inbox` e a UX principal de revisao
-- `/memory` e a UX principal de inspeção
+- `/memory` e a UX principal de inspecao
 
 ### `src/index.ts`
 
@@ -628,7 +630,7 @@ Filtros importantes:
 - `noise` nao entra
 - itens superseded saem do recall
 - prompts triviais podem nem abrir memoria
-- memoria global continua somente leitura
+- memoria global nao recebe conteudo grande, tutorial ou dump; quando uma memoria tiver valor de lembranca cross-project, grave um ponteiro curto para a fonte completa
 
 ## Contrato do `MemoryPacket`
 

@@ -163,9 +163,46 @@ export interface MemoryQueryResult {
   confidence: MemoryConfidence;
 }
 
+export interface GlobalMemoryPointerInput {
+  trigger: string;
+  source: string;
+  lookup: string;
+  conflictWinner: string;
+  doNotUseWhen: string;
+  reviewAfter: string;
+  note?: string | null;
+}
+
+export interface GlobalMemoryPointerResult {
+  ok: boolean;
+  path?: string;
+  entry?: string;
+  duplicate?: boolean;
+  reason?: "disabled" | "invalid" | "too_large" | "sensitive";
+}
+
+type NormalizedGlobalMemoryPointer = {
+  trigger: string;
+  source: string;
+  lookup: string;
+  conflictWinner: string;
+  doNotUseWhen: string;
+  reviewAfter: string;
+  note: string;
+};
+
 interface ProjectMemoryServiceOptions {
   globalMemoriesRoot?: string | null;
 }
+
+const GLOBAL_POINTER_FIELD_MAX = 320;
+const GLOBAL_POINTER_ENTRY_MAX = 1400;
+const SENSITIVE_POINTER_PATTERNS = [
+  /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/,
+  /\b(?:sk|pk|ghp|github_pat|xox[baprs]?)-[A-Za-z0-9_-]{12,}\b/i,
+  /\b(?:token|secret|senha|password|api[_-]?key)\b\s*[:=]/i,
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/
+];
 
 const STOPWORDS = new Set([
   "the",
@@ -206,6 +243,37 @@ function normalizeWhitespace(value: string): string {
   return String(value || "")
     .replace(/\r/g, "")
     .trim();
+}
+
+function normalizePointerField(value: string | null | undefined): string {
+  return normalizeWhitespace(value || "").replace(/\s+/g, " ");
+}
+
+function hasSensitivePointerContent(value: string): boolean {
+  return SENSITIVE_POINTER_PATTERNS.some((pattern) => pattern.test(value));
+}
+
+function buildGlobalMemoryPointerEntry(
+  input: NormalizedGlobalMemoryPointer
+): string {
+  const lines = [
+    `# Task Group: ${input.trigger}`,
+    `scope: global memory pointer; source=${input.source}; reuse_rule=use when the trigger matches and then open the source of truth`,
+    `updated_at: ${new Date().toISOString()}`,
+    "",
+    "## Reusable knowledge",
+    `- ${input.lookup}`,
+    "",
+    "## Routing",
+    `- Source of truth: ${input.source}`,
+    `- Conflict winner: ${input.conflictWinner}`,
+    `- Do not use when: ${input.doNotUseWhen}`,
+    `- Review after: ${input.reviewAfter}`
+  ];
+  if (input.note) {
+    lines.push(`- Note: ${input.note}`);
+  }
+  return `${lines.join("\n")}\n`;
 }
 
 function normalizeAscii(value: string): string {
@@ -867,6 +935,78 @@ export class ProjectMemoryService {
   private globalMemorySummaryPath(): string | null {
     const root = this.globalMemoriesRoot();
     return root ? path.join(root, "memory_summary.md") : null;
+  }
+
+  async appendGlobalMemoryPointer(
+    input: GlobalMemoryPointerInput
+  ): Promise<GlobalMemoryPointerResult> {
+    const registryPath = this.globalMemoryRegistryPath();
+    if (!registryPath) {
+      return { ok: false, reason: "disabled" };
+    }
+
+    const normalized: NormalizedGlobalMemoryPointer = {
+      trigger: normalizePointerField(input.trigger),
+      source: normalizePointerField(input.source),
+      lookup: normalizePointerField(input.lookup),
+      conflictWinner: normalizePointerField(input.conflictWinner),
+      doNotUseWhen: normalizePointerField(input.doNotUseWhen),
+      reviewAfter: normalizePointerField(input.reviewAfter),
+      note: normalizePointerField(input.note || "")
+    };
+    const normalizedFields = [
+      normalized.trigger,
+      normalized.source,
+      normalized.lookup,
+      normalized.conflictWinner,
+      normalized.doNotUseWhen,
+      normalized.reviewAfter,
+      normalized.note
+    ];
+    const requiredFields = [
+      normalized.trigger,
+      normalized.source,
+      normalized.lookup,
+      normalized.conflictWinner,
+      normalized.doNotUseWhen,
+      normalized.reviewAfter
+    ];
+    if (requiredFields.some((field) => !field)) {
+      return { ok: false, reason: "invalid" };
+    }
+    if (
+      normalizedFields.some((field) => field.length > GLOBAL_POINTER_FIELD_MAX)
+    ) {
+      return { ok: false, reason: "too_large" };
+    }
+
+    const combined = normalizedFields.join("\n");
+    if (hasSensitivePointerContent(combined)) {
+      return { ok: false, reason: "sensitive" };
+    }
+
+    const entry = buildGlobalMemoryPointerEntry(normalized);
+    if (entry.length > GLOBAL_POINTER_ENTRY_MAX) {
+      return { ok: false, reason: "too_large" };
+    }
+
+    await fs.mkdir(path.dirname(registryPath), { recursive: true });
+    let existing = "";
+    try {
+      existing = await fs.readFile(registryPath, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+    }
+    if (
+      existing.includes(`# Task Group: ${normalized.trigger}`) &&
+      existing.includes(`- Source of truth: ${normalized.source}`)
+    ) {
+      return { ok: true, path: registryPath, entry, duplicate: true };
+    }
+    await fs.appendFile(registryPath, `\n${entry}`, "utf8");
+    return { ok: true, path: registryPath, entry };
   }
 
   private inboxDir(workdir: string): string {
@@ -1804,6 +1944,7 @@ export class ProjectMemoryService {
     reason?: "missing" | "duplicate" | "invalid";
     destination?: SkillPromotionDestination;
     skillPromotion?: SkillPromotionResult | null;
+    globalMemoryPointer?: GlobalMemoryPointerResult | null;
   }> {
     const resolvedWorkdir = path.resolve(workdir);
     const proposals = await this.readProposals(resolvedWorkdir);
@@ -1845,6 +1986,18 @@ export class ProjectMemoryService {
       `${JSON.stringify(proposal.entry)}\n`,
       "utf8"
     );
+    const globalMemoryPointer = await this.appendGlobalMemoryPointer({
+      trigger: proposal.entry.title,
+      source: `${ledgerPath}#${proposal.entry.id}`,
+      lookup: proposal.entry.summary,
+      conflictWinner:
+        "Local operational source wins for full context; global memory is the recall pointer.",
+      doNotUseWhen:
+        "The local source was superseded, archived, or conflicts with a newer pointer.",
+      reviewAfter:
+        "Review when the linked local memory is superseded, archived, or replaced.",
+      note: `project=${proposal.entry.project}; kind=${proposal.entry.kind}; scope=${proposal.entry.scope}`
+    });
     await this.writeProposals(
       resolvedWorkdir,
       proposals.filter((item) => item.id !== proposal.id)
@@ -1854,7 +2007,8 @@ export class ProjectMemoryService {
       ok: true,
       entry: proposal.entry,
       destination: proposal.destination,
-      skillPromotion
+      skillPromotion,
+      globalMemoryPointer
     };
   }
 

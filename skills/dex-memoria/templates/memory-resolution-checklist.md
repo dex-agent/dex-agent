@@ -7,7 +7,7 @@ Use este checklist quando uma memoria ativa for corrigida, cumprida, substituida
 - [ ] A correcao, decisao ou fechamento foi realmente feito.
 - [ ] Existe evidencia minima: teste, arquivo, screenshot, message_id ou decisao registrada.
 - [ ] O criterio de resolucao original foi atendido.
-- [ ] A memoria nao esta apenas "parecendo resolvida".
+- [ ] A memoria nao esta apenas parecendo resolvida.
 
 ## 2. Superficies Vivas
 
@@ -21,13 +21,13 @@ Use este checklist quando uma memoria ativa for corrigida, cumprida, substituida
 
 - [ ] `.agents/MEMORY.ndjson` recebeu supersedencia quando necessario.
 - [ ] Historico foi preservado sem virar fila viva.
-- [ ] Arquivo fechado foi movido para `.agents/ARQUIVADO/` quando aplicavel.
+- [ ] Arquivo fechado foi movido para arquivo quando aplicavel.
 
 ## 4. Comunicacao
 
 - [ ] Repo filho foi avisado se a memoria veio de um filho.
-- [ ] `dex-pai` foi usado para bug do pai.
-- [ ] `dex-rede` foi usado para handoff entre filhos.
+- [ ] Rota pai foi usada para bug do Dex Agent.
+- [ ] Rota rede foi usada para handoff entre filhos.
 - [ ] `message_id` foi registrado quando houve envio por Telegram/API.
 
 ## 5. Teste De Regressao
@@ -39,10 +39,7 @@ Use este checklist quando uma memoria ativa for corrigida, cumprida, substituida
 
 ## Veredito
 
-```text
-Veredito: resolvida | arquivada | superseded | ainda ativa
-Evidencia:
-Arquivos atualizados:
-Mensagem enviada:
-Risco restante:
-```
+- [ ] Fechado
+- [ ] Ainda vivo
+- [ ] Supersedido
+- [ ] Precisa revisao humana

@@ -135,10 +135,10 @@ test("queryMemory reads matching global markdown memories and ignores unrelated 
       `applies_to: cwd=${workdir}; reuse_rule=use for this repo only`,
       "",
       "## Reusable knowledge",
-      "- Use global memory as read-only context instead of merging it into the local ledger.",
+      "- Use global memory as recall context without merging it into the local ledger.",
       "",
       "## Failures and how to do differently",
-      "- Symptom: global memory gets written locally -> fix: keep global memory read-only.",
+      "- Symptom: global recall gets copied into project ledger -> fix: keep global recall separate from local durable memory.",
       "",
       "# Task Group: Unrelated repo",
       "scope: ignore this for dex-agent",
@@ -156,7 +156,7 @@ test("queryMemory reads matching global markdown memories and ignores unrelated 
       "- Prefer proposal-first durable memory writes.",
       "",
       "## General Tips",
-      "- Keep memory adapters read-only when the source is external."
+      "- Keep recall adapters separate from durable project writes."
     ].join("\n")
   });
   const service = new ProjectMemoryService(undefined, {
@@ -165,12 +165,12 @@ test("queryMemory reads matching global markdown memories and ignores unrelated 
 
   const result = await service.queryMemory({
     workdir,
-    prompt: "how should dex-agent keep global memory read-only",
+    prompt: "how should dex-agent keep global memory separate from local ledger",
     intent: "implementation"
   });
 
   assert.ok(result.entries.length >= 1);
-  assert.match(result.entries[0]?.summary || "", /read-only/i);
+  assert.match(result.entries[0]?.summary || "", /ledger/i);
   assert.ok(
     result.entries.every(
       (entry) => !/never show up for dex-agent/i.test(entry.summary)
@@ -188,7 +188,7 @@ test("queryMemory can rank a global memory above a weaker local hit", async () =
       `applies_to: cwd=${path.basename(workdir)}; reuse_rule=use here`,
       "",
       "## Reusable knowledge",
-      "- Global markdown memory adapter keeps markdown recall read-only and always-on for dex-agent."
+      "- Global markdown memory adapter keeps markdown recall separate and always-on for dex-agent."
     ].join("\n")
   });
   const service = new ProjectMemoryService(undefined, {
@@ -213,7 +213,7 @@ test("queryMemory can rank a global memory above a weaker local hit", async () =
 
   const result = await service.queryMemory({
     workdir,
-    prompt: "global markdown memory adapter read-only dex-agent",
+    prompt: "global markdown memory adapter separate always-on dex-agent",
     intent: "implementation"
   });
 
@@ -222,6 +222,98 @@ test("queryMemory can rank a global memory above a weaker local hit", async () =
     result.entries[0]?.title || "",
     /Dex Agent global memory adapter/i
   );
+});
+
+test("appendGlobalMemoryPointer writes a concise global pointer without touching local ledger", async () => {
+  const workdir = await createWorkspace();
+  const globalRoot = await createGlobalMemoriesRoot();
+  const service = new ProjectMemoryService(undefined, {
+    globalMemoriesRoot: globalRoot
+  });
+
+  const result = await service.appendGlobalMemoryPointer({
+    trigger: "global memory pointer indexing",
+    source:
+      "C:\\CodexProjetos\\dex-memoria\\.harness\\contracts\\specs\\normalize-global-memory-write-policy.yaml",
+    lookup:
+      "Memory-worthy records should create a short global pointer to the full dex-memoria layer.",
+    conflictWinner:
+      "The current source of truth wins over stale restrictive wording.",
+    doNotUseWhen: "The candidate is large, secret-bearing, obsolete, or only noise.",
+    reviewAfter: "After the linked spec or runtime memory contract changes.",
+    note: "Pointer only; full operational content stays in project memory."
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.path, path.join(globalRoot, "MEMORY.md"));
+  assert.match(result.entry || "", /global memory pointer indexing/i);
+
+  const memoryMd = await fs.readFile(path.join(globalRoot, "MEMORY.md"), "utf8");
+  assert.match(memoryMd, /short global pointer/i);
+  await assert.rejects(
+    fs.stat(path.join(workdir, ".agents", "MEMORY.ndjson")),
+    /ENOENT/
+  );
+});
+
+test("appendGlobalMemoryPointer rejects large or sensitive global pointer payloads", async () => {
+  const globalRoot = await createGlobalMemoriesRoot();
+  const service = new ProjectMemoryService(undefined, {
+    globalMemoriesRoot: globalRoot
+  });
+
+  const tooLarge = await service.appendGlobalMemoryPointer({
+    trigger: "x".repeat(321),
+    source: "C:\\CodexProjetos\\dex-memoria\\README.md",
+    lookup: "pointer",
+    conflictWinner: "user request",
+    doNotUseWhen: "large content",
+    reviewAfter: "later"
+  });
+  assert.deepEqual(tooLarge, { ok: false, reason: "too_large" });
+
+  const sensitive = await service.appendGlobalMemoryPointer({
+    trigger: "secret-bearing request",
+    source: "C:\\CodexProjetos\\dex-memoria\\README.md",
+    lookup: "token=abc123 should never be stored globally",
+    conflictWinner: "secret hygiene",
+    doNotUseWhen: "contains secrets",
+    reviewAfter: "never"
+  });
+  assert.deepEqual(sensitive, { ok: false, reason: "sensitive" });
+});
+
+test("applyPromotion writes local durable memory and a global recall pointer", async () => {
+  const workdir = await createWorkspace();
+  const globalRoot = await createGlobalMemoriesRoot();
+  const service = new ProjectMemoryService(undefined, {
+    globalMemoriesRoot: globalRoot
+  });
+
+  await service.captureCandidate({
+    workdir,
+    text: "Decision: global memory pointers index concise recall and point to the local full context.",
+    source: { type: "operator", detail: "test" },
+    evidence: { type: "operator", value: "memory-worthy rule" }
+  });
+
+  const proposal = await service.proposePromotion(workdir, 0);
+  assert.ok(proposal);
+
+  const result = await service.applyPromotion(workdir, proposal!.id);
+  assert.equal(result.ok, true);
+  assert.equal(result.globalMemoryPointer?.ok, true);
+
+  const ledger = await fs.readFile(
+    path.join(workdir, ".agents", "MEMORY.ndjson"),
+    "utf8"
+  );
+  assert.match(ledger, /global memory pointers index concise recall/i);
+
+  const memoryMd = await fs.readFile(path.join(globalRoot, "MEMORY.md"), "utf8");
+  assert.match(memoryMd, /Source of truth:/i);
+  assert.match(memoryMd, /\.agents[\\/]MEMORY\.ndjson#/i);
+  assert.match(memoryMd, /global memory pointers index concise recall/i);
 });
 
 test("applyPromotion appends valid durable memory and avoids duplicates", async () => {
@@ -1030,7 +1122,7 @@ test("queryMemory prefers repo memory over transversal summary guidance when bot
       "- Keep memory source paths explicit.",
       "",
       "## General Tips",
-      "- Prefer read-only adapters."
+      "- Prefer separated recall adapters."
     ].join("\n")
   });
   const service = new ProjectMemoryService(undefined, {

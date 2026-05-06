@@ -193,7 +193,7 @@ Nao espere sempre o usuario pedir pela terceira vez.
 
 - use `garimpeiro` antes, se ainda houver muito ruido e pouca clareza
 - use `avaliador-memory-candidate` antes, se o candidate ja estiver identificado mas ainda precisar veredito profundo de usabilidade, reuso, governanca e fluxo de correcao
-- use `memorizador` para consolidar o que precisa virar memoria curada
+- use `dex-memoria` para consolidar o que precisa virar memoria curada
 - use `skill-creator` como apoio de forma, se faltar estrutura
 - esta skill e a ponte de decisao e promocao, nao a curadoria bruta
 
