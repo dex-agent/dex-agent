@@ -43,7 +43,7 @@ function parseArgs(argv) {
 
 function printHelp() {
   console.log(
-    `dex-print\n\nUso:\n  node send-dex-print.mjs --path print.png --caption "Agenda" --json\n  node send-dex-print.mjs --path desktop.png --path mobile.png --chat-id 123 --mode photo --json\n  node send-dex-print.mjs --path print.png --dry-run --json\n\nAmbiente:\n  BOT_TOKEN ou TELEGRAM_BOT_TOKEN\n  DEX_REQUEST_CHAT_ID, DEX_CURRENT_CHAT_ID, DEX_PRINT_CHAT_ID, TELEGRAM_CHAT_ID, PROACTIVE_USER_IDS ou ALLOWED_USER_IDS\n`
+    `dex-print\n\nUso:\n  node send-dex-print.mjs --path print.png --caption "Exemplo" --json\n  node send-dex-print.mjs --path desktop.png --path mobile.png --chat-id 123 --mode photo --json\n  node send-dex-print.mjs --path print.png --dry-run --json\n\nAmbiente:\n  BOT_TOKEN ou TELEGRAM_BOT_TOKEN\n  DEX_REQUEST_CHAT_ID, DEX_CURRENT_CHAT_ID, DEX_PRINT_CHAT_ID, TELEGRAM_CHAT_ID, PROACTIVE_USER_IDS ou ALLOWED_USER_IDS\n`
   );
 }
 

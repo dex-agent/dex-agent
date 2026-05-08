@@ -59,6 +59,11 @@ Padronizar a instalacao do Dex Agent em projetos filhos com o mesmo contrato ope
 - [ ] Telegram real passa ou fica bloqueio registrado.
 - [ ] Nenhum helper deixa janela visivel de `cmd.exe` ou PowerShell como efeito normal.
 
-## PremierDashboard
+## Exemplo
 
-Exemplo real em `skills/dex-install/examples/premier-dashboard.md`.
+Exemplo neutro em `skills/dex-install/examples/instalacao-filho-exemplo.md`.
+
+## Guia Operacional
+
+- Guia canonico: `skills/dex-install/README.md`
+- Prompt pronto: `skills/dex-install/templates/install-prompt.md`

@@ -85,7 +85,7 @@ Fica dentro do proprio repo quando depende fortemente de:
 - browser, seeds, baterias, dashboards ou contratos daquele projeto
 
 Exemplo:
-- bateria recorrente do `AgendadorConsultasOticas`
+- bateria recorrente de um `ProjetoAlphaExemplo`
 
 ### Skill global
 

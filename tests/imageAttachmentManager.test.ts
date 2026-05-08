@@ -66,7 +66,7 @@ test("image attachment manager accepts paths escaped for Telegram MarkdownV2", a
   fs.mkdirSync(imageDir, { recursive: true });
   const imagePath = path.join(
     imageDir,
-    "frontend-agenda-mock-2026-04-20_09-33-13-929.png"
+    "frontend-sample-mock-2026-04-20_09-33-13-929.png"
   );
   fs.writeFileSync(imagePath, "fake png payload");
 

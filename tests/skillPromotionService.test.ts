@@ -45,11 +45,11 @@ test("assessCandidate does not infer project skill only from finalized repo evid
 
   const assessment = service.assessCandidate({
     workdir,
-    projectName: "AgendadorConsultasOticas",
+    projectName: "ProjetoAlphaTeste",
     title: "Diagnostico curto",
     summary: "A mesa fechou numa leitura simples e objetiva.",
     promptText: "",
-    evidenceValue: "finalized:AgendadorConsultasOticas"
+    evidenceValue: "finalized:ProjetoAlphaTeste"
   });
 
   assert.equal(assessment.destination, "memory");
@@ -241,7 +241,7 @@ test("findRelevantSkills uses authoritative README aliases and triggers for disc
     path.join(os.tmpdir(), "dex-agent-skill-alias-")
   );
   await fs.mkdir(
-    path.join(workdir, ".agents", "skills", "agendador-runtime-live-battery"),
+    path.join(workdir, ".agents", "skills", "runtime-live-battery"),
     {
       recursive: true
     }
@@ -251,21 +251,15 @@ test("findRelevantSkills uses authoritative README aliases and triggers for disc
     [
       "# Skills",
       "",
-      "- `agendador-runtime-live-battery` aliases: bateria viva, bateria real | gatilhos: whatsapp autenticado, navegador real"
+      "- `runtime-live-battery` aliases: bateria viva, bateria real | gatilhos: whatsapp autenticado, navegador real"
     ].join("\n"),
     "utf8"
   );
   await fs.writeFile(
-    path.join(
-      workdir,
-      ".agents",
-      "skills",
-      "agendador-runtime-live-battery",
-      "SKILL.md"
-    ),
+    path.join(workdir, ".agents", "skills", "runtime-live-battery", "SKILL.md"),
     [
       "---",
-      "name: agendador-runtime-live-battery",
+      "name: runtime-live-battery",
       "description: Use when the operator wants the authenticated real visual battery again.",
       "---",
       "",
@@ -286,7 +280,7 @@ test("findRelevantSkills uses authoritative README aliases and triggers for disc
   );
 
   assert.equal(relevant.length, 1);
-  assert.equal(relevant[0]?.name, "agendador-runtime-live-battery");
+  assert.equal(relevant[0]?.name, "runtime-live-battery");
 });
 
 test("findRelevantSkills ignores obviously invalid legacy skill folders even when authoritative README lists them", async () => {

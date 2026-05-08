@@ -28,16 +28,16 @@ test("startup queue recovery keeps manual buttons as fallback when auto-run cann
     {
       listRecoverableQueuedChats: () => [
         {
-          chatId: "8736107242",
+          chatId: "100000001",
           queueLength: 2,
-          workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
-          relativeWorkdir: "AgendadorConsultasOticas",
+          workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+          relativeWorkdir: "ProjetoAlphaTeste",
           nextItem: {
             id: "queue-1",
             index: 1,
             text: "continuar o proximo sprint",
-            workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
-            relativeWorkdir: "AgendadorConsultasOticas",
+            workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+            relativeWorkdir: "ProjetoAlphaTeste",
             createdAt: new Date().toISOString()
           }
         }
@@ -53,10 +53,10 @@ test("startup queue recovery keeps manual buttons as fallback when auto-run cann
   );
 
   assert.equal(sent.length, 1);
-  assert.equal(sent[0].chatId, "8736107242");
+  assert.equal(sent[0].chatId, "100000001");
   assert.match(sent[0].text, /fila pendente/i);
   assert.match(sent[0].text, /inicializacao do bot/i);
-  assert.match(sent[0].text, /AgendadorConsultasOticas/);
+  assert.match(sent[0].text, /ProjetoAlphaTeste/);
   const inlineKeyboard = (
     sent[0].options?.reply_markup as {
       inline_keyboard?: Array<Array<{ callback_data?: string }>>;
@@ -93,16 +93,16 @@ test("startup queue recovery auto-runs the next queued item when possible", asyn
     {
       listRecoverableQueuedChats: () => [
         {
-          chatId: "8736107242",
+          chatId: "100000001",
           queueLength: 3,
-          workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
-          relativeWorkdir: "AgendadorConsultasOticas",
+          workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+          relativeWorkdir: "ProjetoAlphaTeste",
           nextItem: {
             id: "queue-1",
             index: 1,
             text: "continuar o proximo sprint",
-            workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
-            relativeWorkdir: "AgendadorConsultasOticas",
+            workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+            relativeWorkdir: "ProjetoAlphaTeste",
             createdAt: new Date().toISOString()
           }
         }
@@ -175,17 +175,17 @@ test("boot-ready notification announces that the bot is back", async () => {
     {
       getLanguage: () => "en",
       getRelativeWorkdir: (chatId: string | number) =>
-        chatId === "8736107242" ? "AgendadorConsultasOticas" : "dex-agent"
+        chatId === "100000001" ? "ProjetoAlphaTeste" : "dex-agent"
     } as any,
-    ["8736107242", "123"],
+    ["100000001", "123"],
     "restart"
   );
 
   assert.equal(sent.length, 2);
-  const targetMessage = sent.find((item) => item.chatId === "8736107242");
+  const targetMessage = sent.find((item) => item.chatId === "100000001");
   assert.ok(targetMessage);
   assert.match(targetMessage.text, /restart finished/i);
-  assert.match(targetMessage.text, /AgendadorConsultasOticas/);
+  assert.match(targetMessage.text, /ProjetoAlphaTeste/);
 });
 
 test("boot-ready notification skips chats already covered by queue recovery", async () => {
@@ -206,11 +206,11 @@ test("boot-ready notification skips chats already covered by queue recovery", as
     {
       getLanguage: () => "pt-BR",
       getRelativeWorkdir: (chatId: string | number) =>
-        chatId === "123" ? "dex-agent" : "AgendadorConsultasOticas"
+        chatId === "123" ? "dex-agent" : "ProjetoAlphaTeste"
     } as any,
-    ["8736107242", "123"],
+    ["100000001", "123"],
     "startup",
-    new Set(["8736107242"])
+    new Set(["100000001"])
   );
 
   assert.deepEqual(

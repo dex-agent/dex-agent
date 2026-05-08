@@ -139,10 +139,10 @@ Alias operacional: ``dex-pai``
 
 ## Identidade
 
-- Bot Telegram: ``codex10_bot``
+- Bot Telegram: definido por ``TELEGRAM_EXPECTED_USERNAME`` no ``.env`` do repo pai
 - Repo pai: ``$sourceRoot``
 - Skill no repo pai: ``$sourceRoot\skills\dex-pai\SKILL.md``
-- Skill global opcional: ``C:\Users\crsan\.codex\skills\dex-pai\SKILL.md``
+- Skill global opcional: `` `$env:CODEX_HOME\skills\dex-pai\SKILL.md`` ou `` `$env:USERPROFILE\.codex\skills\dex-pai\SKILL.md``
 - Helper de envio: ``$parentHelper``
 - Chat liberado: usar o ``PROACTIVE_USER_IDS`` ou ``ALLOWED_USER_IDS`` do ``.env`` do repo pai
 
@@ -204,9 +204,9 @@ Alias operacional: ``dex-rede``
 
 Use ``dex-rede`` para handoff entre projetos, por exemplo:
 
-- ``MemoriaGeral`` -> ``ControlePessoal`` quando um conteudo do vault precisar virar trabalho no OpusClip.
-- ``ControlePessoal`` -> ``MemoriaGeral`` quando uma nota pessoal precisar ir para o vault.
-- ``AgendadorConsultasOticas`` -> ``ControlePessoal`` quando houver assunto operacional pessoal, e nao bug do Agendador.
+- ``ProjetoGammaExemplo`` -> ``ProjetoBetaExemplo`` quando um conteudo do vault precisar virar trabalho em outro projeto.
+- ``ProjetoBetaExemplo`` -> ``ProjetoGammaExemplo`` quando uma nota precisar voltar ao vault.
+- ``ProjetoAlphaExemplo`` -> ``ProjetoBetaExemplo`` quando houver assunto operacional externo ao projeto de agenda.
 
 Se o problema pertencer ao motor, memoria, runtime ou instalacao do Dex Agent, use ``dex-pai`` em vez de ``dex-rede``.
 
@@ -218,16 +218,16 @@ Telegram nao permite bot conversar com bot como usuario. Este fluxo usa o token 
 
 ~~~powershell
 powershell -ExecutionPolicy Bypass -File $networkHelper ``
-  -To "controle" ``
+  -To "projeto-beta" ``
   -SourceProject "$ProjectLabelValue" ``
   -ArtifactPath "$exampleArtifact" ``
-  -Title "Handoff $ProjectLabelValue -> ControlePessoal" ``
+  -Title "Handoff $ProjectLabelValue -> ProjetoBetaExemplo" ``
   -Text "Resumo curto, objetivo, proximo passo esperado e criterio de pronto."
 ~~~
 
 ## Frase curta
 
-``use dex-rede: crie ou referencie artefato local e envie para controle/opusclip com message_id``
+``use dex-rede: crie ou referencie artefato local e envie para alpha/beta com message_id``
 "@
 
   Set-Content -LiteralPath $cardPath -Value $content -Encoding UTF8
@@ -462,7 +462,7 @@ for (let i = 0; i < 36; i += 1) {
   const afterAck = ackIndex >= 0 ? afterPrompt.slice(ackIndex) : afterPrompt;
   evidence = afterAck.slice(0, 6500);
   const verdict = afterAck.match(/VEREDITO:\s*(OK|INCOMPLETO|ERRO)/i)?.[1] ?? afterAck.match(/\*\*(OK|INCOMPLETO|ERRO)\b/i)?.[1] ?? null;
-  const hasResponse = afterAck.includes(testId) && (afterAck.includes('ControlePessoal') || afterAck.includes('Instancia') || afterAck.includes('operacional'));
+  const hasResponse = afterAck.includes(testId) && (afterAck.includes('Instancia') || afterAck.includes('operacional'));
   if (verdict || hasResponse) {
     status = 'complete';
     break;

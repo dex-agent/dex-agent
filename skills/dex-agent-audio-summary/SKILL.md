@@ -62,13 +62,13 @@ Regra multiusuario: em pedido iniciado por Telegram, enviar para o chat solicita
 Se o objetivo for enviar agora um resumo ou audio explicativo a partir de qualquer workspace:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "C:\Users\crsan\.codex\skills\dex-agent-audio-summary\scripts\send-dex-agent-audio-summary.ps1" -Text "seu resumo aqui"
+powershell -ExecutionPolicy Bypass -File "$env:CODEX_HOME\skills\dex-agent-audio-summary\scripts\send-dex-agent-audio-summary.ps1" -Text "seu resumo aqui"
 ```
 
 Se o texto estiver em arquivo:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "C:\Users\crsan\.codex\skills\dex-agent-audio-summary\scripts\send-dex-agent-audio-summary.ps1" -TextPath "C:\caminho\resumo.txt"
+powershell -ExecutionPolicy Bypass -File "$env:CODEX_HOME\skills\dex-agent-audio-summary\scripts\send-dex-agent-audio-summary.ps1" -TextPath "C:\caminho\resumo.txt"
 ```
 
 Dentro do proprio repo `Dex Agent`, o helper espelhado em `.\skills\dex-agent-audio-summary\scripts\send-dex-agent-audio-summary.ps1` continua sendo um atalho equivalente.
@@ -106,7 +106,7 @@ Se houver duvida ou drift:
 - ler `<repo-root>/src/lib/audioTts.ts`
 - ler `<repo-root>/src/lib/audioSummaryManager.ts`
 - ler `<repo-root>/tests/audioTts.test.ts`
-- usar o wrapper global `C:\Users\crsan\.codex\skills\dex-agent-audio-summary\scripts\send-dex-agent-audio-summary.ps1` quando o pedido vier de outro repo
+- usar o wrapper global `$env:CODEX_HOME\skills\dex-agent-audio-summary\scripts\send-dex-agent-audio-summary.ps1` quando o pedido vier de outro repo
 - checar `.env` do `Dex Agent` para `BOT_TOKEN`, `PROACTIVE_USER_IDS`, `ALLOWED_USER_IDS`, `TTS_ENABLED` e `TTS_EDGE_VOICE`
 
 ## Sinais de pronto

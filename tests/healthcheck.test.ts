@@ -153,8 +153,8 @@ test("runHealthcheck accepts fixed instance workdirs without canonical drift war
   const config = createConfig(projectRoot);
   config.instance = {
     contextMode: "instance",
-    id: "agendador-consultas-oticas",
-    projectLabel: "AgendadorConsultasOticas"
+    id: "projeto-alpha-teste",
+    projectLabel: "ProjetoAlphaTeste"
   };
   config.app.stateFile = path.join(
     projectRoot,

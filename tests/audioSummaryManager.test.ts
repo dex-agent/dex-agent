@@ -138,7 +138,7 @@ test("audio summary manager can publish final action buttons for a finalized res
     1,
     ["**Proximo passo**", "Comecar pela fase 1 com o garimpeiro."].join("\n"),
     "en",
-    "C:/CodexProjetos/AgendadorConsultasOticas"
+    "C:/CodexProjetos/ProjetoAlphaTeste"
   );
 
   assert.equal(sent, true);
@@ -397,7 +397,7 @@ test("audio summary manager prefers explicit recommended next step over generic 
       "Proximo especialista indicado: Tereza Testa."
     ].join("\n"),
     "pt-BR",
-    "C:/CodexProjetos/AgendadorConsultasOticas"
+    "C:/CodexProjetos/ProjetoAlphaTeste"
   );
 
   assert.equal(sent, true);
@@ -464,7 +464,7 @@ test("audio summary manager truncates suggested prompts without mojibake", async
   );
 
   assert.equal(sent, true);
-  assert.doesNotMatch(messageCalls[0]?.text || "", /Ã|Â|ā|â/);
+  assert.doesNotMatch(messageCalls[0]?.text || "", /Ãƒ|Ã‚|Ä|Ã¢/);
   assert.match(messageCalls[0]?.text || "", /\.\.\./);
 });
 

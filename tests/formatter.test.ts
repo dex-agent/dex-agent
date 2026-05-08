@@ -110,7 +110,7 @@ test("formatPtyOutput removes transient runner noise from streamed output", () =
 test("formatPtyOutput removes unstable feature warnings from streamed output", () => {
   const raw = [
     "[error] Under-development features enabled: codex_hooks, memories. Under-development features are incomplete and may behave unpredictably.",
-    "To suppress this warning, set `suppress_unstable_features_warning = true` in C:\\Users\\crsan\\.codex\\config.toml.",
+    "To suppress this warning, set `suppress_unstable_features_warning = true` in C:\\Users\\ExampleUser\\.codex\\config.toml.",
     "",
     "Entendido. O desvio foi no sender automatico."
   ].join("\n");

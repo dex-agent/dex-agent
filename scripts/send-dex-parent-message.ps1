@@ -6,7 +6,7 @@ param(
   [string]$ArtifactPath = "",
   [string]$ChatId = "",
   [string]$ParentEnvPath = "",
-  [string]$ExpectedUsername = "codex10_bot",
+  [string]$ExpectedUsername = "",
   [switch]$DryRun
 )
 
@@ -73,6 +73,7 @@ $token = $envMap["BOT_TOKEN"]
 if ([string]::IsNullOrWhiteSpace($token)) {
   throw "BOT_TOKEN vazio no .env do pai."
 }
+$expectedUsernameFromEnv = $envMap["TELEGRAM_EXPECTED_USERNAME"]
 
 $targetChatId = Select-ChatId -Env $envMap
 $bodyText = Get-MessageText
@@ -87,8 +88,10 @@ $me = Invoke-RestMethod -Method Get -Uri ("https://api.telegram.org/bot" + $toke
 if (-not $me.ok) {
   throw "Telegram getMe falhou para o dex-pai."
 }
-if ($me.result.username -ne $ExpectedUsername) {
-  throw "Token do pai aponta para @$($me.result.username), esperado @$ExpectedUsername."
+$expected = $ExpectedUsername
+if ([string]::IsNullOrWhiteSpace($expected)) { $expected = $expectedUsernameFromEnv }
+if (-not [string]::IsNullOrWhiteSpace($expected) -and $me.result.username -ne $expected.TrimStart("@")) {
+  throw "Token do pai aponta para @$($me.result.username), esperado @$($expected.TrimStart("@"))."
 }
 
 if ($DryRun) {

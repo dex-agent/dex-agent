@@ -134,15 +134,15 @@ Use `dex-pai` quando:
 Use `dex-rede` quando:
 
 - o conteudo precisa ir de um filho para outro;
-- `MemoriaGeral` precisa mandar material para `ControlePessoal`;
-- `Agendador` precisa avisar outro filho;
+- `ProjetoGammaExemplo` precisa mandar material para `ProjetoBetaExemplo`;
+- `ProjetoAlphaExemplo` precisa avisar outro filho;
 - o destino e um alias de projeto filho.
 
 Exemplo:
 
 ```text
 Bug no recall operacional do Dex Agent -> dex-pai
-Conteudo do Obsidian para OpusClip no ControlePessoal -> dex-rede
+Conteudo de vault para ProjetoBetaExemplo -> dex-rede
 ```
 
 ## Prompt Curto Para Ensinar Um Filho

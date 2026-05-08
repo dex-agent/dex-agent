@@ -18,7 +18,7 @@ It is strictly inspired by `RichardAtCT/claude-code-telegram`, but this project 
 ### Install
 
 ```bash
-git clone https://github.com/crsantosxx/dex-agent.git
+git clone https://github.com/<owner>/dex-agent.git
 cd dex-agent
 npm install
 cp .env.example .env
@@ -55,6 +55,9 @@ npm run start
 
 For agent-oriented setup, see [SKILL.md](./SKILL.md).
 
+For child project installs, use the canonical Dex Install guide:
+[skills/dex-install/README.md](./skills/dex-install/README.md).
+
 ## What Is This?
 
 This bot connects Telegram to Codex and routes tasks to the right execution surface:
@@ -83,7 +86,7 @@ Key design goals:
 ### Install
 
 ```bash
-git clone https://github.com/crsantosxx/dex-agent.git
+git clone https://github.com/<owner>/dex-agent.git
 cd dex-agent
 npm install
 ```

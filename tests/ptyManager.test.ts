@@ -629,7 +629,7 @@ test("pty manager tracks the last detected superpowers workflow phase per projec
             item: {
               id: "item-1",
               type: "agent_message",
-              text: "I’m using `brainstorming` first, then `writing-plans`."
+              text: "Iâ€™m using `brainstorming` first, then `writing-plans`."
             }
           };
           yield {
@@ -1403,7 +1403,7 @@ test("pty manager sends unescaped final text to post-response hooks", async () =
             item: {
               id: "item-image-path",
               type: "agent_message",
-              text: "Print salvo em C:/tmp/frontend-agenda_v2.png"
+              text: "Print salvo em C:/tmp/frontend-sample_v2.png"
             }
           };
         }
@@ -1415,7 +1415,7 @@ test("pty manager sends unescaped final text to post-response hooks", async () =
   await waitFor(() => !manager.getStatus(181).active);
 
   assert.equal(finalized.length, 1);
-  assert.equal(finalized[0], "Print salvo em C:/tmp/frontend-agenda_v2.png");
+  assert.equal(finalized[0], "Print salvo em C:/tmp/frontend-sample_v2.png");
 });
 
 test("pty manager does not let a stuck finalized hook block queued prompts", async () => {
@@ -1522,7 +1522,7 @@ test("pty manager stores a compact finalized snapshot instead of the full narrat
               text: [
                 "Fechei o recorte principal do backend.",
                 "",
-                "Validação:",
+                "ValidaÃ§Ã£o:",
                 "- npm run check passou",
                 "- npm test passou",
                 "",
@@ -1552,7 +1552,10 @@ test("pty manager stores a compact finalized snapshot instead of the full narrat
     projectState.lastFinalResponseText || "",
     /Fechei o recorte principal do backend/i
   );
-  assert.doesNotMatch(projectState.lastFinalResponseText || "", /Validação:/i);
+  assert.doesNotMatch(
+    projectState.lastFinalResponseText || "",
+    /ValidaÃ§Ã£o:/i
+  );
   assert.doesNotMatch(
     projectState.lastFinalResponseText || "",
     /O que sobra depois:/i

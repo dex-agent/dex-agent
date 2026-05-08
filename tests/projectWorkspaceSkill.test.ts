@@ -4,14 +4,14 @@ import { ProjectWorkspaceSkill } from "../src/orchestrator/skills/projectWorkspa
 
 const projects = [
   {
-    name: "AgendadorConsultasOticas",
-    path: "C:/CodexProjetos/AgendadorConsultasOticas",
-    relativePath: "AgendadorConsultasOticas"
+    name: "ProjetoAlphaTeste",
+    path: "C:/CodexProjetos/ProjetoAlphaTeste",
+    relativePath: "ProjetoAlphaTeste"
   },
   {
-    name: "ControlePessoal",
-    path: "C:/CodexProjetos/ControlePessoal",
-    relativePath: "ControlePessoal"
+    name: "ProjetoBetaTeste",
+    path: "C:/CodexProjetos/ProjetoBetaTeste",
+    relativePath: "ProjetoBetaTeste"
   }
 ];
 
@@ -58,7 +58,7 @@ function createFixedInstanceSkill() {
     },
     fixedInstance: {
       enabled: true,
-      projectLabel: "AgendadorConsultasOticas"
+      projectLabel: "ProjetoAlphaTeste"
     }
   });
 }
@@ -66,14 +66,8 @@ function createFixedInstanceSkill() {
 test("project workspace skill recognizes standard project navigation intents", () => {
   const skill = createSkill();
 
-  assert.equal(
-    skill.supports("Mude agora para o projeto Controle Pessoal."),
-    true
-  );
-  assert.equal(
-    skill.supports("Pesquise aonde fica o projeto controle pessoal."),
-    true
-  );
+  assert.equal(skill.supports("Mude agora para o projeto Projeto Beta."), true);
+  assert.equal(skill.supports("Pesquise aonde fica o projeto beta."), true);
   assert.equal(skill.supports("liste os projetos"), true);
   assert.equal(skill.supports("volte para o projeto anterior"), true);
   assert.equal(skill.supports("qual sprint atual?"), false);
@@ -83,11 +77,11 @@ test("project workspace skill switches to a matched project by natural language"
   const skill = createSkill();
 
   const result = await skill.execute({
-    text: "Mude agora para o projeto Controle Pessoal.",
+    text: "Mude agora para o projeto Projeto Beta.",
     chatId: 1
   });
 
-  assert.equal(result.switchToRepo, "ControlePessoal");
+  assert.equal(result.switchToRepo, "ProjetoBetaTeste");
   assert.match(result.text, /Projeto alterado/i);
 });
 
@@ -95,13 +89,13 @@ test("project workspace skill can locate a project without switching", async () 
   const skill = createSkill();
 
   const result = await skill.execute({
-    text: "Pesquise aonde fica o projeto controle pessoal.",
+    text: "Pesquise aonde fica o projeto beta.",
     chatId: 1
   });
 
   assert.equal(result.switchToRepo, undefined);
   assert.match(result.text, /Projeto encontrado/i);
-  assert.match(result.text, /ControlePessoal/);
+  assert.match(result.text, /ProjetoBetaTeste/);
 });
 
 test("project workspace skill lists recent projects and can return to the previous one", async () => {
@@ -117,18 +111,18 @@ test("project workspace skill lists recent projects and can return to the previo
   });
 
   assert.match(recent.text, /Projetos recentes/i);
-  assert.equal(previous.switchToRepo, "ControlePessoal");
+  assert.equal(previous.switchToRepo, "ProjetoBetaTeste");
 });
 
 test("project workspace skill blocks natural language switching in fixed instance mode", async () => {
   const skill = createFixedInstanceSkill();
 
   const result = await skill.execute({
-    text: "Mude agora para o projeto Controle Pessoal.",
+    text: "Mude agora para o projeto Projeto Beta.",
     chatId: 1
   });
 
   assert.equal(result.switchToRepo, undefined);
   assert.match(result.text, /Instancia fixa/i);
-  assert.match(result.text, /AgendadorConsultasOticas/);
+  assert.match(result.text, /ProjetoAlphaTeste/);
 });

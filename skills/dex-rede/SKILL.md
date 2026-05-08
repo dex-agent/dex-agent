@@ -1,6 +1,6 @@
 ---
 name: dex-rede
-description: "Use quando um projeto filho do Dex Agent precisar encaminhar mensagem, conteudo, artefato, resumo ou pedido operacional para outro projeto filho por alias, por exemplo MemoriaGeral para ControlePessoal/opusclip, ControlePessoal para Agendador, ou qualquer envio entre bots instalados. Alias: dex-rede, dex-filho, filho-para-filho."
+description: "Use quando um projeto filho do Dex Agent precisar encaminhar mensagem, conteudo, artefato, resumo ou pedido operacional para outro projeto filho por alias, por exemplo ProjetoGammaExemplo para ProjetoBetaExemplo, ProjetoBetaExemplo para ProjetoAlphaExemplo, ou qualquer envio entre bots instalados. Alias: dex-rede, dex-filho, filho-para-filho."
 ---
 
 # Dex Rede
@@ -9,9 +9,9 @@ Use esta skill quando o usuario ou um repo disser:
 
 - `dex-rede`
 - `mande para outro filho`
-- `envie para dex-controlepessoal`
-- `encaminhe isso para opusclip`
-- `mande este conteudo da MemoriaGeral para ControlePessoal`
+- `envie para dex-beta`
+- `encaminhe isso para projeto-beta`
+- `mande este conteudo do ProjetoGammaExemplo para ProjetoBetaExemplo`
 - `filho para filho`
 
 ## Contrato
@@ -32,10 +32,10 @@ O helper oficial usa:
 
 Aliases esperados no ambiente atual:
 
-- `dex-pai`, `pai`, `codex10`
-- `agendador`, `dex-agendador`
-- `controle`, `controlepessoal`, `opusclip`
-- `memoria`, `memoriageral`, `obsidian`
+- `dex-pai`, `pai`, `parent`
+- `alpha`, `dex-alpha`
+- `beta`, `projeto-beta`
+- `gamma`, `projeto-gamma`
 
 ## Fluxo Obrigatorio
 
@@ -49,11 +49,11 @@ Aliases esperados no ambiente atual:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File C:\CodexProjetos\dex-agent\scripts\send-dex-child-message.ps1 `
-  -To "controle" `
-  -SourceProject "MemoriaGeral" `
-  -ArtifactPath "D:\Drive\SegundaMente\CrSantos\.agents\CONTEUDO_OPUSCLIP.md" `
-  -Title "Handoff MemoriaGeral -> ControlePessoal" `
-  -Text "Resumo curto, objetivo no opusclip, proximo passo esperado e criterio de pronto."
+  -To "beta" `
+  -SourceProject "ProjetoGammaExemplo" `
+  -ArtifactPath "C:\CodexProjetos\ProjetoGammaExemplo\.agents\CONTEUDO_EXEMPLO.md" `
+  -Title "Handoff ProjetoGammaExemplo -> ProjetoBetaExemplo" `
+  -Text "Resumo curto, objetivo no projeto destino, proximo passo esperado e criterio de pronto."
 ```
 
 ## Prompt Curto Para Ensinar Um Repo Filho
@@ -62,7 +62,7 @@ powershell -ExecutionPolicy Bypass -File C:\CodexProjetos\dex-agent\scripts\send
 Quando eu disser dex-rede, envie mensagem para outro projeto Dex Agent por alias:
 1. crie ou referencie artefato local em .agents/ se o conteudo for duravel;
 2. use C:\CodexProjetos\dex-agent\scripts\send-dex-child-message.ps1;
-3. escolha o destino por alias, como controle, opusclip, memoria, agendador ou dex-pai;
+3. escolha o destino por alias, como alpha, beta, gamma ou dex-pai;
 4. nao copie token;
 5. responda com destino, caminho do artefato e message_id.
 ```
@@ -73,4 +73,4 @@ Quando eu disser dex-rede, envie mensagem para outro projeto Dex Agent por alias
 - Nao mandar conteudo sensivel para projeto errado; use `-DryRun` quando houver duvida.
 - Se `getMe` apontar para bot diferente do esperado, parar e corrigir o registro ou `.env`.
 - Se o objetivo for bug do motor do Dex Agent, prefira `dex-pai`; se for handoff entre projetos, use `dex-rede`.
-- Se o destino for `controle/opusclip`, deixar claro se e apenas material de trabalho ou pedido de acao.
+- Se o destino for `alpha/beta`, deixar claro se e apenas material de trabalho ou pedido de acao.

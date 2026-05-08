@@ -1,5 +1,5 @@
 {
-  "description": "Example registry for Dex Agent project-to-project messaging. Copy to dex-agent-network.local.json and adjust local paths on each machine.",
+  "description": "Example registry for Dex Agent project-to-project messaging. Copy to dex-agent-network.local.json and adjust local bot usernames, aliases, and paths on each machine.",
   "chatIdEnvPriority": [
     "DEX_REQUEST_CHAT_ID",
     "DEX_CURRENT_CHAT_ID",
@@ -9,56 +9,33 @@
   "instances": [
     {
       "projectLabel": "DexAgentPai",
-      "botUsername": "codex10_bot",
+      "botUsername": "dex_parent_example_bot",
       "envPath": "C:\\CodexProjetos\\dex-agent\\.env",
-      "aliases": ["dex-pai", "pai", "codex10", "codex10_bot"]
+      "aliases": ["dex-pai", "pai", "dex-parent"]
     },
     {
-      "projectLabel": "AgendadorConsultasOticas",
-      "botUsername": "dex_agendadorconsultas_bot",
-      "envPath": "C:\\CodexProjetos\\AgendadorConsultasOticas\\skills\\dex-agent\\.env",
-      "aliases": [
-        "agendador",
-        "agendadorconsultas",
-        "dex-agendador",
-        "dex_agendadorconsultas_bot"
-      ]
+      "projectLabel": "ProjetoAlphaExemplo",
+      "botUsername": "dex_alpha_example_bot",
+      "envPath": "C:\\CodexProjetos\\ProjetoAlphaExemplo\\skills\\dex-agent\\.env",
+      "aliases": ["alpha", "projeto-alpha", "dex-alpha"]
     },
     {
-      "projectLabel": "ControlePessoal",
-      "botUsername": "dex_controlepessoal_bot",
-      "envPath": "C:\\CodexProjetos\\ControlePessoal\\skills\\dex-agent\\.env",
-      "aliases": [
-        "controle",
-        "controlepessoal",
-        "dex-controlepessoal",
-        "dex_controlepessoal_bot",
-        "opusclip"
-      ]
+      "projectLabel": "ProjetoBetaExemplo",
+      "botUsername": "dex_beta_example_bot",
+      "envPath": "C:\\CodexProjetos\\ProjetoBetaExemplo\\skills\\dex-agent\\.env",
+      "aliases": ["beta", "projeto-beta", "dex-beta"]
     },
     {
-      "projectLabel": "MemoriaGeral",
-      "botUsername": "crsantosxxbot",
-      "envPath": "D:\\Drive\\SegundaMente\\CrSantos\\skills\\dex-agent\\.env",
-      "aliases": [
-        "memoria",
-        "memoriageral",
-        "segunda-mente",
-        "obsidian",
-        "crsantosxxbot"
-      ]
+      "projectLabel": "ProjetoGammaExemplo",
+      "botUsername": "dex_gamma_example_bot",
+      "envPath": "C:\\CodexProjetos\\ProjetoGammaExemplo\\skills\\dex-agent\\.env",
+      "aliases": ["gamma", "projeto-gamma", "dex-projeto-gamma"]
     },
     {
-      "projectLabel": "PremierDashboard",
-      "botUsername": "premier_dashboardbot",
-      "envPath": "C:\\CodexProjetos\\PremierDashboard\\skills\\dex-agent\\.env",
-      "aliases": [
-        "premier",
-        "premierdashboard",
-        "dashboard-premier",
-        "otica-premier",
-        "premier_dashboardbot"
-      ]
+      "projectLabel": "ProjetoDeltaExemplo",
+      "botUsername": "dex_delta_example_bot",
+      "envPath": "C:\\CodexProjetos\\ProjetoDeltaExemplo\\skills\\dex-agent\\.env",
+      "aliases": ["delta", "projeto-delta", "dex-delta"]
     }
   ]
 }

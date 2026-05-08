@@ -402,7 +402,7 @@ function createDependencies(
           canonicalSources: [],
           memorySources: [],
           currentStatus: {
-            projectName: "AgendadorConsultasOticas",
+            projectName: "ProjetoAlphaTeste",
             primaryFocus: "front-end",
             latestClosedBlock: "669-680",
             nextEligibleBlock: "681-692",
@@ -907,7 +907,7 @@ test("continue-style free text prioritizes live operational state before canonic
     },
     memoryService: {
       buildMemoryPacket: async () => ({
-        workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
+        workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
         currentObjective: "front-end",
         latestClosedBlock: "765-776",
         nextEligibleBlock: "777-788",
@@ -933,8 +933,8 @@ test("continue-style free text prioritizes live operational state before canonic
     active: false,
     activeMode: null,
     workflowPhase: "verifying",
-    workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
-    relativeWorkdir: "AgendadorConsultasOticas",
+    workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+    relativeWorkdir: "ProjetoAlphaTeste",
     pendingPromptText: null,
     queuedItems: [],
     lastPromptText: "continue a bateria de testes ao vivo",
@@ -990,7 +990,7 @@ test("operational status question returns runtime status instead of sending a pr
         id: "queue-1",
         index: 1,
         text: "continue a bateria",
-        relativeWorkdir: "AgendadorConsultasOticas",
+        relativeWorkdir: "ProjetoAlphaTeste",
         createdAt: new Date().toISOString()
       }
     ]
@@ -1009,7 +1009,7 @@ test("operational status question returns runtime status instead of sending a pr
         index: 1,
         text: "continue a bateria",
         workdir: process.cwd(),
-        relativeWorkdir: "AgendadorConsultasOticas",
+        relativeWorkdir: "ProjetoAlphaTeste",
         createdAt: new Date().toISOString()
       }
     ],
@@ -1037,7 +1037,7 @@ test("operational next-step question routes to project status next instead of Co
   const prompts: string[] = [];
   const projectStatusCalls: Array<{ variant?: string; workdir?: string }> = [];
   const { bot } = createDependencies({
-    workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
+    workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
     sendPrompt: async (_ctx: unknown, prompt: string) => {
       prompts.push(prompt);
       return {
@@ -1066,7 +1066,7 @@ test("operational next-step question routes to project status next instead of Co
   assert.equal(projectStatusCalls[0]?.variant, "next");
   assert.equal(
     projectStatusCalls[0]?.workdir,
-    "C:/CodexProjetos/AgendadorConsultasOticas"
+    "C:/CodexProjetos/ProjetoAlphaTeste"
   );
   assert.match(ctx.replies.at(-1)?.text || "", /project status variant: next/i);
 });
@@ -1133,8 +1133,8 @@ test("status command is localized to pt-BR and shows whether the bot is working"
     language: "pt-BR",
     verboseOutput: false,
     ptySupported: null,
-    workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
-    relativeWorkdir: "AgendadorConsultasOticas",
+    workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+    relativeWorkdir: "ProjetoAlphaTeste",
     workspaceRoot: "C:/CodexProjetos",
     command: "codex",
     mcpServers: [],
@@ -1145,8 +1145,8 @@ test("status command is localized to pt-BR and shows whether the bot is working"
     active: true,
     activeMode: "sdk",
     workflowPhase: "working",
-    workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
-    relativeWorkdir: "AgendadorConsultasOticas",
+    workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+    relativeWorkdir: "ProjetoAlphaTeste",
     pendingPromptText: null,
     queuedItems: [],
     lastPromptText: "continue a bateria viva",
@@ -1156,8 +1156,8 @@ test("status command is localized to pt-BR and shows whether the bot is working"
   });
   (ptyManager.getRecentProjects as any) = () => [
     {
-      relativePath: "AgendadorConsultasOticas",
-      path: "C:/CodexProjetos/AgendadorConsultasOticas"
+      relativePath: "ProjetoAlphaTeste",
+      path: "C:/CodexProjetos/ProjetoAlphaTeste"
     }
   ];
 
@@ -1297,7 +1297,7 @@ test("interrupt shows queue state with actionable buttons when items remain pend
         id: "queue-1",
         index: 1,
         text: "continue a bateria",
-        relativeWorkdir: "AgendadorConsultasOticas",
+        relativeWorkdir: "ProjetoAlphaTeste",
         createdAt: new Date().toISOString()
       }
     ]
@@ -1771,7 +1771,7 @@ test("inbox candidates and why keep manual-review items humanized without forcin
   );
   await memoryService.captureCandidate({
     workdir,
-    text: "Use este prompt de retomada em uma nova conversa: ```text Projeto: AgendadorConsultasOticas Quero retomar exatamente do estado vivo deste projeto.```",
+    text: "Use este prompt de retomada em uma nova conversa: ```text Projeto: ProjetoAlphaTeste Quero retomar exatamente do estado vivo deste projeto.```",
     promptText: "isso tem que virar skill de projeto",
     source: {
       type: "operator",
@@ -1779,7 +1779,7 @@ test("inbox candidates and why keep manual-review items humanized without forcin
     },
     evidence: {
       type: "assistant",
-      value: "finalized:AgendadorConsultasOticas"
+      value: "finalized:ProjetoAlphaTeste"
     }
   });
 
@@ -1832,7 +1832,7 @@ test("inbox promote shows proposal copy with humanized destination", async () =>
   );
   await memoryService.captureCandidate({
     workdir,
-    text: "Use este prompt de retomada em uma nova conversa: ```text Projeto: AgendadorConsultasOticas Quero retomar exatamente do estado vivo deste projeto.```",
+    text: "Use este prompt de retomada em uma nova conversa: ```text Projeto: ProjetoAlphaTeste Quero retomar exatamente do estado vivo deste projeto.```",
     promptText: "isso tem que virar skill de projeto",
     source: {
       type: "operator",
@@ -1840,7 +1840,7 @@ test("inbox promote shows proposal copy with humanized destination", async () =>
     },
     evidence: {
       type: "assistant",
-      value: "finalized:AgendadorConsultasOticas"
+      value: "finalized:ProjetoAlphaTeste"
     }
   });
 
@@ -1961,8 +1961,8 @@ test("repo command confirms when the project really changed", async () => {
     language: "en",
     verboseOutput: false,
     ptySupported: null,
-    workdir: "C:/CodexProjetos/ControlePessoal",
-    relativeWorkdir: "ControlePessoal",
+    workdir: "C:/CodexProjetos/ProjetoBetaTeste",
+    relativeWorkdir: "ProjetoBetaTeste",
     workspaceRoot: "C:/CodexProjetos",
     command: "codex",
     mcpServers: [],
@@ -1971,27 +1971,24 @@ test("repo command confirms when the project really changed", async () => {
   });
   (ptyManager.listProjects as any) = () => [
     {
-      name: "AgendadorConsultasOticas",
-      path: "C:/CodexProjetos/AgendadorConsultasOticas",
-      relativePath: "AgendadorConsultasOticas"
+      name: "ProjetoAlphaTeste",
+      path: "C:/CodexProjetos/ProjetoAlphaTeste",
+      relativePath: "ProjetoAlphaTeste"
     }
   ];
   (ptyManager.switchWorkdir as any) = () => ({
-    workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
-    relativePath: "AgendadorConsultasOticas"
+    workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+    relativePath: "ProjetoAlphaTeste"
   });
 
-  const ctx = createContext("/repo AgendadorConsultasOticas");
+  const ctx = createContext("/repo ProjetoAlphaTeste");
   const handler = bot.commands.get("repo");
 
   assert.ok(handler);
   await handler!(ctx);
 
   assert.match(ctx.replies[0].text, /Project switched successfully/i);
-  assert.match(
-    ctx.replies[0].text,
-    /active project: AgendadorConsultasOticas/i
-  );
+  assert.match(ctx.replies[0].text, /active project: ProjetoAlphaTeste/i);
 });
 
 test("repo command lists clickable shortcuts for available projects", async () => {
@@ -2008,8 +2005,8 @@ test("repo command lists clickable shortcuts for available projects", async () =
     language: "en",
     verboseOutput: false,
     ptySupported: null,
-    workdir: "C:/CodexProjetos/ControlePessoal",
-    relativeWorkdir: "ControlePessoal",
+    workdir: "C:/CodexProjetos/ProjetoBetaTeste",
+    relativeWorkdir: "ProjetoBetaTeste",
     workspaceRoot: "C:/CodexProjetos",
     command: "codex",
     mcpServers: [],
@@ -2018,24 +2015,24 @@ test("repo command lists clickable shortcuts for available projects", async () =
   });
   (ptyManager.listProjects as any) = () => [
     {
-      name: "AgendadorConsultasOticas",
-      path: "C:/CodexProjetos/AgendadorConsultasOticas",
-      relativePath: "AgendadorConsultasOticas"
+      name: "ProjetoAlphaTeste",
+      path: "C:/CodexProjetos/ProjetoAlphaTeste",
+      relativePath: "ProjetoAlphaTeste"
     },
     {
-      name: "ControlePessoal",
-      path: "C:/CodexProjetos/ControlePessoal",
-      relativePath: "ControlePessoal"
+      name: "ProjetoBetaTeste",
+      path: "C:/CodexProjetos/ProjetoBetaTeste",
+      relativePath: "ProjetoBetaTeste"
     }
   ];
   (ptyManager.getRecentProjects as any) = () => [
     {
-      relativePath: "ControlePessoal",
-      path: "C:/CodexProjetos/ControlePessoal"
+      relativePath: "ProjetoBetaTeste",
+      path: "C:/CodexProjetos/ProjetoBetaTeste"
     },
     {
-      relativePath: "AgendadorConsultasOticas",
-      path: "C:/CodexProjetos/AgendadorConsultasOticas"
+      relativePath: "ProjetoAlphaTeste",
+      path: "C:/CodexProjetos/ProjetoAlphaTeste"
     }
   ];
 
@@ -2052,11 +2049,11 @@ test("repo command lists clickable shortcuts for available projects", async () =
   )?.inline_keyboard;
   assert.equal(
     inlineKeyboard?.[0]?.[0]?.callback_data,
-    "repo:switch:AgendadorConsultasOticas"
+    "repo:switch:ProjetoAlphaTeste"
   );
   assert.equal(
     inlineKeyboard?.[0]?.[1]?.callback_data,
-    "repo:switch:ControlePessoal"
+    "repo:switch:ProjetoBetaTeste"
   );
 });
 
@@ -2074,8 +2071,8 @@ test("repo command says when the requested project is already active", async () 
     language: "en",
     verboseOutput: false,
     ptySupported: null,
-    workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
-    relativeWorkdir: "AgendadorConsultasOticas",
+    workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+    relativeWorkdir: "ProjetoAlphaTeste",
     workspaceRoot: "C:/CodexProjetos",
     command: "codex",
     mcpServers: [],
@@ -2084,47 +2081,44 @@ test("repo command says when the requested project is already active", async () 
   });
   (ptyManager.listProjects as any) = () => [
     {
-      name: "AgendadorConsultasOticas",
-      path: "C:/CodexProjetos/AgendadorConsultasOticas",
-      relativePath: "AgendadorConsultasOticas"
+      name: "ProjetoAlphaTeste",
+      path: "C:/CodexProjetos/ProjetoAlphaTeste",
+      relativePath: "ProjetoAlphaTeste"
     }
   ];
   (ptyManager.switchWorkdir as any) = () => ({
-    workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
-    relativePath: "AgendadorConsultasOticas"
+    workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+    relativePath: "ProjetoAlphaTeste"
   });
 
-  const ctx = createContext("/repo AgendadorConsultasOticas");
+  const ctx = createContext("/repo ProjetoAlphaTeste");
   const handler = bot.commands.get("repo");
 
   assert.ok(handler);
   await handler!(ctx);
 
   assert.match(ctx.replies[0].text, /already active/i);
-  assert.match(
-    ctx.replies[0].text,
-    /active project: AgendadorConsultasOticas/i
-  );
+  assert.match(ctx.replies[0].text, /active project: ProjetoAlphaTeste/i);
 });
 
 test("repo command is blocked in fixed instance mode", async () => {
   const { bot, ptyManager } = createDependencies({
     instance: {
       contextMode: "instance",
-      id: "agendador-consultas-oticas",
-      projectLabel: "AgendadorConsultasOticas"
+      id: "projeto-alpha-teste",
+      projectLabel: "ProjetoAlphaTeste"
     }
   });
   let switchCalls = 0;
   (ptyManager.switchWorkdir as any) = () => {
     switchCalls += 1;
     return {
-      workdir: "C:/CodexProjetos/ControlePessoal",
-      relativePath: "ControlePessoal"
+      workdir: "C:/CodexProjetos/ProjetoBetaTeste",
+      relativePath: "ProjetoBetaTeste"
     };
   };
 
-  const ctx = createContext("/repo ControlePessoal");
+  const ctx = createContext("/repo ProjetoBetaTeste");
   const handler = bot.commands.get("repo");
 
   assert.ok(handler);
@@ -2132,29 +2126,29 @@ test("repo command is blocked in fixed instance mode", async () => {
 
   assert.equal(switchCalls, 0);
   assert.match(ctx.replies[0].text, /fixed to one project/i);
-  assert.match(ctx.replies[0].text, /AgendadorConsultasOticas/);
+  assert.match(ctx.replies[0].text, /ProjetoAlphaTeste/);
 });
 
 test("repo callback is blocked in fixed instance mode", async () => {
   const { bot, ptyManager } = createDependencies({
     instance: {
       contextMode: "instance",
-      id: "agendador-consultas-oticas",
-      projectLabel: "AgendadorConsultasOticas"
+      id: "projeto-alpha-teste",
+      projectLabel: "ProjetoAlphaTeste"
     }
   });
   let switchCalls = 0;
   (ptyManager.switchWorkdir as any) = () => {
     switchCalls += 1;
     return {
-      workdir: "C:/CodexProjetos/ControlePessoal",
-      relativePath: "ControlePessoal"
+      workdir: "C:/CodexProjetos/ProjetoBetaTeste",
+      relativePath: "ProjetoBetaTeste"
     };
   };
 
   const ctx = createContext("", 1, { text: undefined });
   ctx.callbackQuery = {
-    data: "repo:switch:ControlePessoal"
+    data: "repo:switch:ProjetoBetaTeste"
   };
   const handler = bot.events.get("callback_query");
 
@@ -2202,8 +2196,8 @@ test("repo callback switches the project explicitly", async () => {
     language: "en",
     verboseOutput: false,
     ptySupported: null,
-    workdir: "C:/CodexProjetos/ControlePessoal",
-    relativeWorkdir: "ControlePessoal",
+    workdir: "C:/CodexProjetos/ProjetoBetaTeste",
+    relativeWorkdir: "ProjetoBetaTeste",
     workspaceRoot: "C:/CodexProjetos",
     command: "codex",
     mcpServers: [],
@@ -2211,13 +2205,13 @@ test("repo callback switches the project explicitly", async () => {
     workflowPhase: "none"
   });
   (ptyManager.switchWorkdir as any) = () => ({
-    workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
-    relativePath: "AgendadorConsultasOticas"
+    workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+    relativePath: "ProjetoAlphaTeste"
   });
 
   const ctx = createContext("", 1, { text: undefined });
   ctx.callbackQuery = {
-    data: "repo:switch:AgendadorConsultasOticas"
+    data: "repo:switch:ProjetoAlphaTeste"
   };
   const handler = bot.events.get("callback_query");
 
@@ -2433,7 +2427,7 @@ test("final action plan callback sends a planning prompt from the finalized resu
           "**Proximo especialista indicado**",
           "$sprinter"
         ].join("\n"),
-        workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
+        workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
         createdAt: Date.now()
       }),
       offerForContext: async () => false,
@@ -2511,7 +2505,7 @@ test("final action handoff callback routes one cut to the next specialist", asyn
           "**Proximo especialista indicado**",
           "Renata Review"
         ].join("\n"),
-        workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
+        workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
         createdAt: Date.now()
       }),
       offerForContext: async () => false,
@@ -2574,7 +2568,7 @@ test("final action continue short callback sends a safe next-step prompt from th
           "**Proximo passo**",
           "Comecar pela fase 1 com o garimpeiro."
         ].join("\n"),
-        workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
+        workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
         createdAt: Date.now()
       }),
       offerForContext: async () => false,
@@ -2973,7 +2967,7 @@ test("final action legacy execute callback maps to short continue and keeps a di
       resolveRequest: () => ({
         chatId: "1",
         text: "Implementacao aprovada e sprint encerrado.",
-        workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
+        workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
         createdAt: Date.now()
       }),
       offerForContext: async () => false,
@@ -3028,7 +3022,7 @@ test("final action review callback sends a specialist review prompt from the fin
       resolveRequest: () => ({
         chatId: "1",
         text: "Existe tensao de governanca entre candidate e skill real.",
-        workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
+        workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
         createdAt: Date.now()
       }),
       offerForContext: async () => false,
@@ -3058,7 +3052,7 @@ test("final action organize callback opens the inbox overview for the stored wor
       resolveRequest: () => ({
         chatId: "1",
         text: "Implementacao aprovada e sprint encerrado.",
-        workdir: "C:/CodexProjetos/AgendadorConsultasOticas",
+        workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
         createdAt: Date.now()
       }),
       offerForContext: async () => false,
@@ -3717,7 +3711,7 @@ test("queue command lists the current queue", async () => {
         id: "queue-1",
         index: 1,
         text: "revisar email",
-        relativeWorkdir: "ControlePessoal",
+        relativeWorkdir: "ProjetoBetaTeste",
         createdAt: new Date().toISOString()
       }
     ]
@@ -3729,7 +3723,7 @@ test("queue command lists the current queue", async () => {
   await handler!(ctx);
 
   assert.match(ctx.replies[0].text, /revisar email/i);
-  assert.match(ctx.replies[0].text, /ControlePessoal/i);
+  assert.match(ctx.replies[0].text, /ProjetoBetaTeste/i);
   const inlineKeyboard = (
     ctx.replies[0].options?.reply_markup as {
       inline_keyboard?: Array<Array<{ text?: string }>>;
@@ -3748,7 +3742,7 @@ test("fila alias lists the current queue", async () => {
         id: "queue-1",
         index: 1,
         text: "revisar permissoes",
-        relativeWorkdir: "PremierDashboard",
+        relativeWorkdir: "ProjetoDeltaTeste",
         createdAt: new Date().toISOString()
       }
     ]
@@ -3760,7 +3754,7 @@ test("fila alias lists the current queue", async () => {
   await handler!(ctx);
 
   assert.match(ctx.replies[0].text, /revisar permissoes/i);
-  assert.match(ctx.replies[0].text, /PremierDashboard/i);
+  assert.match(ctx.replies[0].text, /ProjetoDeltaTeste/i);
 });
 
 test("second text prompt while Codex is active gets clear queue feedback", async () => {
@@ -3832,7 +3826,7 @@ test("same-workdir conflict still points to continue", async () => {
       started: false,
       reason: "workspace_busy",
       activeMode: "sdk",
-      blockingChatId: "5334767037",
+      blockingChatId: "100000003",
       relativeWorkdir: "."
     })
   });
@@ -3978,7 +3972,7 @@ test("voice handler transcribes audio and forwards transcript to Codex", async (
   const prompts: string[] = [];
   const { bot } = createDependencies({
     audioTranscribe: async () => ({
-      text: "pesquise aonde fica o projeto controle pessoal",
+      text: "pesquise aonde fica o projeto beta",
       fileName: "voice-note.ogg"
     }),
     sendPrompt: async (_ctx: unknown, prompt: string) => {
@@ -4001,7 +3995,7 @@ test("voice handler transcribes audio and forwards transcript to Codex", async (
   assert.ok(handler);
   await handler!(ctx);
 
-  assert.deepEqual(prompts, ["pesquise aonde fica o projeto controle pessoal"]);
+  assert.deepEqual(prompts, ["pesquise aonde fica o projeto beta"]);
 });
 
 test("image handler forwards images to Codex even without caption", async () => {

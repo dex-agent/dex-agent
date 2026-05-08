@@ -25,7 +25,7 @@
 
 ## Cross-Project Visual Print Requests
 
-- If any workspace asks for a print/screenshot/image delivered through Telegram, Dex, bot, or `codex10_bot`, route to `dex-print`.
+- If any workspace asks for a print/screenshot/image delivered through Telegram, Dex, bot, or the configured Dex parent bot, route to `dex-print`.
 - Do not satisfy bot-print requests with only a local screenshot, Codex attachment, or Telegram Web manual send; the expected proof is a Bot API `photo` or `document` response with `message_id`.
 - For user-initiated Telegram requests, prints must be sent to the requesting chat. `ALLOWED_USER_IDS` is an access list, not the response target when the current chat is known.
 - Keep audio and print separate: audio uses `dex-agent-audio-summary` / `dex-audio`; visual image delivery uses `dex-print`.
@@ -46,7 +46,7 @@
 ## Operational Memory Lifecycle
 
 - Use `skills/dex-memoria/SKILL.md` when work touches operational memory, resolved findings, `MEMORY.ndjson`, handoff state, `dex-pai`, `dex-rede`, or child-to-child memory routing.
-- If any child project or user asks to "memorizar", "lembrar", "guardar como memória", or equivalent, route through `dex-memoria` and its full lifecycle contract before writing or treating it as recall guidance.
+- If any child project or user asks to "memorizar", "lembrar", "guardar como memoria", or equivalent, route through `dex-memoria` and its full lifecycle contract before writing or treating it as recall guidance.
 - Treat `docs/memory-system/README.md` as the runtime/architecture reference. Treat `skills/dex-memoria` as the practical lifecycle protocol for creating, remembering, resolving, archiving, superseding, and stopping operational memories from being remembered.
 - `dex-memoria` replaces loose operational use of the memory-system docs; it does not remove or supersede the runtime documentation.
 - `dex-memoria` v1 is a manual/documented lifecycle contract, not an automatic hook or script runner.

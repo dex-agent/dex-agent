@@ -21,9 +21,9 @@ test("contact profile found by chat_id generates a tone block", async () => {
     JSON.stringify({
       contacts: [
         {
-          chat_id: "5375742808",
-          nome: "Duda",
-          chamar_como: "Duda",
+          chat_id: "100000002",
+          nome: "Pessoa Teste",
+          chamar_como: "Pessoa",
           tom: "simples, paciente, pessoal e explicativo",
           nivel_detalhe: "curto primeiro; detalhar se pedir",
           midia_preferida: ["prints_mobile", "audio_curto", "texto"],
@@ -38,10 +38,10 @@ test("contact profile found by chat_id generates a tone block", async () => {
   );
 
   const service = new ContactProfileService();
-  const block = await service.buildPromptBlock(workdir, "5375742808");
+  const block = await service.buildPromptBlock(workdir, "100000002");
 
   assert.ok(block);
-  assert.match(block, /Chamar a pessoa de: Duda/);
+  assert.match(block, /Chamar a pessoa de: Pessoa/);
   assert.match(block, /Tom: simples, paciente, pessoal e explicativo/);
   assert.match(block, /Midia preferida: prints_mobile, audio_curto, texto/);
   assert.match(block, /nao altera permissoes/);
@@ -73,7 +73,7 @@ test("invalid contacts json does not throw or change the prompt", async () => {
     warnings.push(String(value));
   };
   try {
-    const block = await service.buildPromptBlock(workdir, "5375742808");
+    const block = await service.buildPromptBlock(workdir, "100000002");
     assert.equal(block, null);
     assert.equal(
       applyContactProfilePromptBlock("analise esta imagem", block),
@@ -94,8 +94,8 @@ test("contact profile wrapper does not encode access or media routing", async ()
     JSON.stringify({
       contacts: [
         {
-          chat_id: "5375742808",
-          chamar_como: "Duda",
+          chat_id: "100000002",
+          chamar_como: "Pessoa",
           tom: "simples",
           evitar: ["tokens"]
         }
@@ -104,7 +104,7 @@ test("contact profile wrapper does not encode access or media routing", async ()
   );
 
   const service = new ContactProfileService();
-  const block = await service.buildPromptBlock(workdir, "5375742808");
+  const block = await service.buildPromptBlock(workdir, "100000002");
   const prompt = applyContactProfilePromptBlock("explique o projeto", block);
 
   assert.match(prompt, /Pedido do usuario:\nexplique o projeto/);

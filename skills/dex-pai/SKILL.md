@@ -1,6 +1,6 @@
 ---
 name: dex-pai
-description: Use quando um projeto filho do Dex Agent precisar encaminhar achado, bug, sintoma, regressao, artefato ou relatorio ao Dex Agent pai via codex10_bot. Alias: dex-pai. O fluxo cria ou referencia artefato local em .agents, envia resumo pelo helper do repo pai e evita depender da aba do Telegram Web ou de tokens copiados.
+description: Use quando um projeto filho do Dex Agent precisar encaminhar achado, bug, sintoma, regressao, artefato ou relatorio ao Dex Agent pai configurado no `.env`. Alias: dex-pai. O fluxo cria ou referencia artefato local em .agents, envia resumo pelo helper do repo pai e evita depender da aba do Telegram Web ou de tokens copiados.
 ---
 
 # Dex Pai
@@ -9,7 +9,7 @@ Use esta skill quando o usuario ou um repo disser:
 
 - `dex-pai`
 - `mande para o Dex pai`
-- `encaminhe para codex10_bot`
+- `encaminhe para o Dex pai`
 - `crie artefato e avise o pai`
 - `isso pertence ao Dex Agent pai`
 - `o bot filho achou problema no motor/runtime/memoria`
@@ -17,7 +17,7 @@ Use esta skill quando o usuario ou um repo disser:
 ## Identidade Canonica
 
 - Alias operacional: `dex-pai`
-- Bot Telegram: `codex10_bot`
+- Bot Telegram: definido por `TELEGRAM_EXPECTED_USERNAME` no `.env` do pai
 - Repo pai: `C:\CodexProjetos\dex-agent`
 - Helper oficial: `C:\CodexProjetos\dex-agent\scripts\send-dex-parent-message.ps1`
 - Token do pai: nunca copiar para artefato, skill, doc ou resposta; o helper le `C:\CodexProjetos\dex-agent\.env`
@@ -76,5 +76,5 @@ Quando encontrar problema que pareca ser do Dex Agent, use dex-pai:
 - Nao colar token em prompt, artefato ou resposta.
 - Nao usar aba aberta do Telegram Web para escolher o destino quando o envio for administrativo.
 - Nao iniciar segundo processo com o mesmo token.
-- Se o helper disser que o token nao aponta para `codex10_bot`, parar e corrigir `.env` do pai.
+- Se o helper disser que o token nao aponta para `TELEGRAM_EXPECTED_USERNAME`, parar e corrigir `.env` do pai.
 - Se nao houver artefato local, criar um antes de avisar o pai, exceto em incidente urgente de bot fora do ar.

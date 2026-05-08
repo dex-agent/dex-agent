@@ -30,7 +30,7 @@ test("launchTelegramBotWithRetry retries Telegram polling conflicts and then suc
   const bot = {
     botInfo: null,
     telegram: {
-      getMe: async () => ({ username: "codex10_bot" }),
+      getMe: async () => ({ username: "dex_parent_example_bot" }),
       deleteWebhook: async () => {}
     },
     async startPolling(): Promise<void> {
@@ -73,7 +73,7 @@ test("launchTelegramBotWithRetry stops on non-conflict errors", async () => {
   const bot = {
     botInfo: null,
     telegram: {
-      getMe: async () => ({ username: "codex10_bot" }),
+      getMe: async () => ({ username: "dex_parent_example_bot" }),
       deleteWebhook: async () => {}
     },
     async startPolling(): Promise<void> {
@@ -101,7 +101,7 @@ test("launchTelegramBotWithRetry returns once polling is stable without waiting 
   const bot = {
     botInfo: null,
     telegram: {
-      getMe: async () => ({ username: "codex10_bot" }),
+      getMe: async () => ({ username: "dex_parent_example_bot" }),
       deleteWebhook: async () => {}
     },
     async startPolling(): Promise<void> {

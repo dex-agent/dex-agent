@@ -2,8 +2,8 @@
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File C:\CodexProjetos\dex-agent\scripts\update-dex-agent-project-instance.ps1 `
-  -ProjectRoot "C:\CodexProjetos\ControlePessoal" `
-  -Aliases "controle,controlepessoal,opusclip" `
+  -ProjectRoot "C:\CodexProjetos\ProjetoBetaExemplo" `
+  -Aliases "controle,projeto-beta,dex-beta" `
   -Restart `
   -RunTelegramTest
 ```

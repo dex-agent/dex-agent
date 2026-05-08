@@ -144,7 +144,8 @@ function sanitizeCommandText(line: string): string {
 
 function labelForSuggestedCommand(line: string): string {
   const command = sanitizeCommandText(line).toLowerCase();
-  if (command.includes("frontend:agenda:mock:battery")) return "Bateria agenda";
+  if (command.includes("frontend:agenda:mock:battery"))
+    return "Bateria exemplo";
   if (command.includes("frontend:audit:recurring")) return "Auditoria";
   if (command.includes("frontend:confidence:report")) return "Confianca";
   if (command.includes("frontend:executive:summary")) return "Resumo exec";
@@ -211,7 +212,7 @@ export function buildProjectPromptPresets(
       group: "Execucao",
       source: "builtin",
       prompt: buildExecutionPrompt(
-        `No projeto ${projectName}, execute os proximos 3 sprints. Faça uma reuniao curta de alinhamento quando necessario, aplique ajustes finos e siga direto sem me interromper.`
+        `No projeto ${projectName}, execute os proximos 3 sprints. Faca uma reuniao curta de alinhamento quando necessario, aplique ajustes finos e siga direto sem me interromper.`
       )
     },
     {
@@ -325,7 +326,7 @@ export function buildProjectPromptPresets(
       source: "builtin",
       featured: true,
       prompt: buildMeetingPrompt(
-        `No projeto ${projectName}, faça uma reuniao com a mesa de especialistas para analisar o estado atual, identificar tensoes reais e sair com encaminhamento claro.`
+        `No projeto ${projectName}, faca uma reuniao com a mesa de especialistas para analisar o estado atual, identificar tensoes reais e sair com encaminhamento claro.`
       )
     },
     {
@@ -335,7 +336,7 @@ export function buildProjectPromptPresets(
       group: "Reuniao",
       source: "builtin",
       prompt: buildMeetingPrompt(
-        `No projeto ${projectName}, faça uma reuniao rapida de auditoria e alinhamento para revisar o estado atual, confirmar riscos e ajustar o rumo antes de seguir.`
+        `No projeto ${projectName}, faca uma reuniao rapida de auditoria e alinhamento para revisar o estado atual, confirmar riscos e ajustar o rumo antes de seguir.`
       )
     },
     {
@@ -387,7 +388,7 @@ export function buildProjectPromptPresets(
       group: "Testes",
       source: "builtin",
       prompt: buildExecutionPrompt(
-        `No projeto ${projectName}, faça testes tentando quebrar o sistema de verdade. Procure falhas de fluxo, estado, persistencia, contrato, UI e comportamento real.`
+        `No projeto ${projectName}, faca testes tentando quebrar o sistema de verdade. Procure falhas de fluxo, estado, persistencia, contrato, UI e comportamento real.`
       )
     },
     {
@@ -397,7 +398,7 @@ export function buildProjectPromptPresets(
       group: "Testes",
       source: "builtin",
       prompt: buildExecutionPrompt(
-        `No projeto ${projectName}, faça um teste ponta a ponta real do fluxo principal deste workspace. Primeiro identifique o fluxo principal atual; depois execute iniciar ou abrir a superfície correta, orientar ou preparar o contexto se isso existir, criar ou acionar a entidade principal, confirmar o resultado, consultar o estado, editar ou avançar o mesmo fluxo, consultar de novo, desfazer, remover ou cancelar quando fizer sentido e verificar limpeza correta de estado, fila e artefatos temporários.`
+        `No projeto ${projectName}, faca um teste ponta a ponta real do fluxo principal deste workspace. Primeiro identifique o fluxo principal atual; depois execute iniciar ou abrir a superficie correta, orientar ou preparar o contexto se isso existir, criar ou acionar a entidade principal, confirmar o resultado, consultar o estado, editar ou avancar o mesmo fluxo, consultar de novo, desfazer, remover ou cancelar quando fizer sentido e verificar limpeza correta de estado, fila e artefatos temporarios.`
       )
     },
     {
@@ -407,7 +408,7 @@ export function buildProjectPromptPresets(
       group: "Testes",
       source: "builtin",
       prompt: buildExecutionPrompt(
-        `No projeto ${projectName}, faça uma bateria de testes visuais ao vivo, validando cada superficie relevante em navegador real e registrando os artefatos mais importantes.`
+        `No projeto ${projectName}, faca uma bateria de testes visuais ao vivo, validando cada superficie relevante em navegador real e registrando os artefatos mais importantes.`
       )
     },
     {
@@ -428,7 +429,7 @@ export function buildProjectPromptPresets(
       source: "builtin",
       featured: true,
       prompt: buildPlanningPrompt(
-        `No projeto ${projectName}, faça uma avaliacao honesta do progresso atual, sem inflar numeros. Diga claramente o que esta forte, o que esta fragil e o que ainda bloqueia avanco.`
+        `No projeto ${projectName}, faca uma avaliacao honesta do progresso atual, sem inflar numeros. Diga claramente o que esta forte, o que esta fragil e o que ainda bloqueia avanco.`
       )
     },
     {
@@ -438,7 +439,7 @@ export function buildProjectPromptPresets(
       group: "Testes",
       source: "builtin",
       prompt: buildPlanningPrompt(
-        `No projeto ${projectName}, faça uma auditoria para verificar se nossa resolucao esta seguindo padrao de organizacao, arquitetura e clean code, sem maquiagem.`
+        `No projeto ${projectName}, faca uma auditoria para verificar se nossa resolucao esta seguindo padrao de organizacao, arquitetura e clean code, sem maquiagem.`
       )
     },
     {

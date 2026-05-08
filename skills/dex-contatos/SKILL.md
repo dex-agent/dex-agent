@@ -38,7 +38,7 @@ Templates e exemplos ficam versionados:
 
 - `.agents/CONTACTS.example.json`
 - `skills/dex-contatos/templates/contacts.local.example.json`
-- `skills/dex-contatos/examples/duda-premier-dashboard.md`
+- `skills/dex-contatos/examples/perfil-contato-exemplo.md`
 
 ## Regra central
 

@@ -29,8 +29,8 @@ test("telegram smoke refuses to send to the primary operator chat by default", (
       env: {
         ...process.env,
         BOT_TOKEN: "123:abc",
-        TELEGRAM_SMOKE_CHAT_ID: "8736107242",
-        ALLOWED_USER_IDS: "8736107242",
+        TELEGRAM_SMOKE_CHAT_ID: "100000001",
+        ALLOWED_USER_IDS: "100000001",
         TELEGRAM_SMOKE_ALLOW_PRIMARY_CHAT: "",
         TELEGRAM_EXPECTED_USERNAME: ""
       },

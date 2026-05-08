@@ -1,7 +1,7 @@
 param(
-  [string]$ProjectRoot = "C:\CodexProjetos\AgendadorConsultasOticas",
-  [string]$InstanceId = "agendador-consultas-oticas",
-  [string]$ProjectLabel = "AgendadorConsultasOticas",
+  [string]$ProjectRoot = "C:\CodexProjetos\ProjetoAlphaExemplo",
+  [string]$InstanceId = "projeto-alpha-exemplo",
+  [string]$ProjectLabel = "ProjetoAlphaExemplo",
   [string]$InstallRoot = "",
   [string]$SharedRoot = "",
   [switch]$RefreshSharedDependencies

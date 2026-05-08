@@ -63,6 +63,8 @@ powershell -ExecutionPolicy Bypass -File C:\CodexProjetos\dex-agent\scripts\prov
 
 ## Referencias
 
+- `skills/dex-install/README.md`
 - `skills/dex-install/SPEC.md`
 - `skills/dex-install/templates/install-contract.md`
+- `skills/dex-install/templates/install-prompt.md`
 - `scripts/provision-dex-agent-project-instance.ps1`

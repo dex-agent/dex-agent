@@ -1,10 +1,10 @@
-# Exemplo: PremierDashboard Multiusuario
+# Exemplo: ProjetoDeltaExemplo Multiusuario
 
 ## Contexto
 
-- Projeto: `C:\CodexProjetos\PremierDashboard`
-- Instancia: `premier-dashboard`
-- Bot: `@premier_dashboardbot`
+- Projeto: `C:\CodexProjetos\ProjetoDeltaExemplo`
+- Instancia: `projeto-delta-exemplo`
+- Bot: `@dex_delta_example_bot`
 - Uso: mais de um usuario autorizado no mesmo projeto.
 
 ## Configuracao Esperada
@@ -21,7 +21,7 @@ PROACTIVE_USER_IDS=ID_DONO
 Usuario A envia:
 
 ```text
-TEST_ID: PREMIER-MEDIA-A
+TEST_ID: DASHBOARD-EXEMPLO-MEDIA-A
 
 Use dex-print.
 Envie um print de teste desta conversa para esta mesma conversa.
@@ -40,7 +40,7 @@ Esperado:
 Usuario B envia:
 
 ```text
-TEST_ID: PREMIER-MEDIA-B
+TEST_ID: DASHBOARD-EXEMPLO-MEDIA-B
 
 Use dex-audio.
 Envie um audio curto de teste para esta mesma conversa.

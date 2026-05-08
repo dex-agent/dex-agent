@@ -592,20 +592,39 @@ function summarizeOperationalResultSnapshot(
   value: string | null | undefined,
   limit = 420
 ): string | null {
-  const lines = String(value || "")
+  const rawLines = String(value || "")
     .replace(/\r/g, "")
     .split("\n")
     .map((line) => line.trim())
-    .filter(Boolean)
-    .filter((line) => {
-      const normalized = line
-        .normalize("NFD")
-        .replace(/\p{Diacritic}/gu, "")
-        .toLowerCase();
-      return !/^(validacao|validation|o que sobra depois|what remains|fontes|sources|logs?)\s*:?$/i.test(
+    .filter(Boolean);
+  const lines: string[] = [];
+  let skippingDiscardedSection = false;
+
+  for (const line of rawLines) {
+    const normalized = line
+      .normalize("NFD")
+      .replace(/\p{Diacritic}/gu, "")
+      .toLowerCase();
+    const isDiscardedHeading =
+      /^(validacao|validation|o que sobra depois|what remains|fontes|sources|logs?)\s*:?$/i.test(
         normalized
-      );
-    });
+      ) ||
+      (normalized.startsWith("valida") && normalized.endsWith(":"));
+
+    if (isDiscardedHeading) {
+      skippingDiscardedSection = true;
+      continue;
+    }
+
+    if (skippingDiscardedSection) {
+      if (/^([-*]|\d+\.)\s+/.test(line)) {
+        continue;
+      }
+      skippingDiscardedSection = false;
+    }
+
+    lines.push(line);
+  }
 
   if (!lines.length) {
     return null;

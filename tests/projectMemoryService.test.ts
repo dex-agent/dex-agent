@@ -165,7 +165,8 @@ test("queryMemory reads matching global markdown memories and ignores unrelated 
 
   const result = await service.queryMemory({
     workdir,
-    prompt: "how should dex-agent keep global memory separate from local ledger",
+    prompt:
+      "how should dex-agent keep global memory separate from local ledger",
     intent: "implementation"
   });
 
@@ -239,7 +240,8 @@ test("appendGlobalMemoryPointer writes a concise global pointer without touching
       "Memory-worthy records should create a short global pointer to the full dex-memoria layer.",
     conflictWinner:
       "The current source of truth wins over stale restrictive wording.",
-    doNotUseWhen: "The candidate is large, secret-bearing, obsolete, or only noise.",
+    doNotUseWhen:
+      "The candidate is large, secret-bearing, obsolete, or only noise.",
     reviewAfter: "After the linked spec or runtime memory contract changes.",
     note: "Pointer only; full operational content stays in project memory."
   });
@@ -248,7 +250,10 @@ test("appendGlobalMemoryPointer writes a concise global pointer without touching
   assert.equal(result.path, path.join(globalRoot, "MEMORY.md"));
   assert.match(result.entry || "", /global memory pointer indexing/i);
 
-  const memoryMd = await fs.readFile(path.join(globalRoot, "MEMORY.md"), "utf8");
+  const memoryMd = await fs.readFile(
+    path.join(globalRoot, "MEMORY.md"),
+    "utf8"
+  );
   assert.match(memoryMd, /short global pointer/i);
   await assert.rejects(
     fs.stat(path.join(workdir, ".agents", "MEMORY.ndjson")),
@@ -310,7 +315,10 @@ test("applyPromotion writes local durable memory and a global recall pointer", a
   );
   assert.match(ledger, /global memory pointers index concise recall/i);
 
-  const memoryMd = await fs.readFile(path.join(globalRoot, "MEMORY.md"), "utf8");
+  const memoryMd = await fs.readFile(
+    path.join(globalRoot, "MEMORY.md"),
+    "utf8"
+  );
   assert.match(memoryMd, /Source of truth:/i);
   assert.match(memoryMd, /\.agents[\\/]MEMORY\.ndjson#/i);
   assert.match(memoryMd, /global memory pointers index concise recall/i);
@@ -871,10 +879,10 @@ test("captureCandidate keeps manual-review items as base kind without forcing sk
 
   const candidate = await service.captureCandidate({
     workdir,
-    text: "Use este prompt de retomada em uma nova conversa: ```text Projeto: AgendadorConsultasOticas Quero retomar exatamente do estado vivo deste projeto.```",
+    text: "Use este prompt de retomada em uma nova conversa: ```text Projeto: ProjetoAlphaTeste Quero retomar exatamente do estado vivo deste projeto.```",
     promptText: "isso tem que virar skill de projeto",
     source: { type: "operator", detail: "test" },
-    evidence: { type: "assistant", value: "finalized:AgendadorConsultasOticas" }
+    evidence: { type: "assistant", value: "finalized:ProjetoAlphaTeste" }
   });
 
   assert.ok(candidate);
@@ -891,15 +899,15 @@ test("captureCandidate drops weak runtime recap titles and warnings", async () =
 
   const weakRecap = await service.captureCandidate({
     workdir,
-    text: "Entendi o ponto causal. Nao e a agenda que esta cega para sabado; e a ordenacao do funil depois da unidade.",
+    text: "Entendi o ponto causal. Nao e a fila que esta cega para sabado; e a ordenacao do funil depois da unidade.",
     source: { type: "runtime", detail: "finalized_codex_response" },
-    evidence: { type: "assistant", value: "finalized:AgendadorConsultasOticas" }
+    evidence: { type: "assistant", value: "finalized:ProjetoAlphaTeste" }
   });
   const warning = await service.captureCandidate({
     workdir,
     text: "[error] Under-development features enabled: memories. Under-development features are incomplete and may behave unpredictably.",
     source: { type: "runtime", detail: "finalized_codex_response" },
-    evidence: { type: "assistant", value: "finalized:AgendadorConsultasOticas" }
+    evidence: { type: "assistant", value: "finalized:ProjetoAlphaTeste" }
   });
 
   assert.equal(weakRecap, null);
@@ -916,7 +924,7 @@ test("captureCandidate drops narrated sprint closeout summaries from runtime", a
     text: "Fechamos a sequencia ate o Sprint 6 com veredito honesto. Nesta passada eu conclui 4, 5 e 6; os 1, 2 e 3 ja vinham fechados do ciclo anterior.",
     promptText: "entao faca direto todas as sprints 1,2,3,4,5 e 6",
     source: { type: "runtime", detail: "finalized_codex_response" },
-    evidence: { type: "assistant", value: "finalized:AgendadorConsultasOticas" }
+    evidence: { type: "assistant", value: "finalized:ProjetoAlphaTeste" }
   });
 
   assert.equal(closeout, null);
@@ -931,19 +939,19 @@ test("captureCandidate drops runtime meta narration that only describes the assi
     workdir,
     text: "Resumo honesto: o backend deste ciclo fechou no vivo, mas o ledger ainda precisa limpeza.",
     source: { type: "runtime", detail: "finalized_codex_response" },
-    evidence: { type: "assistant", value: "finalized:AgendadorConsultasOticas" }
+    evidence: { type: "assistant", value: "finalized:ProjetoAlphaTeste" }
   });
   const nextMove = await service.captureCandidate({
     workdir,
     text: "Vou seguir direto sem reabrir coisa ja fechada. Agora vou publicar e repetir a prova viva.",
     source: { type: "runtime", detail: "finalized_codex_response" },
-    evidence: { type: "assistant", value: "finalized:AgendadorConsultasOticas" }
+    evidence: { type: "assistant", value: "finalized:ProjetoAlphaTeste" }
   });
   const observation = await service.captureCandidate({
     workdir,
     text: "O que apareceu foi bom sinal: o relatorio antigo ainda mostra riscos historicos, mas o vivo ja desmentiu parte deles.",
     source: { type: "runtime", detail: "finalized_codex_response" },
-    evidence: { type: "assistant", value: "finalized:AgendadorConsultasOticas" }
+    evidence: { type: "assistant", value: "finalized:ProjetoAlphaTeste" }
   });
 
   assert.equal(summary, null);
@@ -1010,9 +1018,9 @@ test("listCandidates ignores BOM-prefixed mojibake recent-context entries", asyn
     stage: "recent_context",
     baseKind: "task_state",
     title:
-      "**Foco agora** A mesa convergiu que a prioridade dominante nÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©",
+      "**Foco agora** A mesa convergiu que a prioridade dominante nÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©",
     summary:
-      "Combinado, e jÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡ deixei isso persistido como regra de trabalho.",
+      "Combinado, e jÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ deixei isso persistido como regra de trabalho.",
     evidence: { type: "assistant", value: "finalized:dex-agent" },
     tags: ["foco", "agora"],
     confidence: 0.8,
@@ -1054,7 +1062,7 @@ test("captureCandidate drops severe mojibake before writing to candidates", asyn
 
   const candidate = await service.captureCandidate({
     workdir,
-    text: "Combinado, e jÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡ deixei isso persistido como regra de trabalho.",
+    text: "Combinado, e jÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ deixei isso persistido como regra de trabalho.",
     source: { type: "runtime", detail: "finalized_codex_response" },
     evidence: { type: "assistant", value: "finalized:dex-agent" }
   });

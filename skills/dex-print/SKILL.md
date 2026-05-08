@@ -50,7 +50,7 @@ Para varias imagens:
 ```powershell
 powershell -ExecutionPolicy Bypass -File "C:\CodexProjetos\dex-agent\skills\dex-print\scripts\send-dex-print.ps1" `
   -Path "C:\prints\desktop.png","C:\prints\mobile.png" `
-  -Caption "Agenda Premier" `
+  -Caption "Imagem exemplo" `
   -Json
 ```
 
