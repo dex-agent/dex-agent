@@ -18,7 +18,7 @@ It is strictly inspired by `RichardAtCT/claude-code-telegram`, but this project 
 ### Install
 
 ```bash
-git clone https://github.com/<owner>/dex-agent.git
+git clone https://github.com/dex-agent/dex-agent.git
 cd dex-agent
 npm install
 cp .env.example .env
@@ -86,7 +86,7 @@ Key design goals:
 ### Install
 
 ```bash
-git clone https://github.com/<owner>/dex-agent.git
+git clone https://github.com/dex-agent/dex-agent.git
 cd dex-agent
 npm install
 ```

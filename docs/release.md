@@ -85,7 +85,7 @@ Keep GitHub repository topics aligned with the current product surface. The targ
 Apply them with GitHub CLI:
 
 ```bash
-gh repo edit OWNER/dex-agent \
+gh repo edit dex-agent/dex-agent \
   --add-topic telegram-bot \
   --add-topic codex \
   --add-topic openai \

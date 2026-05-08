@@ -25,8 +25,8 @@ global curto. Nao e a skill/pacote antigo arquivado.
 ### Clonar O Repo
 
 ```bash
-git clone https://github.com/<owner>/dex-agent.git
-cd dex-memoria
+git clone https://github.com/dex-agent/dex-agent.git
+cd dex-agent/skills/dex-memoria
 ```
 
 Use este modo quando quiser consultar o contrato, copiar templates ou apontar outro projeto para esta documentacao.

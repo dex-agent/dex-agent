@@ -21,7 +21,7 @@ Para uma instalacao ja existente, use `skills/dex-update/SKILL.md`.
 
 ```powershell
 cd C:\CodexProjetos
-git clone https://github.com/<owner>/dex-agent.git
+git clone https://github.com/dex-agent/dex-agent.git
 cd C:\CodexProjetos\dex-agent
 npm install
 Copy-Item .env.example .env

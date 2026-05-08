@@ -15,7 +15,7 @@ description: Install and operate a Telegram bot that exposes Codex, MCP, GitHub 
 ## Install
 
 ```bash
-git clone https://github.com/<owner>/dex-agent.git
+git clone https://github.com/dex-agent/dex-agent.git
 cd dex-agent
 npm install
 cp .env.example .env
