@@ -15,7 +15,7 @@ jobs:
       TELEGRAM_EXPECTED_USERNAME: ${{ secrets.TELEGRAM_EXPECTED_USERNAME }}
       TELEGRAM_SMOKE_CHAT_ID: ${{ secrets.TELEGRAM_SMOKE_CHAT_ID }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v4
         with:
