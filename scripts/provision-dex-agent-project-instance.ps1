@@ -488,12 +488,13 @@ if ([string]::IsNullOrWhiteSpace($ProjectLabel)) {
 if ([string]::IsNullOrWhiteSpace($InstanceId)) {
   $InstanceId = ConvertTo-Slug $ProjectLabel
 }
-if ([string]::IsNullOrWhiteSpace($EnvTemplatePath)) {
-  $defaultTemplate = Join-Path $sourceRoot ".env"
-  if (Test-Path -LiteralPath $defaultTemplate) { $EnvTemplatePath = $defaultTemplate }
+$templateValues = [ordered]@{}
+if (-not [string]::IsNullOrWhiteSpace($EnvTemplatePath)) {
+  $templateValues = Import-DotEnv -Path $EnvTemplatePath
+} else {
+  $sourceEnvPath = Join-Path $sourceRoot ".env"
+  $templateValues = Import-DotEnv -Path $sourceEnvPath
 }
-
-$templateValues = Import-DotEnv -Path $EnvTemplatePath
 if ([string]::IsNullOrWhiteSpace($AllowedUserIds) -and $templateValues.Contains("ALLOWED_USER_IDS")) {
   $AllowedUserIds = $templateValues["ALLOWED_USER_IDS"]
 }

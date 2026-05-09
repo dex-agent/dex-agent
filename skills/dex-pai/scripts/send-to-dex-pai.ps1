@@ -11,10 +11,11 @@ param(
 
 $skillRoot = Split-Path -Parent $PSScriptRoot
 $localRepoRoot = Split-Path -Parent (Split-Path -Parent $skillRoot)
+$defaultDexAgentHome = Join-Path $env:USERPROFILE ".dex-agent"
 $candidateRoots = @()
 if ($ParentRepo) { $candidateRoots += $ParentRepo }
 if ($env:DEX_PARENT_REPO) { $candidateRoots += $env:DEX_PARENT_REPO }
-$candidateRoots += "C:\CodexProjetos\dex-agent"
+$candidateRoots += $defaultDexAgentHome
 $candidateRoots += $localRepoRoot
 
 $helper = $null
@@ -26,7 +27,7 @@ foreach ($candidateRoot in ($candidateRoots | Where-Object { $_ } | Select-Objec
   }
 }
 
-if (-not (Test-Path -LiteralPath $helper)) {
+if (-not $helper -or -not (Test-Path -LiteralPath $helper)) {
   throw "Helper do dex-pai nao encontrado. Configure DEX_PARENT_REPO ou informe -ParentRepo."
 }
 

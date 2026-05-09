@@ -108,7 +108,7 @@ test("admin web server renders the dashboard snapshot as HTML", async () => {
   } as any);
 
   try {
-    const link = await server.getLink("C:/CodexProjetos/dex-agent");
+    const link = await server.getLink("C:/Users/TestUser/.dex-agent");
     const response = await fetch(link);
     const html = await response.text();
 

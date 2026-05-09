@@ -5,7 +5,7 @@ import { createRestartBootstrapScript } from "../src/restartBootstrap.js";
 test("restart bootstrap waits for the parent process before spawning the next bot", () => {
   const script = createRestartBootstrapScript({
     parentPid: 12345,
-    cwd: "C:/CodexProjetos/dex-agent"
+    cwd: "C:/Users/TestUser/.dex-agent"
   });
 
   assert.match(script, /const parentPid = 12345;/);

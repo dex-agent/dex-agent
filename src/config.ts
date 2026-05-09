@@ -215,13 +215,25 @@ function parseText(value: string | undefined, fallback: string): string {
   return normalized || fallback;
 }
 
+function expandPathVariables(value: string): string {
+  return value
+    .replace(/%([A-Za-z_][A-Za-z0-9_]*)%/g, (_match, name: string) => {
+      return process.env[name] || _match;
+    })
+    .replace(/\$env:([A-Za-z_][A-Za-z0-9_]*)/g, (_match, name: string) => {
+      return process.env[name] || _match;
+    });
+}
+
 function resolveDirectory(
   value: string | undefined,
   name: string,
   fallback = process.cwd()
 ): string {
   const resolvedFallback = path.resolve(fallback);
-  const candidate = path.resolve(value || resolvedFallback);
+  const candidate = path.resolve(
+    value ? expandPathVariables(value) : resolvedFallback
+  );
 
   if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
     return candidate;
@@ -237,7 +249,7 @@ function resolveDirectory(
 }
 
 function resolveFile(value: string | undefined, fallback: string): string {
-  const candidate = path.resolve(value || fallback);
+  const candidate = path.resolve(expandPathVariables(value || fallback));
   const directory = path.dirname(candidate);
 
   if (!fs.existsSync(directory)) {
@@ -258,7 +270,7 @@ function resolveDirectoryList(raw: unknown, name: string): string[] {
       continue;
     }
 
-    const candidate = path.resolve(item);
+    const candidate = path.resolve(expandPathVariables(item));
     if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
       resolved.push(candidate);
       continue;

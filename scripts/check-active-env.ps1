@@ -32,6 +32,8 @@ if (-not (Test-Path -LiteralPath $envPath)) {
   throw "Arquivo .env nao encontrado em $envPath"
 }
 
+$dexAgentHome = (Join-Path $env:USERPROFILE ".dex-agent").Replace("\", "/")
+
 $checks = @(
   @{
     Name = "STATE_FILE"
@@ -40,17 +42,17 @@ $checks = @(
   },
   @{
     Name = "WORKSPACE_ROOT"
-    Expected = "C:/CodexProjetos"
+    Expected = $dexAgentHome
     Actual = Get-DotEnvValue -Path $envPath -Name "WORKSPACE_ROOT"
   },
   @{
     Name = "CODEX_WORKDIR"
-    Expected = "C:/CodexProjetos/dex-agent"
+    Expected = $dexAgentHome
     Actual = Get-DotEnvValue -Path $envPath -Name "CODEX_WORKDIR"
   },
   @{
     Name = "GITHUB_DEFAULT_WORKDIR"
-    Expected = "C:/CodexProjetos/dex-agent"
+    Expected = $dexAgentHome
     Actual = Get-DotEnvValue -Path $envPath -Name "GITHUB_DEFAULT_WORKDIR"
   }
 )
@@ -58,7 +60,8 @@ $checks = @(
 $failed = $false
 
 foreach ($check in $checks) {
-  if ($check.Actual -eq $check.Expected) {
+  $actual = [Environment]::ExpandEnvironmentVariables($check.Actual).Replace("\", "/")
+  if ($actual -eq $check.Expected) {
     Write-Output "[PASS] $($check.Name): $($check.Actual)"
     continue
   }

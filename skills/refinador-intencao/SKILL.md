@@ -74,7 +74,7 @@ Pergunte so o minimo necessario, nesta ordem:
   - trate como continuidade curta
 
 - Se a resposta indicar `repo raiz dex-agent`:
-  - manter o contexto no repo `C:\CodexProjetos\dex-agent`
+  - manter o contexto no repo operacional `$env:USERPROFILE\.dex-agent`
   - nao deixar isso poluir memoria de projeto de repo filho
 
 - Se o destino for `memoria do projeto` e a evidencia for concreta:

@@ -11,7 +11,7 @@
 
 O `Dex Agent` deixou de ser apenas um assunto dentro de `ConfiguracoesWindows` e passou a ter um pacote proprio de continuidade dentro do seu repositorio. O baseline atual do produto ja inclui controle deterministico do bot, memoria de projeto com inbox duravel, cards operacionais no Telegram, prompts frequentes por projeto, audio de resumo, fila estruturada e autostart local validado por Startup folder no Windows.
 
-Na frente de identidade publica, a direcao escolhida em `2026-04-21` passou a ser `Dex Agent`, com `dex-agent` como slug alvo de publicacao. O caminho local canonico desta maquina agora e `C:\CodexProjetos\dex-agent`, ainda coexistindo temporariamente com a copia legada usada pela sessao anterior.
+Na frente de identidade publica, a direcao escolhida em `2026-04-21` passou a ser `Dex Agent`, com `dex-agent` como slug alvo de publicacao. O caminho operacional canonico passou a ser `$env:USERPROFILE\.dex-agent`; clones em pastas de projetos sao apenas repositorios de desenvolvimento/GitHub.
 
 O runtime esta vivo nesta maquina e o boot automatico via pasta Startup foi validado apos reboot. O principal ponto ainda aberto nao e o produto base, e sim o alinhamento de documentacao e observabilidade com o que ja mudou no runtime real.
 
@@ -71,7 +71,7 @@ O runtime esta vivo nesta maquina e o boot automatico via pasta Startup foi vali
 
 ## Proximos pontos de retomada
 
-- Abrir uma conversa nova apontando para `C:\CodexProjetos\dex-agent`.
+- Abrir uma conversa nova apontando para `$env:USERPROFILE\.dex-agent`.
 - Ler os arquivos canonicos de `.agents/` e `.codex/napkin.md`.
 - Confirmar o estado do bot com `scripts/status-dex-agent.ps1`.
 - Escolher a frente imediata: docs, status/observabilidade, UX Telegram ou consolidacao de produto.

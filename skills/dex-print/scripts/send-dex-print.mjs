@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 function parseArgs(argv) {
@@ -83,7 +84,7 @@ function firstId(value = "") {
 }
 
 function loadDefaultEnv(args) {
-  const defaultDexEnv = "C:\\CodexProjetos\\dex-agent\\.env";
+  const defaultDexEnv = path.join(os.homedir(), ".dex-agent", ".env");
   loadEnvFile(args.envFile);
   loadEnvFile(defaultDexEnv);
   loadEnvFile(path.resolve(process.cwd(), ".env"));

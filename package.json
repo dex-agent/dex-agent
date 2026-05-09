@@ -20,6 +20,8 @@
     "install:skill": "powershell -ExecutionPolicy Bypass -File .\\scripts\\install-dex-agent-skill.ps1",
     "dex:install": "powershell -ExecutionPolicy Bypass -File .\\scripts\\provision-dex-agent-project-instance.ps1",
     "dex:update": "powershell -ExecutionPolicy Bypass -File .\\scripts\\update-dex-agent-project-instance.ps1",
+    "config:export": "powershell -ExecutionPolicy Bypass -File .\\scripts\\export-dex-agent-config.ps1",
+    "config:import": "powershell -ExecutionPolicy Bypass -File .\\scripts\\import-dex-agent-config.ps1",
     "env:check": "powershell -ExecutionPolicy Bypass -File .\\scripts\\check-active-env.ps1",
     "telegram:smoke": "tsx scripts/telegramSmoke.ts",
     "ci": "npm run check && npm run lint && npm run format:check && npm test && npm run healthcheck",

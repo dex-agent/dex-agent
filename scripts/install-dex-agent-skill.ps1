@@ -1,5 +1,5 @@
 param(
-  [string]$ProjectRoot = "C:\CodexProjetos\ProjetoAlphaExemplo",
+  [string]$ProjectRoot = (Join-Path $env:USERPROFILE "Projetos\ProjetoAlphaExemplo"),
   [string]$InstanceId = "projeto-alpha-exemplo",
   [string]$ProjectLabel = "ProjetoAlphaExemplo",
   [string]$InstallRoot = "",
@@ -14,7 +14,7 @@ if ([string]::IsNullOrWhiteSpace($InstallRoot)) {
   $InstallRoot = Join-Path $ProjectRoot "skills\dex-agent"
 }
 if ([string]::IsNullOrWhiteSpace($SharedRoot)) {
-  $SharedRoot = Join-Path $env:USERPROFILE ".codex\skills\dex-agent\shared"
+  $SharedRoot = Join-Path $env:USERPROFILE ".dex-agent\shared"
 }
 
 function Assert-Directory {
@@ -330,7 +330,7 @@ $ErrorActionPreference = "Stop"
 $startupDir = [Environment]::GetFolderPath("Startup")
 $target = Join-Path $startupDir "start-dex-agent-__INSTANCE_ID__.cmd"
 $startScript = Join-Path $PSScriptRoot "start-dex-agent.ps1"
-$content = "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"$startScript`"`r`n"
+$content = "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$startScript`"`r`n"
 Set-Content -LiteralPath $target -Value $content -Encoding ASCII
 Write-Output "Autostart registrado: $target"
 '@
@@ -380,7 +380,7 @@ description: Skill global de suporte compartilhado para instalacoes Dex Agent po
 
 Esta pasta guarda recursos compartilhados de instalacoes Dex Agent por projeto.
 
-- Source/dev repo: `C:\CodexProjetos\dex-agent`
+- Source/dev repo: `$sourceRoot`
 - Shared runtime assets: `shared/`
 - Instalacoes operacionais: `<projeto>\skills\dex-agent`
 

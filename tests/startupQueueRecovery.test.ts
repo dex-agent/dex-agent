@@ -30,13 +30,13 @@ test("startup queue recovery keeps manual buttons as fallback when auto-run cann
         {
           chatId: "100000001",
           queueLength: 2,
-          workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+          workdir: "C:/Users/TestUser/Projetos/ProjetoAlphaTeste",
           relativeWorkdir: "ProjetoAlphaTeste",
           nextItem: {
             id: "queue-1",
             index: 1,
             text: "continuar o proximo sprint",
-            workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+            workdir: "C:/Users/TestUser/Projetos/ProjetoAlphaTeste",
             relativeWorkdir: "ProjetoAlphaTeste",
             createdAt: new Date().toISOString()
           }
@@ -95,13 +95,13 @@ test("startup queue recovery auto-runs the next queued item when possible", asyn
         {
           chatId: "100000001",
           queueLength: 3,
-          workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+          workdir: "C:/Users/TestUser/Projetos/ProjetoAlphaTeste",
           relativeWorkdir: "ProjetoAlphaTeste",
           nextItem: {
             id: "queue-1",
             index: 1,
             text: "continuar o proximo sprint",
-            workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+            workdir: "C:/Users/TestUser/Projetos/ProjetoAlphaTeste",
             relativeWorkdir: "ProjetoAlphaTeste",
             createdAt: new Date().toISOString()
           }

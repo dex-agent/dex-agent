@@ -17,21 +17,26 @@ It is strictly inspired by `RichardAtCT/claude-code-telegram`, but this project 
 
 ### Install
 
-```bash
-git clone https://github.com/dex-agent/dex-agent.git
-cd dex-agent
+```powershell
+$DexAgentHome = Join-Path $env:USERPROFILE ".dex-agent"
+git clone https://github.com/dex-agent/dex-agent.git $DexAgentHome
+Set-Location $DexAgentHome
 npm install
-cp .env.example .env
+Copy-Item .env.example .env
 ```
+
+On Windows, the recommended operational install path is `%USERPROFILE%\.dex-agent`.
+Keep development clones and project repositories outside that folder to avoid mixing
+the bot runtime with normal GitHub workspaces.
 
 ### Configure The Minimum
 
-```bash
+```env
 BOT_TOKEN=123456789:telegram-token
 ALLOWED_USER_IDS=123456789
 STATE_FILE=.codex-telegram-claws-state.json
-WORKSPACE_ROOT=C:/CodexProjetos
-CODEX_WORKDIR=C:/CodexProjetos/dex-agent
+WORKSPACE_ROOT=%USERPROFILE%/.dex-agent
+CODEX_WORKDIR=%USERPROFILE%/.dex-agent
 CODEX_BACKEND=sdk
 ```
 
@@ -85,26 +90,27 @@ Key design goals:
 
 ### Install
 
-```bash
-git clone https://github.com/dex-agent/dex-agent.git
-cd dex-agent
+```powershell
+$DexAgentHome = Join-Path $env:USERPROFILE ".dex-agent"
+git clone https://github.com/dex-agent/dex-agent.git $DexAgentHome
+Set-Location $DexAgentHome
 npm install
 ```
 
 ### Configure
 
-```bash
-cp .env.example .env
+```powershell
+Copy-Item .env.example .env
 ```
 
 Minimum required:
 
-```bash
+```env
 BOT_TOKEN=123456789:telegram-token
 ALLOWED_USER_IDS=123456789
 STATE_FILE=.codex-telegram-claws-state.json
-WORKSPACE_ROOT=C:/CodexProjetos
-CODEX_WORKDIR=C:/CodexProjetos/dex-agent
+WORKSPACE_ROOT=%USERPROFILE%/.dex-agent
+CODEX_WORKDIR=%USERPROFILE%/.dex-agent
 CODEX_BACKEND=sdk
 ```
 
@@ -480,8 +486,8 @@ Required:
 BOT_TOKEN=...
 ALLOWED_USER_IDS=123456789,987654321
 STATE_FILE=.codex-telegram-claws-state.json
-WORKSPACE_ROOT=C:/CodexProjetos
-CODEX_WORKDIR=C:/CodexProjetos/dex-agent
+WORKSPACE_ROOT=%USERPROFILE%/.dex-agent
+CODEX_WORKDIR=%USERPROFILE%/.dex-agent
 ```
 
 Common options:
@@ -500,7 +506,7 @@ CODEX_SDK_REASONING_EFFORT=
 CODEX_SDK_NETWORK_ACCESS_ENABLED=
 CODEX_SDK_WEB_SEARCH_MODE=
 CODEX_SDK_ADDITIONAL_DIRECTORIES=[]
-WORKSPACE_ROOT=C:/CodexProjetos
+WORKSPACE_ROOT=%USERPROFILE%/.dex-agent
 STATE_FILE=.codex-telegram-claws-state.json
 SHELL_ENABLED=false
 SHELL_READ_ONLY=true
@@ -529,7 +535,7 @@ GitHub:
 
 ```bash
 GITHUB_TOKEN=ghp_xxx
-GITHUB_DEFAULT_WORKDIR=C:/CodexProjetos/dex-agent
+GITHUB_DEFAULT_WORKDIR=%USERPROFILE%/.dex-agent
 GITHUB_DEFAULT_BRANCH=main
 E2E_TEST_COMMAND=npx playwright test --reporter=line
 ```
@@ -538,12 +544,46 @@ Recommended local Windows baseline for this repository:
 
 ```bash
 STATE_FILE=.codex-telegram-claws-state.json
-WORKSPACE_ROOT=C:/CodexProjetos
-CODEX_WORKDIR=C:/CodexProjetos/dex-agent
-GITHUB_DEFAULT_WORKDIR=C:/CodexProjetos/dex-agent
+WORKSPACE_ROOT=%USERPROFILE%/.dex-agent
+CODEX_WORKDIR=%USERPROFILE%/.dex-agent
+GITHUB_DEFAULT_WORKDIR=%USERPROFILE%/.dex-agent
 ```
 
 Use `npm run env:check` to verify the active `.env` against this baseline before startup.
+
+### Config Export And Import
+
+Use these scripts when moving a configured Dex Agent install to a fresh
+`%USERPROFILE%\.dex-agent` install or when copying local child-project settings.
+
+Safe export, without tokens:
+
+```powershell
+npm run config:export -- -OutputPath "$env:USERPROFILE\Desktop\dex-agent-config.zip"
+```
+
+Full local backup, including `.env` secrets:
+
+```powershell
+npm run config:export -- -IncludeSecrets -OutputPath "$env:USERPROFILE\Desktop\dex-agent-config.full.zip"
+```
+
+Import into a new install:
+
+```powershell
+npm run config:import -- -ArchivePath "$env:USERPROFILE\Desktop\dex-agent-config.zip" -Force
+```
+
+Importing `.env` requires the explicit secret flag:
+
+```powershell
+npm run config:import -- -ArchivePath "$env:USERPROFILE\Desktop\dex-agent-config.full.zip" -IncludeSecrets -Force
+```
+
+The bundle can include local network registry files, `.agents/CONTACTS.local.json`,
+`.agents/PROMPTS.json`, `DEX_PAI`/`DEX_REDE` handoff docs, child
+`skills/dex-agent/instance.json`, and `.env` only when `-IncludeSecrets` is set.
+Do not commit exported ZIP files.
 
 ## CI And Release Automation
 
@@ -592,11 +632,12 @@ Release references:
 
 ## Operations
 
-Current local Windows baseline on this machine:
+Current local Windows baseline:
 
-- network autostart via the current user's Windows Startup folder:
-  `start-dex-agent-network.vbs -> scripts/boot-dex-agent-network-autostart.ps1 -> config/dex-agent-network.local.json -> scripts/start-dex-agent.ps1`
-  for each registered instance
+- operational parent installed at `%USERPROFILE%\.dex-agent`
+- single parent autostart via the current user's Windows Startup folder:
+  `start-dex-agent.cmd -> scripts/boot-dex-agent-autostart.ps1 -> scripts/start-dex-agent.ps1`
+- optional network boot via `scripts/boot-dex-agent-network-autostart.ps1 -> config/dex-agent-network.local.json -> <instance>\scripts\start-dex-agent.ps1`
 - hidden restart via `restart-dex-agent-hidden.vbs -> restart-dex-agent-hidden.ps1 -> start-dex-agent.ps1`
 - one polling process per bot token
 
@@ -618,17 +659,18 @@ Run exactly one polling process per bot token.
 Windows autostart for the current user:
 
 ```powershell
-Get-Content "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\start-dex-agent-network.vbs"
+Set-Location "$env:USERPROFILE\.dex-agent"
+powershell -ExecutionPolicy Bypass -File .\scripts\register-dex-agent-autostart.ps1
+Get-Content "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\start-dex-agent.cmd"
 Get-Content .\config\dex-agent-network.example.json
 ```
 
-The active network autostart uses the current user's Windows Startup folder and creates only `start-dex-agent-network.vbs` as the live Startup entry. The VBS launches `scripts/boot-dex-agent-network-autostart.ps1` hidden, and that script reads the local ignored registry at `config/dex-agent-network.local.json` before starting each registered instance through its own `scripts/start-dex-agent.ps1`.
+The parent autostart script refuses to register from a non-canonical clone by default; the expected operational root is `%USERPROFILE%\.dex-agent`. The network boot script reads the local ignored registry at `config\dex-agent-network.local.json` before starting each registered instance through its own `scripts\start-dex-agent.ps1`. Registry paths may use `%USERPROFILE%`, and the boot script expands them before resolving each instance root.
 
-The old single-instance helper remains available for legacy/manual recovery only:
+Remove autostart:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\register-dex-agent-autostart.ps1
-Get-Content "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\start-dex-agent.cmd"
+Set-Location "$env:USERPROFILE\.dex-agent"
 powershell -ExecutionPolicy Bypass -File .\scripts\unregister-dex-agent-autostart.ps1
 ```
 

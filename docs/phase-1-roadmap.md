@@ -18,7 +18,7 @@ Phase 1 hardens the current single-host beta so it can be distributed to subsidi
 Scope:
 
 - Migrate `src/config.ts`
-- Migrate `src/orchestrator/router.ts`
+- Harden routing in `src/bot/handlers.ts`
 - Migrate `src/orchestrator/skillRegistry.ts`
 - Migrate `src/orchestrator/mcpClient.ts`
 - Migrate `src/runner/ptyManager.ts`

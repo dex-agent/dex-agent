@@ -2,7 +2,7 @@
 
 ## Entrada
 
-- ProjectRoot: `C:\CodexProjetos\ProjetoDeltaExemplo`
+- ProjectRoot: `$env:USERPROFILE\Projetos\ProjetoDeltaExemplo`
 - ProjectLabel: `ProjetoDeltaExemplo`
 - InstanceId: `projeto-delta-exemplo`
 - BotUsername: `dex_delta_example_bot`
@@ -13,8 +13,9 @@
 ## Comando
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File C:\CodexProjetos\dex-agent\scripts\provision-dex-agent-project-instance.ps1 `
-  -ProjectRoot "C:\CodexProjetos\ProjetoDeltaExemplo" `
+$DexAgentHome = Join-Path $env:USERPROFILE ".dex-agent"
+powershell -ExecutionPolicy Bypass -File (Join-Path $DexAgentHome "scripts\provision-dex-agent-project-instance.ps1") `
+  -ProjectRoot (Join-Path $env:USERPROFILE "Projetos\ProjetoDeltaExemplo") `
   -InstanceId "projeto-delta-exemplo" `
   -ProjectLabel "ProjetoDeltaExemplo" `
   -BotUsername "dex_delta_example_bot" `

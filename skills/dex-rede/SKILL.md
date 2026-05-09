@@ -26,8 +26,8 @@ Use esta skill quando o usuario ou um repo disser:
 
 O helper oficial usa:
 
-- `C:\CodexProjetos\dex-agent\config\dex-agent-network.local.json` quando existir;
-- `C:\CodexProjetos\dex-agent\config\dex-agent-network.example.json` como exemplo versionavel;
+- `$env:USERPROFILE\.dex-agent\config\dex-agent-network.local.json` quando existir;
+- `$env:USERPROFILE\.dex-agent\config\dex-agent-network.example.json` como exemplo versionavel;
 - `DEX_AGENT_NETWORK_REGISTRY` ou `-RegistryPath` para maquinas com outro layout.
 
 Aliases esperados no ambiente atual:
@@ -48,10 +48,11 @@ Aliases esperados no ambiente atual:
 ## Comando Padrao
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File C:\CodexProjetos\dex-agent\scripts\send-dex-child-message.ps1 `
+$DexAgentHome = Join-Path $env:USERPROFILE ".dex-agent"
+powershell -ExecutionPolicy Bypass -File (Join-Path $DexAgentHome "scripts\send-dex-child-message.ps1") `
   -To "beta" `
   -SourceProject "ProjetoGammaExemplo" `
-  -ArtifactPath "C:\CodexProjetos\ProjetoGammaExemplo\.agents\CONTEUDO_EXEMPLO.md" `
+  -ArtifactPath (Join-Path $env:USERPROFILE "Projetos\ProjetoGammaExemplo\.agents\CONTEUDO_EXEMPLO.md") `
   -Title "Handoff ProjetoGammaExemplo -> ProjetoBetaExemplo" `
   -Text "Resumo curto, objetivo no projeto destino, proximo passo esperado e criterio de pronto."
 ```
@@ -61,7 +62,7 @@ powershell -ExecutionPolicy Bypass -File C:\CodexProjetos\dex-agent\scripts\send
 ```text
 Quando eu disser dex-rede, envie mensagem para outro projeto Dex Agent por alias:
 1. crie ou referencie artefato local em .agents/ se o conteudo for duravel;
-2. use C:\CodexProjetos\dex-agent\scripts\send-dex-child-message.ps1;
+2. use `$env:USERPROFILE\.dex-agent\scripts\send-dex-child-message.ps1`;
 3. escolha o destino por alias, como alpha, beta, gamma ou dex-pai;
 4. nao copie token;
 5. responda com destino, caminho do artefato e message_id.

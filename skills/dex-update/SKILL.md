@@ -33,7 +33,8 @@ Use esta skill quando o usuario pedir para atualizar um Dex Agent filho ja insta
 ## Comando Base
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File C:\CodexProjetos\dex-agent\scripts\update-dex-agent-project-instance.ps1 `
+$DexAgentHome = Join-Path $env:USERPROFILE ".dex-agent"
+powershell -ExecutionPolicy Bypass -File (Join-Path $DexAgentHome "scripts\update-dex-agent-project-instance.ps1") `
   -ProjectRoot "<ProjectRoot>" `
   -Aliases "<alias1,alias2>" `
   -Restart `

@@ -1,6 +1,12 @@
+param(
+  [switch]$AllowNonCanonicalPath
+)
+
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
+$canonicalDexAgentHome = [System.IO.Path]::GetFullPath((Join-Path $env:USERPROFILE ".dex-agent")).TrimEnd("\")
+$resolvedRepoRoot = [System.IO.Path]::GetFullPath($repoRoot).TrimEnd("\")
 $bootScriptPath = Join-Path $PSScriptRoot "boot-dex-agent-autostart.ps1"
 $startupDir = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Startup"
 $startupCmdPath = Join-Path $startupDir "start-dex-agent.cmd"
@@ -8,6 +14,11 @@ $legacyTaskName = "Dex Agent Autostart"
 
 if (-not (Test-Path -LiteralPath $bootScriptPath)) {
   throw "Nao encontrei o script de boot em $bootScriptPath"
+}
+
+if (-not $AllowNonCanonicalPath -and
+  -not $resolvedRepoRoot.Equals($canonicalDexAgentHome, [System.StringComparison]::OrdinalIgnoreCase)) {
+  throw "Autostart deve ser registrado a partir da instalacao operacional canonica: $canonicalDexAgentHome. Caminho atual: $resolvedRepoRoot. Use -AllowNonCanonicalPath apenas para teste controlado."
 }
 
 New-Item -ItemType Directory -Force -Path $startupDir | Out-Null

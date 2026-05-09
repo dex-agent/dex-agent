@@ -24,7 +24,7 @@ O alvo da V1 e simples:
 No repo pai:
 
 ```text
-C:\CodexProjetos\dex-agent\skills\dex-memoria\
+$env:USERPROFILE\.dex-agent\skills\dex-memoria\
 ```
 
 Em uma instalacao de filho:
@@ -128,7 +128,7 @@ Use `dex-pai` quando:
 
 - o problema for do motor do Dex Agent;
 - o filho encontrou bug no pai;
-- o achado precisa subir para `C:\CodexProjetos\dex-agent`;
+- o achado precisa subir para `$env:USERPROFILE\.dex-agent`;
 - o pai precisa investigar ou corrigir causa raiz.
 
 Use `dex-rede` quando:

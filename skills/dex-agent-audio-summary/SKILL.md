@@ -1,6 +1,6 @@
 ---
 name: dex-agent-audio-summary
-description: Use quando o usuario pedir resumo ou explicacao em audio enviado pelo proprio bot via Dex Agent. Alias curto oficial: `dex-audio`. Esta e a skill global canonica para esse fluxo, usa `C:\CodexProjetos\dex-agent` como repo operacional de transporte, envia `voice note` no Telegram via `bot.telegram.sendVoice(...)`, usa `pt-BR-FranciscaNeural` quando suportado, e deve confirmar entrega por `message_id` em vez de parar num arquivo local.
+description: Use quando o usuario pedir resumo ou explicacao em audio enviado pelo proprio bot via Dex Agent. Alias curto oficial: `dex-audio`. Esta e a skill global canonica para esse fluxo, usa `$env:USERPROFILE\.dex-agent` como repo operacional de transporte, envia `voice note` no Telegram via `bot.telegram.sendVoice(...)`, usa `pt-BR-FranciscaNeural` quando suportado, e deve confirmar entrega por `message_id` em vez de parar num arquivo local.
 ---
 
 # Dex Agent Audio Summary
@@ -26,8 +26,8 @@ Nao use esta skill para:
 - alias curto oficial: `dex-audio`
 - skill canonica: global
 - transporte correto: `Dex Agent`
-- repo operacional canonico: `C:\CodexProjetos\dex-agent`
-- espelho no repo: `C:\CodexProjetos\dex-agent\skills\dex-agent-audio-summary\`
+- repo operacional canonico: `$env:USERPROFILE\.dex-agent`
+- espelho no repo: `$env:USERPROFILE\.dex-agent\skills\dex-agent-audio-summary\`
 - TTS verificado: `src/lib/audioTts.ts`
 - envio verificado: `src/lib/audioSummaryManager.ts`
 - metodo real: `bot.telegram.sendVoice(...)`
@@ -62,13 +62,15 @@ Regra multiusuario: em pedido iniciado por Telegram, enviar para o chat solicita
 Se o objetivo for enviar agora um resumo ou audio explicativo a partir de qualquer workspace:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "$env:CODEX_HOME\skills\dex-agent-audio-summary\scripts\send-dex-agent-audio-summary.ps1" -Text "seu resumo aqui"
+$DexAgentHome = Join-Path $env:USERPROFILE ".dex-agent"
+powershell -ExecutionPolicy Bypass -File (Join-Path $DexAgentHome "skills\dex-agent-audio-summary\scripts\send-dex-agent-audio-summary.ps1") -Text "seu resumo aqui"
 ```
 
 Se o texto estiver em arquivo:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "$env:CODEX_HOME\skills\dex-agent-audio-summary\scripts\send-dex-agent-audio-summary.ps1" -TextPath "C:\caminho\resumo.txt"
+$DexAgentHome = Join-Path $env:USERPROFILE ".dex-agent"
+powershell -ExecutionPolicy Bypass -File (Join-Path $DexAgentHome "skills\dex-agent-audio-summary\scripts\send-dex-agent-audio-summary.ps1") -TextPath "C:\caminho\resumo.txt"
 ```
 
 Dentro do proprio repo `Dex Agent`, o helper espelhado em `.\skills\dex-agent-audio-summary\scripts\send-dex-agent-audio-summary.ps1` continua sendo um atalho equivalente.
@@ -76,7 +78,8 @@ Dentro do proprio repo `Dex Agent`, o helper espelhado em `.\skills\dex-agent-au
 Para validar roteamento sem enviar audio:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "C:\CodexProjetos\dex-agent\skills\dex-agent-audio-summary\scripts\send-dex-agent-audio-summary.ps1" -Text "teste" -DryRun
+$DexAgentHome = Join-Path $env:USERPROFILE ".dex-agent"
+powershell -ExecutionPolicy Bypass -File (Join-Path $DexAgentHome "skills\dex-agent-audio-summary\scripts\send-dex-agent-audio-summary.ps1") -Text "teste" -DryRun
 ```
 
 ## O que a skill deve fazer
@@ -106,7 +109,7 @@ Se houver duvida ou drift:
 - ler `<repo-root>/src/lib/audioTts.ts`
 - ler `<repo-root>/src/lib/audioSummaryManager.ts`
 - ler `<repo-root>/tests/audioTts.test.ts`
-- usar o wrapper global `$env:CODEX_HOME\skills\dex-agent-audio-summary\scripts\send-dex-agent-audio-summary.ps1` quando o pedido vier de outro repo
+- usar o wrapper em `$env:USERPROFILE\.dex-agent\skills\dex-agent-audio-summary\scripts\send-dex-agent-audio-summary.ps1` quando o pedido vier de outro repo
 - checar `.env` do `Dex Agent` para `BOT_TOKEN`, `PROACTIVE_USER_IDS`, `ALLOWED_USER_IDS`, `TTS_ENABLED` e `TTS_EDGE_VOICE`
 
 ## Sinais de pronto

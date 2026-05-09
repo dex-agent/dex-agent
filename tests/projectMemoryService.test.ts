@@ -239,7 +239,7 @@ test("appendGlobalMemoryPointer writes a concise global pointer without touching
   const result = await service.appendGlobalMemoryPointer({
     trigger: "global memory pointer indexing",
     source:
-      "C:\\CodexProjetos\\dex-memoria\\.harness\\contracts\\specs\\normalize-global-memory-write-policy.yaml",
+      "C:\\Users\\TestUser\\Projetos\\dex-memoria\\.harness\\contracts\\specs\\normalize-global-memory-write-policy.yaml",
     lookup:
       "Memory-worthy records should create a short global pointer to the full dex-memoria layer.",
     conflictWinner:
@@ -273,7 +273,7 @@ test("appendGlobalMemoryPointer rejects large or sensitive global pointer payloa
 
   const tooLarge = await service.appendGlobalMemoryPointer({
     trigger: "x".repeat(321),
-    source: "C:\\CodexProjetos\\dex-memoria\\README.md",
+    source: "C:\\Users\\TestUser\\Projetos\\dex-memoria\\README.md",
     lookup: "pointer",
     conflictWinner: "user request",
     doNotUseWhen: "large content",
@@ -283,7 +283,7 @@ test("appendGlobalMemoryPointer rejects large or sensitive global pointer payloa
 
   const sensitive = await service.appendGlobalMemoryPointer({
     trigger: "secret-bearing request",
-    source: "C:\\CodexProjetos\\dex-memoria\\README.md",
+    source: "C:\\Users\\TestUser\\Projetos\\dex-memoria\\README.md",
     lookup: "token=abc123 should never be stored globally",
     conflictWinner: "secret hygiene",
     doNotUseWhen: "contains secrets",

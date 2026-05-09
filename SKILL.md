@@ -14,23 +14,24 @@ description: Install and operate a Telegram bot that exposes Codex, MCP, GitHub 
 
 ## Install
 
-```bash
-git clone https://github.com/dex-agent/dex-agent.git
-cd dex-agent
+```powershell
+$DexAgentHome = Join-Path $env:USERPROFILE ".dex-agent"
+git clone https://github.com/dex-agent/dex-agent.git $DexAgentHome
+Set-Location $DexAgentHome
 npm install
-cp .env.example .env
+Copy-Item .env.example .env
 ```
 
 ## Required Env
 
 Set at least:
 
-```bash
+```env
 BOT_TOKEN=123456789:telegram-token
 ALLOWED_USER_IDS=123456789
 STATE_FILE=.codex-telegram-claws-state.json
-WORKSPACE_ROOT=C:/CodexProjetos
-CODEX_WORKDIR=C:/CodexProjetos/dex-agent
+WORKSPACE_ROOT=%USERPROFILE%/.dex-agent
+CODEX_WORKDIR=%USERPROFILE%/.dex-agent
 CODEX_BACKEND=sdk
 ```
 

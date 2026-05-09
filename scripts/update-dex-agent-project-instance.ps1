@@ -91,6 +91,7 @@ $provisionParams = @{
   BotUsername = $me.result.username
   EnvTemplatePath = $envPath
   AllowedUserIds = $allowedUserIds
+  RefreshSharedDependencies = $true
 }
 if (-not [string]::IsNullOrWhiteSpace($proactiveUserIds)) { $provisionParams.ProactiveUserIds = $proactiveUserIds }
 if (-not [string]::IsNullOrWhiteSpace($Aliases)) { $provisionParams.Aliases = $Aliases }

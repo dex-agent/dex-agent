@@ -1,6 +1,6 @@
 # Prompt De Instalacao Dex Filho
 
-Use este prompt no repo pai `C:\CodexProjetos\dex-agent` para instalar uma instancia filha sem expor token.
+Use este prompt no repo pai operacional `$env:USERPROFILE\.dex-agent` para instalar uma instancia filha sem expor token.
 
 ```text
 Use `skills/dex-install/SKILL.md`.
@@ -8,8 +8,8 @@ Use `skills/dex-install/SKILL.md`.
 Objetivo: instalar uma nova instancia filha do Dex Agent, sem alterar o produto do projeto filho.
 
 Ambiente:
-- Repo pai: C:\CodexProjetos\dex-agent
-- ProjectRoot: <C:\CodexProjetos\NomeDoProjeto>
+- Repo pai operacional: $env:USERPROFILE\.dex-agent
+- ProjectRoot: usar `Join-Path $env:USERPROFILE "Projetos\NomeDoProjeto"`
 - ProjectLabel: <NomeDoProjeto>
 - InstanceId: <nome-do-projeto>
 - BotUsername: <usuario_do_bot_sem_arroba>
@@ -32,8 +32,10 @@ Regras:
 
 Comando base:
 
-powershell -ExecutionPolicy Bypass -File C:\CodexProjetos\dex-agent\scripts\provision-dex-agent-project-instance.ps1 `
-  -ProjectRoot "<C:\CodexProjetos\NomeDoProjeto>" `
+$DexAgentHome = Join-Path $env:USERPROFILE ".dex-agent"
+$ProjectRoot = Join-Path $env:USERPROFILE "Projetos\NomeDoProjeto"
+powershell -ExecutionPolicy Bypass -File (Join-Path $DexAgentHome "scripts\provision-dex-agent-project-instance.ps1") `
+  -ProjectRoot $ProjectRoot `
   -InstanceId "<nome-do-projeto>" `
   -ProjectLabel "<NomeDoProjeto>" `
   -BotUsername "<usuario_do_bot_sem_arroba>" `

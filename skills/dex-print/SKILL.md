@@ -42,13 +42,15 @@ Regra critica: nao dizer que enviou enquanto so existe arquivo local ou imagem a
 Use o wrapper local do repo:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "C:\CodexProjetos\dex-agent\skills\dex-print\scripts\send-dex-print.ps1" -Path "C:\caminho\print.png" -Caption "Descricao curta" -Json
+$DexAgentHome = Join-Path $env:USERPROFILE ".dex-agent"
+powershell -ExecutionPolicy Bypass -File (Join-Path $DexAgentHome "skills\dex-print\scripts\send-dex-print.ps1") -Path "C:\caminho\print.png" -Caption "Descricao curta" -Json
 ```
 
 Para varias imagens:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "C:\CodexProjetos\dex-agent\skills\dex-print\scripts\send-dex-print.ps1" `
+$DexAgentHome = Join-Path $env:USERPROFILE ".dex-agent"
+powershell -ExecutionPolicy Bypass -File (Join-Path $DexAgentHome "skills\dex-print\scripts\send-dex-print.ps1") `
   -Path "C:\prints\desktop.png","C:\prints\mobile.png" `
   -Caption "Imagem exemplo" `
   -Json
@@ -57,14 +59,15 @@ powershell -ExecutionPolicy Bypass -File "C:\CodexProjetos\dex-agent\skills\dex-
 Para validar arquivos sem enviar:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "C:\CodexProjetos\dex-agent\skills\dex-print\scripts\send-dex-print.ps1" -Path "C:\caminho\print.png" -Json -DryRun
+$DexAgentHome = Join-Path $env:USERPROFILE ".dex-agent"
+powershell -ExecutionPolicy Bypass -File (Join-Path $DexAgentHome "skills\dex-print\scripts\send-dex-print.ps1") -Path "C:\caminho\print.png" -Json -DryRun
 ```
 
 O helper usa:
 
 - `BOT_TOKEN` ou `TELEGRAM_BOT_TOKEN`;
 - `-ChatId`, ou ambiente `DEX_REQUEST_CHAT_ID`, `DEX_CURRENT_CHAT_ID`, `DEX_PRINT_CHAT_ID`, `TELEGRAM_CHAT_ID`, `PROACTIVE_USER_IDS` ou `ALLOWED_USER_IDS`;
-- fallback opcional de `.env` em `C:\CodexProjetos\dex-agent\.env`.
+- fallback opcional de `.env` em `$env:USERPROFILE\.dex-agent\.env`.
 
 Em pedido iniciado por Telegram, o destino correto e o chat solicitante. `DEX_REQUEST_CHAT_ID` / `DEX_CURRENT_CHAT_ID` vence `PROACTIVE_USER_IDS` e `ALLOWED_USER_IDS`. O primeiro ID configurado so deve funcionar como fallback manual/proativo quando nao houver chat solicitante.
 

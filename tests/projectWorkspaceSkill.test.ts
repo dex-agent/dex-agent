@@ -5,12 +5,12 @@ import { ProjectWorkspaceSkill } from "../src/orchestrator/skills/projectWorkspa
 const projects = [
   {
     name: "ProjetoAlphaTeste",
-    path: "C:/CodexProjetos/ProjetoAlphaTeste",
+    path: "C:/Users/TestUser/Projetos/ProjetoAlphaTeste",
     relativePath: "ProjetoAlphaTeste"
   },
   {
     name: "ProjetoBetaTeste",
-    path: "C:/CodexProjetos/ProjetoBetaTeste",
+    path: "C:/Users/TestUser/Projetos/ProjetoBetaTeste",
     relativePath: "ProjetoBetaTeste"
   }
 ];

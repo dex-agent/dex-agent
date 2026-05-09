@@ -16,6 +16,7 @@ There are two supported supervision paths today:
 Register autostart:
 
 ```powershell
+Set-Location "$env:USERPROFILE\.dex-agent"
 powershell -ExecutionPolicy Bypass -File .\scripts\register-dex-agent-autostart.ps1
 Get-Content "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\start-dex-agent.cmd"
 ```
@@ -23,6 +24,7 @@ Get-Content "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\start-de
 Remove the autostart entry:
 
 ```powershell
+Set-Location "$env:USERPROFILE\.dex-agent"
 powershell -ExecutionPolicy Bypass -File .\scripts\unregister-dex-agent-autostart.ps1
 ```
 
@@ -30,6 +32,7 @@ What this path does:
 
 - creates `start-dex-agent.cmd` in the current user's Startup folder
 - calls `scripts/boot-dex-agent-autostart.ps1`
+- refuses to register from a non-canonical clone unless `-AllowNonCanonicalPath` is passed for controlled testing
 - waits 45 seconds after logon
 - retries up to 6 times with progressive backoff if the network is not ready yet
 

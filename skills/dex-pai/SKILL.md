@@ -18,9 +18,9 @@ Use esta skill quando o usuario ou um repo disser:
 
 - Alias operacional: `dex-pai`
 - Bot Telegram: definido por `TELEGRAM_EXPECTED_USERNAME` no `.env` do pai
-- Repo pai: `C:\CodexProjetos\dex-agent`
-- Helper oficial: `C:\CodexProjetos\dex-agent\scripts\send-dex-parent-message.ps1`
-- Token do pai: nunca copiar para artefato, skill, doc ou resposta; o helper le `C:\CodexProjetos\dex-agent\.env`
+- Repo pai operacional: `$env:USERPROFILE\.dex-agent`
+- Helper oficial: `$env:USERPROFILE\.dex-agent\scripts\send-dex-parent-message.ps1`
+- Token do pai: nunca copiar para artefato, skill, doc ou resposta; o helper le `$env:USERPROFILE\.dex-agent\.env`
 - Chat alvo: primeiro `PROACTIVE_USER_IDS`, depois `ALLOWED_USER_IDS`, no `.env` do pai
 
 ## Quando Encaminhar
@@ -54,9 +54,10 @@ Nao encaminhe como bug do pai quando for claramente trabalho de produto do repo 
 ## Comando Padrao
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File C:\CodexProjetos\dex-agent\scripts\send-dex-parent-message.ps1 `
+$DexAgentHome = Join-Path $env:USERPROFILE ".dex-agent"
+powershell -ExecutionPolicy Bypass -File (Join-Path $DexAgentHome "scripts\send-dex-parent-message.ps1") `
   -SourceProject "NOME_DO_PROJETO" `
-  -ArtifactPath "C:\CodexProjetos\PROJETO\.agents\NOME_DO_ARTEFATO.md" `
+  -ArtifactPath (Join-Path $env:USERPROFILE "Projetos\PROJETO\.agents\NOME_DO_ARTEFATO.md") `
   -Title "Achado encaminhado ao dex-pai" `
   -Text "Resumo curto: sintoma, esperado, obtido e proximo teste de fechamento."
 ```
@@ -66,7 +67,7 @@ powershell -ExecutionPolicy Bypass -File C:\CodexProjetos\dex-agent\scripts\send
 ```text
 Quando encontrar problema que pareca ser do Dex Agent, use dex-pai:
 1. crie artefato local em .agents/ com sintoma, evidencia, esperado vs obtido, reproducao, hipoteses e criterio de correcao;
-2. envie resumo ao dex-pai usando C:\CodexProjetos\dex-agent\scripts\send-dex-parent-message.ps1;
+2. envie resumo ao dex-pai usando `$env:USERPROFILE\.dex-agent\scripts\send-dex-parent-message.ps1`;
 3. nao reabra produto local por causa de bug do motor;
 4. responda com caminho do artefato e message_id.
 ```

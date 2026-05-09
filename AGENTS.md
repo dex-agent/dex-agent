@@ -7,7 +7,7 @@
 - `src/orchestrator/`: routing, MCP client, skill registry, GitHub/MCP skills.
 - `src/runner/`: Codex SDK/CLI runner management, PTY fallback handling, and restricted shell execution.
 - `src/cron/`: scheduled proactive jobs.
-- `tests/`: Node built-in test suite, one `*.test.js` file per module area.
+- `tests/`: Node built-in test suite, one `*.test.ts` file per module area.
 
 ## Start And Dev Commands
 
@@ -103,7 +103,7 @@
 ## Contribution Rules
 
 - Use ES Modules and keep new files under the existing feature-oriented layout.
-- Keep the runtime bot UX aligned with the default `pt-BR` locale. Public docs can stay in English, and localized bot strings must go through `src/bot/i18n.js`.
+- Keep the runtime bot UX aligned with the default `pt-BR` locale. Public docs can stay in English, and localized bot strings must go through `src/bot/i18n.ts`.
 - Prefer focused changes. Do not mix feature work with unrelated refactors.
 - Add or update tests for behavior changes in `tests/`.
 

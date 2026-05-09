@@ -17,13 +17,15 @@ test("extractImagePathCandidates finds markdown, absolute, and relative image pa
   const candidates = extractImagePathCandidates(
     [
       "Print: [screen](reports/screen.png)",
-      "Absolute: C:/CodexProjetos/App/output/error.jpg",
+      "Absolute: C:/Users/TestUser/Projetos/App/output/error.jpg",
       "Relative raw: output\\playwright\\shot.webp"
     ].join("\n")
   );
 
   assert.ok(candidates.includes("reports/screen.png"));
-  assert.ok(candidates.includes("C:/CodexProjetos/App/output/error.jpg"));
+  assert.ok(
+    candidates.includes("C:/Users/TestUser/Projetos/App/output/error.jpg")
+  );
   assert.ok(candidates.includes("output\\playwright\\shot.webp"));
 });
 

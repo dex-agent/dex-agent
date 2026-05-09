@@ -907,7 +907,7 @@ test("continue-style free text prioritizes live operational state before canonic
     },
     memoryService: {
       buildMemoryPacket: async () => ({
-        workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+        workdir: "C:/Users/TestUser/Projetos/ProjetoAlphaTeste",
         currentObjective: "front-end",
         latestClosedBlock: "765-776",
         nextEligibleBlock: "777-788",
@@ -933,7 +933,7 @@ test("continue-style free text prioritizes live operational state before canonic
     active: false,
     activeMode: null,
     workflowPhase: "verifying",
-    workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+    workdir: "C:/Users/TestUser/Projetos/ProjetoAlphaTeste",
     relativeWorkdir: "ProjetoAlphaTeste",
     pendingPromptText: null,
     queuedItems: [],
@@ -1037,7 +1037,7 @@ test("operational next-step question routes to project status next instead of Co
   const prompts: string[] = [];
   const projectStatusCalls: Array<{ variant?: string; workdir?: string }> = [];
   const { bot } = createDependencies({
-    workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+    workdir: "C:/Users/TestUser/Projetos/ProjetoAlphaTeste",
     sendPrompt: async (_ctx: unknown, prompt: string) => {
       prompts.push(prompt);
       return {
@@ -1066,7 +1066,7 @@ test("operational next-step question routes to project status next instead of Co
   assert.equal(projectStatusCalls[0]?.variant, "next");
   assert.equal(
     projectStatusCalls[0]?.workdir,
-    "C:/CodexProjetos/ProjetoAlphaTeste"
+    "C:/Users/TestUser/Projetos/ProjetoAlphaTeste"
   );
   assert.match(ctx.replies.at(-1)?.text || "", /project status variant: next/i);
 });
@@ -1133,9 +1133,9 @@ test("status command is localized to pt-BR and shows whether the bot is working"
     language: "pt-BR",
     verboseOutput: false,
     ptySupported: null,
-    workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+    workdir: "C:/Users/TestUser/Projetos/ProjetoAlphaTeste",
     relativeWorkdir: "ProjetoAlphaTeste",
-    workspaceRoot: "C:/CodexProjetos",
+    workspaceRoot: "C:/Users/TestUser/Projetos",
     command: "codex",
     mcpServers: [],
     workflowSystem: "superpowers",
@@ -1145,7 +1145,7 @@ test("status command is localized to pt-BR and shows whether the bot is working"
     active: true,
     activeMode: "sdk",
     workflowPhase: "working",
-    workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+    workdir: "C:/Users/TestUser/Projetos/ProjetoAlphaTeste",
     relativeWorkdir: "ProjetoAlphaTeste",
     pendingPromptText: null,
     queuedItems: [],
@@ -1157,7 +1157,7 @@ test("status command is localized to pt-BR and shows whether the bot is working"
   (ptyManager.getRecentProjects as any) = () => [
     {
       relativePath: "ProjetoAlphaTeste",
-      path: "C:/CodexProjetos/ProjetoAlphaTeste"
+      path: "C:/Users/TestUser/Projetos/ProjetoAlphaTeste"
     }
   ];
 
@@ -1192,9 +1192,9 @@ test("status command surfaces queued work before silence heuristics", async () =
     language: "pt-BR",
     verboseOutput: false,
     ptySupported: null,
-    workdir: "C:/CodexProjetos/dex-agent",
+    workdir: "C:/Users/TestUser/.dex-agent",
     relativeWorkdir: "dex-agent",
-    workspaceRoot: "C:/CodexProjetos",
+    workspaceRoot: "C:/Users/TestUser/Projetos",
     command: "codex",
     mcpServers: [],
     workflowSystem: "superpowers",
@@ -1204,7 +1204,7 @@ test("status command surfaces queued work before silence heuristics", async () =
     active: false,
     activeMode: null,
     workflowPhase: "none",
-    workdir: "C:/CodexProjetos/dex-agent",
+    workdir: "C:/Users/TestUser/.dex-agent",
     relativeWorkdir: "dex-agent",
     pendingPromptText: null,
     queuedItems: [
@@ -1212,7 +1212,7 @@ test("status command surfaces queued work before silence heuristics", async () =
         id: "queue-1",
         index: 1,
         text: "continuar o proximo passo",
-        workdir: "C:/CodexProjetos/dex-agent",
+        workdir: "C:/Users/TestUser/.dex-agent",
         relativeWorkdir: "dex-agent",
         createdAt: new Date().toISOString()
       }
@@ -1255,9 +1255,9 @@ test("status command flags prolonged silence when no work is pending", async () 
     language: "pt-BR",
     verboseOutput: false,
     ptySupported: null,
-    workdir: "C:/CodexProjetos/dex-agent",
+    workdir: "C:/Users/TestUser/.dex-agent",
     relativeWorkdir: "dex-agent",
-    workspaceRoot: "C:/CodexProjetos",
+    workspaceRoot: "C:/Users/TestUser/Projetos",
     command: "codex",
     mcpServers: [],
     workflowSystem: "superpowers",
@@ -1267,7 +1267,7 @@ test("status command flags prolonged silence when no work is pending", async () 
     active: false,
     activeMode: null,
     workflowPhase: "none",
-    workdir: "C:/CodexProjetos/dex-agent",
+    workdir: "C:/Users/TestUser/.dex-agent",
     relativeWorkdir: "dex-agent",
     pendingPromptText: null,
     queuedItems: [],
@@ -1732,7 +1732,7 @@ test("inbox overview hides absolute local paths and raw abs path targets", async
   );
   await memoryService.captureCandidate({
     workdir,
-    text: "Procedimento: use [HANDOFF.md](/abs/path/C:/CodexProjetos/dex-agent/.agents/HANDOFF.md:24) e revise C:/CodexProjetos/dex-agent/src/orchestrator/memoryService.ts:569 antes de continuar.",
+    text: "Procedimento: use [HANDOFF.md](/abs/path/C:/Users/TestUser/.dex-agent/.agents/HANDOFF.md:24) e revise C:/Users/TestUser/.dex-agent/src/orchestrator/memoryService.ts:569 antes de continuar.",
     source: {
       type: "operator",
       detail: "test"
@@ -1757,8 +1757,8 @@ test("inbox overview hides absolute local paths and raw abs path targets", async
   const text = overviewCtx.replies.at(-1)?.text || "";
   assert.match(text, /HANDOFF\\\.md/i);
   assert.doesNotMatch(text, /\/abs\/path\//i);
-  assert.doesNotMatch(text, /C:\/CodexProjetos\//i);
-  assert.doesNotMatch(text, /C:\\CodexProjetos\\/i);
+  assert.doesNotMatch(text, /C:\/Users\/TestUser\/Projetos\//i);
+  assert.doesNotMatch(text, /C:\\Users\\TestUser\\Projetos\\/i);
 });
 
 test("inbox candidates and why keep manual-review items humanized without forcing skill stage", async () => {
@@ -1961,9 +1961,9 @@ test("repo command confirms when the project really changed", async () => {
     language: "en",
     verboseOutput: false,
     ptySupported: null,
-    workdir: "C:/CodexProjetos/ProjetoBetaTeste",
+    workdir: "C:/Users/TestUser/Projetos/ProjetoBetaTeste",
     relativeWorkdir: "ProjetoBetaTeste",
-    workspaceRoot: "C:/CodexProjetos",
+    workspaceRoot: "C:/Users/TestUser/Projetos",
     command: "codex",
     mcpServers: [],
     workflowSystem: "superpowers",
@@ -1972,12 +1972,12 @@ test("repo command confirms when the project really changed", async () => {
   (ptyManager.listProjects as any) = () => [
     {
       name: "ProjetoAlphaTeste",
-      path: "C:/CodexProjetos/ProjetoAlphaTeste",
+      path: "C:/Users/TestUser/Projetos/ProjetoAlphaTeste",
       relativePath: "ProjetoAlphaTeste"
     }
   ];
   (ptyManager.switchWorkdir as any) = () => ({
-    workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+    workdir: "C:/Users/TestUser/Projetos/ProjetoAlphaTeste",
     relativePath: "ProjetoAlphaTeste"
   });
 
@@ -2005,9 +2005,9 @@ test("repo command lists clickable shortcuts for available projects", async () =
     language: "en",
     verboseOutput: false,
     ptySupported: null,
-    workdir: "C:/CodexProjetos/ProjetoBetaTeste",
+    workdir: "C:/Users/TestUser/Projetos/ProjetoBetaTeste",
     relativeWorkdir: "ProjetoBetaTeste",
-    workspaceRoot: "C:/CodexProjetos",
+    workspaceRoot: "C:/Users/TestUser/Projetos",
     command: "codex",
     mcpServers: [],
     workflowSystem: "superpowers",
@@ -2016,23 +2016,23 @@ test("repo command lists clickable shortcuts for available projects", async () =
   (ptyManager.listProjects as any) = () => [
     {
       name: "ProjetoAlphaTeste",
-      path: "C:/CodexProjetos/ProjetoAlphaTeste",
+      path: "C:/Users/TestUser/Projetos/ProjetoAlphaTeste",
       relativePath: "ProjetoAlphaTeste"
     },
     {
       name: "ProjetoBetaTeste",
-      path: "C:/CodexProjetos/ProjetoBetaTeste",
+      path: "C:/Users/TestUser/Projetos/ProjetoBetaTeste",
       relativePath: "ProjetoBetaTeste"
     }
   ];
   (ptyManager.getRecentProjects as any) = () => [
     {
       relativePath: "ProjetoBetaTeste",
-      path: "C:/CodexProjetos/ProjetoBetaTeste"
+      path: "C:/Users/TestUser/Projetos/ProjetoBetaTeste"
     },
     {
       relativePath: "ProjetoAlphaTeste",
-      path: "C:/CodexProjetos/ProjetoAlphaTeste"
+      path: "C:/Users/TestUser/Projetos/ProjetoAlphaTeste"
     }
   ];
 
@@ -2071,9 +2071,9 @@ test("repo command says when the requested project is already active", async () 
     language: "en",
     verboseOutput: false,
     ptySupported: null,
-    workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+    workdir: "C:/Users/TestUser/Projetos/ProjetoAlphaTeste",
     relativeWorkdir: "ProjetoAlphaTeste",
-    workspaceRoot: "C:/CodexProjetos",
+    workspaceRoot: "C:/Users/TestUser/Projetos",
     command: "codex",
     mcpServers: [],
     workflowSystem: "superpowers",
@@ -2082,12 +2082,12 @@ test("repo command says when the requested project is already active", async () 
   (ptyManager.listProjects as any) = () => [
     {
       name: "ProjetoAlphaTeste",
-      path: "C:/CodexProjetos/ProjetoAlphaTeste",
+      path: "C:/Users/TestUser/Projetos/ProjetoAlphaTeste",
       relativePath: "ProjetoAlphaTeste"
     }
   ];
   (ptyManager.switchWorkdir as any) = () => ({
-    workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+    workdir: "C:/Users/TestUser/Projetos/ProjetoAlphaTeste",
     relativePath: "ProjetoAlphaTeste"
   });
 
@@ -2113,7 +2113,7 @@ test("repo command is blocked in fixed instance mode", async () => {
   (ptyManager.switchWorkdir as any) = () => {
     switchCalls += 1;
     return {
-      workdir: "C:/CodexProjetos/ProjetoBetaTeste",
+      workdir: "C:/Users/TestUser/Projetos/ProjetoBetaTeste",
       relativePath: "ProjetoBetaTeste"
     };
   };
@@ -2141,7 +2141,7 @@ test("repo callback is blocked in fixed instance mode", async () => {
   (ptyManager.switchWorkdir as any) = () => {
     switchCalls += 1;
     return {
-      workdir: "C:/CodexProjetos/ProjetoBetaTeste",
+      workdir: "C:/Users/TestUser/Projetos/ProjetoBetaTeste",
       relativePath: "ProjetoBetaTeste"
     };
   };
@@ -2196,16 +2196,16 @@ test("repo callback switches the project explicitly", async () => {
     language: "en",
     verboseOutput: false,
     ptySupported: null,
-    workdir: "C:/CodexProjetos/ProjetoBetaTeste",
+    workdir: "C:/Users/TestUser/Projetos/ProjetoBetaTeste",
     relativeWorkdir: "ProjetoBetaTeste",
-    workspaceRoot: "C:/CodexProjetos",
+    workspaceRoot: "C:/Users/TestUser/Projetos",
     command: "codex",
     mcpServers: [],
     workflowSystem: "superpowers",
     workflowPhase: "none"
   });
   (ptyManager.switchWorkdir as any) = () => ({
-    workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+    workdir: "C:/Users/TestUser/Projetos/ProjetoAlphaTeste",
     relativePath: "ProjetoAlphaTeste"
   });
 
@@ -2427,7 +2427,7 @@ test("final action plan callback sends a planning prompt from the finalized resu
           "**Proximo especialista indicado**",
           "$sprinter"
         ].join("\n"),
-        workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+        workdir: "C:/Users/TestUser/Projetos/ProjetoAlphaTeste",
         createdAt: Date.now()
       }),
       offerForContext: async () => false,
@@ -2505,7 +2505,7 @@ test("final action handoff callback routes one cut to the next specialist", asyn
           "**Proximo especialista indicado**",
           "Renata Review"
         ].join("\n"),
-        workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+        workdir: "C:/Users/TestUser/Projetos/ProjetoAlphaTeste",
         createdAt: Date.now()
       }),
       offerForContext: async () => false,
@@ -2568,7 +2568,7 @@ test("final action continue short callback sends a safe next-step prompt from th
           "**Proximo passo**",
           "Comecar pela fase 1 com o garimpeiro."
         ].join("\n"),
-        workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+        workdir: "C:/Users/TestUser/Projetos/ProjetoAlphaTeste",
         createdAt: Date.now()
       }),
       offerForContext: async () => false,
@@ -2636,7 +2636,7 @@ test("final action continue short callback pulls suggested specialists from the 
           "- Nome: `ux Telegram - poluicao visual residual`",
           "- sugestao_especialistas_sessao: `organizador-ao-vivo`, `questionador`, `chato`"
         ].join("\n"),
-        workdir: "C:/CodexProjetos/dex-agent",
+        workdir: "C:/Users/TestUser/.dex-agent",
         createdAt: Date.now()
       }),
       offerForContext: async () => false,
@@ -2679,7 +2679,7 @@ test("final action continue medium callback approves closing the current sprint 
       resolveRequest: () => ({
         chatId: "1",
         text: "Implementacao aprovada e sprint atual em andamento.",
-        workdir: "C:/CodexProjetos/dex-agent",
+        workdir: "C:/Users/TestUser/.dex-agent",
         createdAt: Date.now()
       }),
       offerForContext: async () => false,
@@ -2742,7 +2742,7 @@ test("final action continue full callback approves all open planned sprints unti
       resolveRequest: () => ({
         chatId: "1",
         text: "Sprint atual concluido e fila aberta para os proximos cortes.",
-        workdir: "C:/CodexProjetos/dex-agent",
+        workdir: "C:/Users/TestUser/.dex-agent",
         createdAt: Date.now()
       }),
       offerForContext: async () => false,
@@ -2802,7 +2802,7 @@ test("final action autopilot callback activates anchor-flow guidance and special
       resolveRequest: () => ({
         chatId: "1",
         text: "A linha atual ja tem contexto aprovado e precisa seguir ate o fim.",
-        workdir: "C:/CodexProjetos/dex-agent",
+        workdir: "C:/Users/TestUser/.dex-agent",
         createdAt: Date.now()
       }),
       offerForContext: async () => false,
@@ -2894,7 +2894,7 @@ test("final action autopilot x3 arms and starts a controlled autopilot run", asy
       resolveRequest: () => ({
         chatId: "1",
         text: "A linha atual precisa de piloto controlado ate fechar o bloco.",
-        workdir: "C:/CodexProjetos/dex-agent",
+        workdir: "C:/Users/TestUser/.dex-agent",
         createdAt: Date.now()
       }),
       offerForContext: async () => false,
@@ -2955,7 +2955,7 @@ test("final action legacy execute callback maps to short continue and keeps a di
           id: "queue-1",
           index: 1,
           text: "Botao Proximo passo acionado",
-          workdir: "C:/CodexProjetos/dex-agent",
+          workdir: "C:/Users/TestUser/.dex-agent",
           relativeWorkdir: "dex-agent",
           createdAt: new Date().toISOString()
         }
@@ -2967,7 +2967,7 @@ test("final action legacy execute callback maps to short continue and keeps a di
       resolveRequest: () => ({
         chatId: "1",
         text: "Implementacao aprovada e sprint encerrado.",
-        workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+        workdir: "C:/Users/TestUser/Projetos/ProjetoAlphaTeste",
         createdAt: Date.now()
       }),
       offerForContext: async () => false,
@@ -3022,7 +3022,7 @@ test("final action review callback sends a specialist review prompt from the fin
       resolveRequest: () => ({
         chatId: "1",
         text: "Existe tensao de governanca entre candidate e skill real.",
-        workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+        workdir: "C:/Users/TestUser/Projetos/ProjetoAlphaTeste",
         createdAt: Date.now()
       }),
       offerForContext: async () => false,
@@ -3052,7 +3052,7 @@ test("final action organize callback opens the inbox overview for the stored wor
       resolveRequest: () => ({
         chatId: "1",
         text: "Implementacao aprovada e sprint encerrado.",
-        workdir: "C:/CodexProjetos/ProjetoAlphaTeste",
+        workdir: "C:/Users/TestUser/Projetos/ProjetoAlphaTeste",
         createdAt: Date.now()
       }),
       offerForContext: async () => false,
@@ -3116,7 +3116,7 @@ test("menu callback project opens the project card", async () => {
 test("menu callback admin opens the internal admin dashboard", async () => {
   const inspected: string[] = [];
   const { bot } = createDependencies({
-    workdir: "C:\\CodexProjetos\\dex-agent",
+    workdir: "C:\\Users\\TestUser\\.dex-agent",
     dashboardAdminService: {
       inspect: async (workdir: string) => {
         inspected.push(workdir);
@@ -3212,7 +3212,7 @@ test("menu callback admin opens the internal admin dashboard", async () => {
   assert.ok(handler);
   await handler!(ctx);
 
-  assert.deepEqual(inspected, ["C:\\CodexProjetos\\dex-agent"]);
+  assert.deepEqual(inspected, ["C:\\Users\\TestUser\\.dex-agent"]);
   assert.match(
     ctx.replies[1]?.text || "",
     /Admin dashboard \\?\(internal v1\\?\)/i

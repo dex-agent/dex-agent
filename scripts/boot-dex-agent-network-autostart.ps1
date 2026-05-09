@@ -21,7 +21,7 @@ function Write-BootLog {
 function Get-InstallRootFromEnvPath {
   param([Parameter(Mandatory = $true)][string]$EnvPath)
 
-  return Split-Path -Parent $EnvPath
+  return Split-Path -Parent ([Environment]::ExpandEnvironmentVariables($EnvPath))
 }
 
 New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null

@@ -246,7 +246,8 @@ test("runHealthcheck fails when the configured command is missing in strict mode
 test("runHealthcheck fails on legacy path drift in strict mode", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "claws-health-"));
   const config = createConfig(root);
-  config.runner.cwd = "C:/CodexProjetos/ConfiguracoesWindows/DexAgent";
+  config.runner.cwd =
+    "C:/Users/TestUser/Projetos/ConfiguracoesWindows/DexAgent";
 
   const result = await runHealthcheck(config, {
     env: process.env,

@@ -254,6 +254,43 @@ test("loadConfig parses env values into runtime config", () => {
   assert.equal(config.audio.tts.cacheTtlMs, 1800000);
 });
 
+test("loadConfig expands Windows-style environment variables in configured paths", () => {
+  const root = path.join(os.tmpdir(), "dex-agent-env-expanded");
+  fs.mkdirSync(root, { recursive: true });
+
+  const previousUserProfile = process.env.USERPROFILE;
+  process.env.USERPROFILE = root;
+
+  try {
+    const config = withMutedWarnings(() =>
+      withEnv(
+        {
+          BOT_TOKEN: "telegram-token",
+          ALLOWED_USER_IDS: "1",
+          STATE_FILE: "%USERPROFILE%/.dex-agent/state.json",
+          WORKSPACE_ROOT: "%USERPROFILE%/.dex-agent",
+          CODEX_WORKDIR: "%USERPROFILE%/.dex-agent",
+          GITHUB_DEFAULT_WORKDIR: "%USERPROFILE%/.dex-agent"
+        },
+        () => {
+          fs.mkdirSync(path.join(root, ".dex-agent"), { recursive: true });
+          return loadConfig();
+        }
+      )
+    );
+
+    assert.equal(config.workspace.root, path.join(root, ".dex-agent"));
+    assert.equal(config.runner.cwd, path.join(root, ".dex-agent"));
+    assert.equal(config.github.defaultWorkdir, path.join(root, ".dex-agent"));
+  } finally {
+    if (previousUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = previousUserProfile;
+    }
+  }
+});
+
 test("loadConfig keeps Codex auth isolated from audio transcription credentials", () => {
   const config = withEnv(
     {

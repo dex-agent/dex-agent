@@ -18,7 +18,10 @@ $ErrorActionPreference = "Stop"
 function Resolve-ParentRepo {
   if (-not [string]::IsNullOrWhiteSpace($ParentRepo)) { return $ParentRepo }
   if (-not [string]::IsNullOrWhiteSpace($env:DEX_PARENT_REPO)) { return $env:DEX_PARENT_REPO }
-  if (Test-Path -LiteralPath "C:\CodexProjetos\dex-agent") { return "C:\CodexProjetos\dex-agent" }
+  $defaultDexAgentHome = Join-Path $env:USERPROFILE ".dex-agent"
+  if (Test-Path -LiteralPath (Join-Path $defaultDexAgentHome "scripts\send-dex-child-message.ps1")) {
+    return $defaultDexAgentHome
+  }
 
   $localCandidate = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
   if (Test-Path -LiteralPath (Join-Path $localCandidate "scripts\send-dex-child-message.ps1")) {

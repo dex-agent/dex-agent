@@ -138,7 +138,7 @@ test("audio summary manager can publish final action buttons for a finalized res
     1,
     ["**Proximo passo**", "Comecar pela fase 1 com o garimpeiro."].join("\n"),
     "en",
-    "C:/CodexProjetos/ProjetoAlphaTeste"
+    "C:/Users/TestUser/Projetos/ProjetoAlphaTeste"
   );
 
   assert.equal(sent, true);
@@ -241,7 +241,7 @@ test("audio summary manager can recommend planning when the next step is no long
       "Abrir explicitamente outro bloco."
     ].join("\n"),
     "en",
-    "C:/CodexProjetos/dex-agent"
+    "C:/Users/TestUser/.dex-agent"
   );
 
   assert.equal(sent, true);
@@ -305,7 +305,7 @@ test("audio summary manager shows handoff only for a single non-planning next sp
       "Renata Review"
     ].join("\n"),
     "en",
-    "C:/CodexProjetos/dex-agent"
+    "C:/Users/TestUser/.dex-agent"
   );
 
   assert.equal(sent, true);
@@ -336,7 +336,7 @@ test("audio summary manager shows handoff only for a single non-planning next sp
       "$sprinter"
     ].join("\n"),
     "en",
-    "C:/CodexProjetos/dex-agent"
+    "C:/Users/TestUser/.dex-agent"
   );
 
   const planningKeyboard = (
@@ -397,7 +397,7 @@ test("audio summary manager prefers explicit recommended next step over generic 
       "Proximo especialista indicado: Tereza Testa."
     ].join("\n"),
     "pt-BR",
-    "C:/CodexProjetos/ProjetoAlphaTeste"
+    "C:/Users/TestUser/Projetos/ProjetoAlphaTeste"
   );
 
   assert.equal(sent, true);
@@ -460,7 +460,7 @@ test("audio summary manager truncates suggested prompts without mojibake", async
     1,
     longStep,
     "pt-BR",
-    "C:/CodexProjetos/dex-agent"
+    "C:/Users/TestUser/.dex-agent"
   );
 
   assert.equal(sent, true);
@@ -508,7 +508,7 @@ test("audio summary manager adds dynamic support buttons and recent-history prom
     1,
     ["**Proximo passo**", "Fechar o bloco anterior."].join("\n"),
     "pt-BR",
-    "C:/CodexProjetos/dex-agent"
+    "C:/Users/TestUser/.dex-agent"
   );
   await manager.offerFinalActionsForChat(
     1,
@@ -519,7 +519,7 @@ test("audio summary manager adds dynamic support buttons and recent-history prom
       "Revisar o deploy com Renata Review."
     ].join("\n"),
     "pt-BR",
-    "C:/CodexProjetos/dex-agent"
+    "C:/Users/TestUser/.dex-agent"
   );
 
   assert.match(messageCalls[1]?.text || "", /Sugestao curta:/i);

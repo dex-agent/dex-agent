@@ -2,7 +2,7 @@
 
 ## Contexto
 
-- Projeto: `C:\CodexProjetos\ProjetoDeltaExemplo`
+- Projeto: `$env:USERPROFILE\Projetos\ProjetoDeltaExemplo`
 - Instancia: `projeto-delta-exemplo`
 - Bot: `@dex_delta_example_bot`
 - Uso: mais de um usuario autorizado no mesmo projeto.

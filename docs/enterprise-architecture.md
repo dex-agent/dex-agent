@@ -119,7 +119,7 @@ Implementation roadmap: [phase-1-roadmap.md](./phase-1-roadmap.md)
 For enterprise rollout, migrate the following first:
 
 - `src/config.ts`
-- `src/orchestrator/router.ts`
+- `src/bot/handlers.ts`
 - `src/orchestrator/skillRegistry.ts`
 - `src/orchestrator/mcpClient.ts`
 - `src/runner/ptyManager.ts`

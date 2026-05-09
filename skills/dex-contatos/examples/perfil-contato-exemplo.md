@@ -4,7 +4,7 @@ Este exemplo mostra o formato esperado, sem versionar o `chat_id` real.
 
 Arquivo local do filho:
 
-`C:\CodexProjetos\ProjetoDeltaExemplo\.agents\CONTACTS.local.json`
+`$env:USERPROFILE\Projetos\ProjetoDeltaExemplo\.agents\CONTACTS.local.json`
 
 ```json
 {

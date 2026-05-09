@@ -10,31 +10,31 @@
     {
       "projectLabel": "DexAgentPai",
       "botUsername": "dex_parent_example_bot",
-      "envPath": "C:\\CodexProjetos\\dex-agent\\.env",
+      "envPath": "%USERPROFILE%\\.dex-agent\\.env",
       "aliases": ["dex-pai", "pai", "dex-parent"]
     },
     {
       "projectLabel": "ProjetoAlphaExemplo",
       "botUsername": "dex_alpha_example_bot",
-      "envPath": "C:\\CodexProjetos\\ProjetoAlphaExemplo\\skills\\dex-agent\\.env",
+      "envPath": "%USERPROFILE%\\Projetos\\ProjetoAlphaExemplo\\skills\\dex-agent\\.env",
       "aliases": ["alpha", "projeto-alpha", "dex-alpha"]
     },
     {
       "projectLabel": "ProjetoBetaExemplo",
       "botUsername": "dex_beta_example_bot",
-      "envPath": "C:\\CodexProjetos\\ProjetoBetaExemplo\\skills\\dex-agent\\.env",
+      "envPath": "%USERPROFILE%\\Projetos\\ProjetoBetaExemplo\\skills\\dex-agent\\.env",
       "aliases": ["beta", "projeto-beta", "dex-beta"]
     },
     {
       "projectLabel": "ProjetoGammaExemplo",
       "botUsername": "dex_gamma_example_bot",
-      "envPath": "C:\\CodexProjetos\\ProjetoGammaExemplo\\skills\\dex-agent\\.env",
+      "envPath": "%USERPROFILE%\\Projetos\\ProjetoGammaExemplo\\skills\\dex-agent\\.env",
       "aliases": ["gamma", "projeto-gamma", "dex-projeto-gamma"]
     },
     {
       "projectLabel": "ProjetoDeltaExemplo",
       "botUsername": "dex_delta_example_bot",
-      "envPath": "C:\\CodexProjetos\\ProjetoDeltaExemplo\\skills\\dex-agent\\.env",
+      "envPath": "%USERPROFILE%\\Projetos\\ProjetoDeltaExemplo\\skills\\dex-agent\\.env",
       "aliases": ["delta", "projeto-delta", "dex-delta"]
     }
   ]

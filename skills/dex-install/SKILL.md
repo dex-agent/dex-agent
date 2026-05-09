@@ -11,7 +11,7 @@ Use esta skill quando o usuario pedir para instalar o Dex Agent em um novo proje
 
 - `dex-install` e o contrato de instalacao de novo filho.
 - A instalacao operacional fica em `<ProjectRoot>/skills/dex-agent`.
-- O repo pai continua sendo `C:\CodexProjetos\dex-agent`.
+- O repo pai operacional fica em `$env:USERPROFILE\.dex-agent`; o clone de desenvolvimento/GitHub pode viver em outro caminho.
 - Tokens ficam apenas no `.env` local da instalacao filha.
 - O projeto filho deve receber bootstrap local em `AGENTS.md`, `INDEX.md`, `.agents/DEX_PAI.md` e `.agents/DEX_REDE.md`.
 - O repositorio filho deve ignorar `skills/dex-agent/`, porque a instalacao contem `.env`, runtime local e copia operacional gerenciada pelo pai.
@@ -37,10 +37,20 @@ Use esta skill quando o usuario pedir para instalar o Dex Agent em um novo proje
 10. Salvar evidencia em `.agents/INBOX/`.
 11. Responder sem expor token.
 
+## Migracao De Config
+
+- Exportar configs locais com `scripts/export-dex-agent-config.ps1`.
+- Importar em nova instalacao com `scripts/import-dex-agent-config.ps1`.
+- `.env` e tokens so entram quando o operador usa `-IncludeSecrets`.
+- Contatos locais (`.agents/CONTACTS.local.json`), prompts locais e registries
+  `*.local.json` entram no pacote quando existirem.
+- Import nao sobrescreve arquivo existente sem `-Force`.
+
 ## Comando Base
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File C:\CodexProjetos\dex-agent\scripts\provision-dex-agent-project-instance.ps1 `
+$DexAgentHome = Join-Path $env:USERPROFILE ".dex-agent"
+powershell -ExecutionPolicy Bypass -File (Join-Path $DexAgentHome "scripts\provision-dex-agent-project-instance.ps1") `
   -ProjectRoot "<ProjectRoot>" `
   -InstanceId "<instance-id>" `
   -ProjectLabel "<ProjectLabel>" `
