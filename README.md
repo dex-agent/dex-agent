@@ -23,7 +23,9 @@ It is strictly inspired by `RichardAtCT/claude-code-telegram`, but this project 
 
 Dex Agent is the runtime package in the Dex ecosystem. The companion workflow
 package is [auto-fluxo-flow](https://github.com/dex-agent/auto-fluxo-flow), a
-phased workflow skill/plugin for Codex agents. See
+phased workflow skill/plugin for Codex agents. The operational memory contract
+is published as [dex-memoria](https://github.com/dex-agent/dex-memoria), a
+documental package for memory lifecycle rules and sanitized templates. See
 [docs/ecosystem.md](./docs/ecosystem.md) for the current map of runtime,
 skills, project instances, and governance files.
 

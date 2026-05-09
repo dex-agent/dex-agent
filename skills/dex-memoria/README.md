@@ -1,6 +1,6 @@
 # Dex Memoria
 
-Versao atual: `0.1.1`
+Versao atual: `0.1.2`
 
 `dex-memoria` e um pacote documental para orientar o ciclo de vida de memoria operacional em projetos Dex Agent.
 
@@ -57,4 +57,4 @@ Fonte de extracao:
 
 ## Estado Atual
 
-Este repo publica a versao documental `0.1.1`. O proximo passo seguro e integrar referencias a partir do `dex-agent` sem mover runtime, copiar estado real ou prometer comandos V2 inexistentes.
+Este repo publica a versao documental `0.1.2` em <https://github.com/dex-agent/dex-memoria>. O proximo passo seguro e manter as referencias do `dex-agent` alinhadas sem mover runtime, copiar estado real ou prometer comandos V2 inexistentes.
