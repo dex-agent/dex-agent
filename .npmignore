@@ -1,0 +1,37 @@
+# Local secrets and runtime state
+.env
+.env.*
+!.env.example
+*.local
+*.local.*
+config/*.local.json
+.runtime/
+.harness/
+.codex/
+.codex-telegram-claws-state.json
+.playwright-cli/
+
+# Dependency and generated artifacts
+node_modules/
+coverage/
+dist/
+build/
+*.tgz
+npm-debug.log*
+*.log
+
+# Local operator data
+.agents/*
+!.agents/
+!.agents/CONTACTS.example.json
+
+# Repository automation and validation-only files
+.github/
+tests/
+docs/superpowers/
+docs/context/
+docs/audio-exemplos/
+
+# Editor and OS metadata
+.DS_Store
+Thumbs.db
