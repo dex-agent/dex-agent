@@ -57,18 +57,18 @@
     "node": "^20.19.0 || ^22.13.0 || >=24"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.13.2",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@octokit/rest": "^22.0.0",
-    "@openai/codex-sdk": "^0.124.0",
-    "dotenv": "^16.4.7",
-    "https-proxy-agent": "^8.0.0",
+    "@openai/codex-sdk": "^0.130.0",
+    "dotenv": "^17.4.2",
+    "https-proxy-agent": "^9.0.0",
     "lodash.throttle": "^4.1.1",
     "node-cron": "^4.0.5",
     "node-pty": "^1.0.0",
     "simple-git": "^3.28.0",
     "strip-ansi": "^7.1.0",
     "telegraf": "^4.16.3",
-    "undici": "^7.24.5"
+    "undici": "^8.2.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
