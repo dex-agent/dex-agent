@@ -166,6 +166,7 @@ test("runner env exposes current Telegram chat for media helpers", () => {
   assert.equal(env.DEX_REQUEST_CHAT_ID, "222");
   assert.equal(env.DEX_CURRENT_CHAT_ID, "222");
   assert.equal(env.DEX_REQUEST_WORKDIR, process.cwd());
+  assert.equal(env.TERM, "xterm-256color");
 });
 
 test("SDK client receives current Telegram chat in its environment", () => {

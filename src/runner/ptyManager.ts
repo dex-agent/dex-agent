@@ -933,6 +933,9 @@ export class PtyManager {
       childEnv.DEX_REQUEST_WORKDIR = workdir;
       childEnv.DEX_CURRENT_WORKDIR = workdir;
     }
+    if (!childEnv.TERM || childEnv.TERM === "dumb") {
+      childEnv.TERM = "xterm-256color";
+    }
     return childEnv;
   }
 
