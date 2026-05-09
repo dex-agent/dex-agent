@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/brand/dex-agent-logo.svg" alt="Dex Agent" width="560">
+</p>
+
 # Dex Agent
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)

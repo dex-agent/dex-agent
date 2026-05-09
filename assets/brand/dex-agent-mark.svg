@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Dex Agent mark</title>
+  <desc id="desc">A geometric Dex Agent brand mark with a terminal prompt and connected signal nodes.</desc>
+  <defs>
+    <linearGradient id="dex-mark-face" x1="92" y1="76" x2="420" y2="436" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#102033" />
+      <stop offset="0.55" stop-color="#0b1220" />
+      <stop offset="1" stop-color="#16243a" />
+    </linearGradient>
+  </defs>
+  <path
+    fill="url(#dex-mark-face)"
+    stroke="#25c9b7"
+    stroke-linejoin="round"
+    stroke-width="18"
+    d="M256 46 424 143v226L256 466 88 369V143z"
+  />
+  <path
+    fill="none"
+    stroke="#f2f7f6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="18"
+    d="M178 148h118c77 0 132 46 132 108s-55 108-132 108H178z"
+    opacity="0.18"
+  />
+  <path
+    fill="none"
+    stroke="#e7b84b"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="30"
+    d="m165 196 64 60-64 60"
+  />
+  <path fill="none" stroke="#25c9b7" stroke-linecap="round" stroke-width="30" d="M258 318h96" />
+  <path fill="none" stroke="#f2f7f6" stroke-linecap="round" stroke-width="14" d="M300 205h48" opacity="0.88" />
+  <path fill="none" stroke="#25c9b7" stroke-linecap="round" stroke-width="10" d="M344 205l54-34" opacity="0.88" />
+  <path fill="none" stroke="#25c9b7" stroke-linecap="round" stroke-width="10" d="M344 205l54 34" opacity="0.88" />
+  <circle cx="407" cy="165" r="16" fill="#e7b84b" />
+  <circle cx="407" cy="247" r="16" fill="#25c9b7" />
+  <circle cx="298" cy="205" r="13" fill="#f2f7f6" />
+</svg>

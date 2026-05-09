@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">Dex Agent logo</title>
+  <desc id="desc">Dex Agent wordmark with a geometric terminal and signal mark.</desc>
+  <defs>
+    <linearGradient id="dex-logo-face" x1="48" y1="54" x2="306" y2="306" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#102033" />
+      <stop offset="0.55" stop-color="#0b1220" />
+      <stop offset="1" stop-color="#16243a" />
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="360" fill="none" />
+  <g transform="translate(42 42)">
+    <path
+      fill="url(#dex-logo-face)"
+      stroke="#25c9b7"
+      stroke-linejoin="round"
+      stroke-width="10"
+      d="M138 0 276 80v116l-138 80L0 196V80z"
+    />
+    <path
+      fill="none"
+      stroke="#f2f7f6"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-width="10"
+      d="M96 57h63c42 0 71 25 71 61s-29 61-71 61H96z"
+      opacity="0.18"
+    />
+    <path
+      fill="none"
+      stroke="#e7b84b"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-width="17"
+      d="m82 86 35 32-35 32"
+    />
+    <path fill="none" stroke="#25c9b7" stroke-linecap="round" stroke-width="17" d="M133 151h53" />
+    <path fill="none" stroke="#f2f7f6" stroke-linecap="round" stroke-width="8" d="M154 89h26" opacity="0.88" />
+    <path fill="none" stroke="#25c9b7" stroke-linecap="round" stroke-width="6" d="M178 89l30-19" opacity="0.88" />
+    <path fill="none" stroke="#25c9b7" stroke-linecap="round" stroke-width="6" d="M178 89l30 19" opacity="0.88" />
+    <circle cx="215" cy="67" r="9" fill="#e7b84b" />
+    <circle cx="215" cy="111" r="9" fill="#25c9b7" />
+    <circle cx="153" cy="89" r="7" fill="#f2f7f6" />
+  </g>
+  <g fill="#0b1220" font-family="Inter, Segoe UI, Arial, sans-serif">
+    <text x="364" y="166" font-size="92" font-weight="800" letter-spacing="0">Dex</text>
+    <text x="364" y="244" font-size="76" font-weight="650" letter-spacing="0">Agent</text>
+  </g>
+  <path fill="none" stroke="#25c9b7" stroke-linecap="round" stroke-width="10" d="M744 238h252" />
+  <circle cx="1024" cy="238" r="12" fill="#e7b84b" />
+  <circle cx="1064" cy="238" r="12" fill="#25c9b7" />
+</svg>
