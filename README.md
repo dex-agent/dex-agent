@@ -19,6 +19,14 @@ It is strictly inspired by `RichardAtCT/claude-code-telegram`, but this project 
 - manages bot-side MCP and GitHub subagents
 - exposes repo switching, status, and minimal frontend dev-server control from Telegram
 
+### Family / Companion Packages
+
+Dex Agent is the runtime package in the Dex ecosystem. The companion workflow
+package is [auto-fluxo-flow](https://github.com/dex-agent/auto-fluxo-flow), a
+phased workflow skill/plugin for Codex agents. See
+[docs/ecosystem.md](./docs/ecosystem.md) for the current map of runtime,
+skills, project instances, and governance files.
+
 ### Install
 
 ```powershell

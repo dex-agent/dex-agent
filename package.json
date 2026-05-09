@@ -4,6 +4,14 @@
   "description": "A super Telegram bot that securely orchestrates Codex via SDK or CLI/PTy streaming, MCP routing, and GitHub automation skills.",
   "type": "module",
   "main": "src/index.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dex-agent/dex-agent.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dex-agent/dex-agent/issues"
+  },
+  "homepage": "https://github.com/dex-agent/dex-agent#readme",
   "scripts": {
     "start": "tsx src/index.ts",
     "dev": "tsx watch src/index.ts",

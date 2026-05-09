@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest an improvement to Dex Agent.
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What operator workflow or user pain does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Describe the smallest useful version.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Telegram bot UX
+        - Codex SDK backend
+        - CLI/PTy backend
+        - GitHub automation
+        - MCP/skills
+        - Install/update scripts
+        - Memory system
+        - Security/access control
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks or constraints
+      description: Mention security, migration, compatibility, or operational risks.

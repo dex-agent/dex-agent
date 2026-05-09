@@ -1,0 +1,63 @@
+name: Bug report
+description: Report a reproducible Dex Agent bug.
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste real bot tokens, API keys, private chat IDs, local contact profiles, or exported config archives.
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Package version, tag, or commit SHA.
+      placeholder: "0.3.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Backend
+      options:
+        - sdk
+        - cli
+        - unsure
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Use sanitized values and omit secrets.
+      placeholder: |
+        1. Configure ...
+        2. Run ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence
+      description: Logs, screenshots, or command output with secrets removed.
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Safety checklist
+      options:
+        - label: I removed real tokens, API keys, chat IDs, and private local paths from this report.
+          required: true

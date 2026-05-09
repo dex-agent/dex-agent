@@ -1,0 +1,73 @@
+# Dex Ecosystem
+
+Dex is organized as a small family of repositories and local skills. The goal
+is to keep the runtime, workflow guidance, project instances, and operational
+memory understandable without mixing their responsibilities.
+
+## Runtime
+
+### `dex-agent`
+
+Repository: <https://github.com/dex-agent/dex-agent>
+
+`dex-agent` is the Telegram-controlled Codex automation runtime. It owns:
+
+- Telegram bot entrypoint and command handling
+- Codex SDK backend and legacy CLI/PTy fallback
+- MCP and GitHub skill routing
+- local install/update scripts
+- config export/import
+- Windows start, restart, status, and autostart helpers
+
+The recommended operational install path on Windows is
+`%USERPROFILE%\.dex-agent`.
+
+## Companion Workflow
+
+### `auto-fluxo-flow`
+
+Repository: <https://github.com/dex-agent/auto-fluxo-flow>
+
+`auto-fluxo-flow` is a companion workflow skill/plugin for phased Codex agent
+work. It provides visual flow governance, specialist routing, checklists,
+regress control, and decision points. It is compatible with Dex/Codex
+operations, but it is not the runtime.
+
+## Project Instances
+
+Project-level Dex installs should live under the target project as
+`skills/dex-agent/`. These instances inherit the runtime contracts from the
+parent `dex-agent` repository while keeping project-local `.env`, state,
+handoff docs, contacts, and install metadata out of Git.
+
+## Operational Skills
+
+The runtime mirrors key skills under `skills/` so child projects can carry the
+same operational contract:
+
+- `dex-install`: provision a new child project instance
+- `dex-update`: synchronize an existing child project instance
+- `dex-memoria`: manage operational memory lifecycle
+- `dex-acesso`: reason about Telegram access and destination rules
+- `dex-contatos`: manage local contact tone profiles without granting access
+- `dex-print`: deliver screenshots/images through the Telegram Bot API
+- `dex-agent-audio-summary`: deliver voice notes through the Telegram Bot API
+
+## Source Of Truth
+
+- Runtime behavior: `src/`, `scripts/`, and `README.md` in `dex-agent`
+- Child install contract: `skills/dex-install/`
+- Child update contract: `skills/dex-update/`
+- Memory lifecycle: `skills/dex-memoria/`
+- Public project governance: `SECURITY.md`, `CONTRIBUTING.md`, issue
+  templates, PR template, Dependabot, and CodeQL workflow
+
+## Release Rhythm
+
+Use SemVer tags for public release anchors:
+
+- `dex-agent`: runtime/package releases, for example `v0.3.0`
+- `auto-fluxo-flow`: workflow/plugin releases, for example `v0.1.0`
+
+Release notes should mention install/update commands, changed defaults,
+security-sensitive behavior, and rollback guidance when applicable.
