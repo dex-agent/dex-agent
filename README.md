@@ -1,7 +1,7 @@
 # Dex Agent
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node.js 20+](https://img.shields.io/badge/node-20%2B-green.svg)](https://nodejs.org/en/download/current)
+[![Node.js 20.19+ / 22.13+](https://img.shields.io/badge/node-20.19%2B%20%7C%2022.13%2B-green.svg)](https://nodejs.org/en/download/current)
 
 A Telegram bot that gives you remote access to `@openai/codex` through a Node.js runtime with two Codex backends: the Codex SDK and the legacy CLI/PTy path.  
 It is strictly inspired by `RichardAtCT/claude-code-telegram`, but this project is implemented for CodeX SDK/CLI + MCP + Subagent routing.
@@ -82,7 +82,7 @@ Key design goals:
 
 ### Prerequisites
 
-- Node.js 20+ -- https://nodejs.org/en/download/current
+- Node.js 20.19+ or 22.13+ -- https://nodejs.org/en/download/current
 - Codex CLI -- https://github.com/openai/codex
 - Telegram Bot Token -- from `@BotFather`
 
