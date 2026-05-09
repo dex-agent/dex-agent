@@ -10,7 +10,10 @@ concurrency:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    if: ${{ secrets.TELEGRAM_BOT_TOKEN != '' }}
+    env:
+      BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_EXPECTED_USERNAME: ${{ secrets.TELEGRAM_EXPECTED_USERNAME }}
+      TELEGRAM_SMOKE_CHAT_ID: ${{ secrets.TELEGRAM_SMOKE_CHAT_ID }}
     steps:
       - uses: actions/checkout@v4
 
@@ -21,9 +24,10 @@ jobs:
 
       - run: npm ci
 
+      - name: Skip Telegram smoke without token
+        if: ${{ env.BOT_TOKEN == '' }}
+        run: echo "TELEGRAM_BOT_TOKEN is not configured; skipping live Telegram smoke check."
+
       - name: Telegram getMe smoke check
-        env:
-          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_EXPECTED_USERNAME: ${{ secrets.TELEGRAM_EXPECTED_USERNAME }}
-          TELEGRAM_SMOKE_CHAT_ID: ${{ secrets.TELEGRAM_SMOKE_CHAT_ID }}
+        if: ${{ env.BOT_TOKEN != '' }}
         run: npm run telegram:smoke
