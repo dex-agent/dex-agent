@@ -92,7 +92,7 @@ test("dex-print dry-run prefers explicit chat id over environment", () => {
 
 test("dex-audio dry-run prefers request chat over allowed fallback", () => {
   const result = spawnSync(
-    "powershell",
+    process.platform === "win32" ? "powershell" : "pwsh",
     [
       "-NoProfile",
       "-ExecutionPolicy",

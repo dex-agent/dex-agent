@@ -49,6 +49,10 @@ async function createGlobalMemoriesRoot(files?: {
   return root;
 }
 
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 test("queryMemory returns empty result when no ledger exists", async () => {
   const workdir = await createWorkspace();
   const service = new ProjectMemoryService(undefined, DISABLE_GLOBAL_MEMORY);
@@ -836,7 +840,7 @@ test("buildMemoryPacket and source disclosure include workspace-relative and glo
   const disclosure = service.buildSourceDisclosure(packet!);
   assert.match(disclosure || "", /\.agents[\\/]MEMORY\.ndjson/i);
   assert.match(disclosure || "", /memory_summary\.md/i);
-  assert.match(disclosure || "", /[A-Z]:\\/i);
+  assert.match(disclosure || "", new RegExp(escapeRegex(globalRoot)));
 
   const rendered = service.renderMemoryPacket(packet!, "show memory sources");
   assert.match(rendered, /\[workspace\|durable_memory\|rule\]/i);

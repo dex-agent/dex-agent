@@ -193,6 +193,12 @@ export function extractImagePathCandidates(text: string): string[] {
     candidates.push(match[0]);
   }
 
+  const posixAbsolutePathPattern =
+    /\/[^\0\r\n<>|?*]*?\.(?:png|jpe?g|webp|gif|bmp|tiff?)/gi;
+  for (const match of source.matchAll(posixAbsolutePathPattern)) {
+    candidates.push(cleanCandidate(match[0]));
+  }
+
   const relativePathPattern =
     /(?:\.{1,2}[\\/])?(?:[\w.-][\w .-]*[\\/])+[\w .()_-]+\.(?:png|jpe?g|webp|gif|bmp|tiff?)/gi;
   for (const match of source.matchAll(relativePathPattern)) {
