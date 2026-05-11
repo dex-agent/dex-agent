@@ -83,7 +83,7 @@ console.log(`Bot username: @${botUser.username}`);
 console.log(`Bot id: ${botUser.id}`);
 
 if (expectedUsername && botUser.username !== expectedUsername) {
-  console.error(`Expected @${expectedUsername}, got @${botUser.username}`);
+  console.error("Bot username mismatch.");
   process.exit(1);
 }
 

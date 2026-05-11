@@ -121,3 +121,93 @@ test("admin web server renders the dashboard snapshot as HTML", async () => {
     await server.shutdown();
   }
 });
+
+test("admin web server escapes user-controlled dashboard values", async () => {
+  const malicious = '"><script>alert(1)</script>';
+  const server = new AdminWebServer({
+    inspect: async (workdir: string) => ({
+      workdir,
+      modules: [
+        {
+          key: malicious,
+          label: malicious,
+          status: malicious,
+          mode: malicious,
+          reason: malicious
+        }
+      ],
+      prompts: {
+        items: [
+          {
+            source: "custom",
+            selector: malicious,
+            label: malicious,
+            intent: malicious,
+            removable: true
+          }
+        ],
+        capabilities: [malicious]
+      },
+      history: {
+        candidates: [
+          {
+            selector: malicious,
+            id: "cand-1",
+            title: malicious,
+            summary: malicious,
+            kind: "task_state",
+            stage: malicious,
+            baseKind: "task_state",
+            scope: "project",
+            destination: "memory",
+            confidence: 0.8,
+            createdAt: "2026-04-22T00:00:00.000Z"
+          }
+        ],
+        proposals: [
+          {
+            selector: malicious,
+            id: "prop-1",
+            candidateSelector: "candidate:cand-1",
+            candidateId: "cand-1",
+            destination: malicious,
+            title: malicious,
+            summary: malicious,
+            kind: "task_state",
+            stage: "proposal_review",
+            confidence: 0.8,
+            createdAt: "2026-04-22T00:00:00.000Z",
+            reason: malicious,
+            hasSkillDraft: false
+          }
+        ],
+        capabilities: [malicious]
+      },
+      operation: {
+        enabled: false,
+        reason: malicious
+      },
+      settings: {
+        enabled: false,
+        reason: malicious
+      }
+    })
+  } as any);
+
+  try {
+    const link = await server.getLink(`C:/tmp/${malicious}`);
+    const response = await fetch(link);
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(
+      response.headers.get("content-security-policy") || "",
+      /default-src 'none'/
+    );
+    assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
+    assert.doesNotMatch(html, /"><script>/);
+    assert.match(html, /&quot;&gt;&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  } finally {
+    await server.shutdown();
+  }
+});

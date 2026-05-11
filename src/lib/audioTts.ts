@@ -74,9 +74,7 @@ function normalizeTechnicalTerms(input: string): string {
     .replace(/\bpt-BR\b/gi, "portugues do Brasil")
     .replace(/\bOpenAI\b/g, "Open AI")
     .replace(/\bOpenRouter\b/g, "Open Router")
-    .replace(/\bTelegram\b/g, "Telegram")
-    .replace(/\bDexAgent\b/g, "Dex Agent")
-    .replace(/\bCodex\b/g, "Codex");
+    .replace(/\bDexAgent\b/g, "Dex Agent");
 }
 
 function normalizeProgressForSpeech(input: string): string {
