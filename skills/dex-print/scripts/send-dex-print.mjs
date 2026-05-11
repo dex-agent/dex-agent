@@ -111,17 +111,6 @@ function resolveChatTarget(args) {
   return { chatId: "", source: "" };
 }
 
-function maskChatId(chatId) {
-  if (!chatId) {
-    return null;
-  }
-  const value = String(chatId);
-  if (value.length <= 4) {
-    return "[redacted]";
-  }
-  return `${value.slice(0, 2)}...${value.slice(-2)}`;
-}
-
 function resolveConfig(args) {
   loadDefaultEnv(args);
   const token = process.env.BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || "";
@@ -284,8 +273,7 @@ if (args.dryRun) {
     dry_run: true,
     mode: args.mode,
     caption: args.caption,
-    chat_id_present: Boolean(target.chatId),
-    chat_id_masked: maskChatId(target.chatId),
+    chat_id_resolved: Boolean(target.source),
     chat_id_source: target.source || null,
     files: files.map((filePath) => ({
       file: filePath,

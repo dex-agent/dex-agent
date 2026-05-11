@@ -49,8 +49,7 @@ test("dex-print dry-run prefers request chat over proactive and allowed fallback
 
   assert.equal(result.status, 0, result.stderr);
   const payload = JSON.parse(result.stdout);
-  assert.equal(payload.chat_id_present, true);
-  assert.equal(payload.chat_id_masked, "[redacted]");
+  assert.equal(payload.chat_id_resolved, true);
   assert.equal(payload.chat_id_source, "DEX_REQUEST_CHAT_ID");
   assert.equal(result.stdout.includes("222"), false);
 });
@@ -88,8 +87,7 @@ test("dex-print dry-run prefers explicit chat id over environment", () => {
 
   assert.equal(result.status, 0, result.stderr);
   const payload = JSON.parse(result.stdout);
-  assert.equal(payload.chat_id_present, true);
-  assert.equal(payload.chat_id_masked, "[redacted]");
+  assert.equal(payload.chat_id_resolved, true);
   assert.equal(payload.chat_id_source, "--chat-id");
   assert.equal(result.stdout.includes("333"), false);
 });
