@@ -1,4 +1,5 @@
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
+import { createRequire } from "node:module";
 import path from "node:path";
 import process from "node:process";
 import {
@@ -6,14 +7,18 @@ import {
   type DashboardAdminSnapshot
 } from "../orchestrator/dashboardAdminService.js";
 
+const require = createRequire(import.meta.url);
+const escapeHtmlPackage = require("escape-html") as (value: string) => string;
+
 function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
+  return escapeHtmlPackage(value);
 }
+
+const HTML_RESPONSE_HEADERS = {
+  "content-type": "text/html; charset=utf-8",
+  "content-security-policy":
+    "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+};
 
 function renderModuleCards(snapshot: DashboardAdminSnapshot): string {
   return snapshot.modules
@@ -378,14 +383,10 @@ export class AdminWebServer {
 
     try {
       const snapshot = await this.dashboardAdminService.inspect(workdir);
-      response.writeHead(200, {
-        "content-type": "text/html; charset=utf-8"
-      });
+      response.writeHead(200, HTML_RESPONSE_HEADERS);
       response.end(renderDashboardHtml(snapshot));
     } catch (error) {
-      response.writeHead(500, {
-        "content-type": "text/html; charset=utf-8"
-      });
+      response.writeHead(500, HTML_RESPONSE_HEADERS);
       response.end(
         renderErrorHtml(error instanceof Error ? error.message : String(error))
       );
