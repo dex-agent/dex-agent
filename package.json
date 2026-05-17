@@ -1,6 +1,6 @@
 {
   "name": "dex-agent",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "A super Telegram bot that securely orchestrates Codex via SDK or CLI/PTy streaming, MCP routing, and GitHub automation skills.",
   "type": "module",
   "main": "src/index.ts",

@@ -1,0 +1,51 @@
+{
+  "name": "dex-memoria",
+  "version": "0.1.5",
+  "description": "Contrato documental para ciclo de vida de memoria operacional em projetos Dex Agent.",
+  "license": "MIT",
+  "type": "commonjs",
+  "bin": {
+    "dex-memoria": "bin/dex-memoria.js"
+  },
+  "files": [
+    "LICENSE",
+    "SECURITY.md",
+    "CONTRIBUTING.md",
+    "CODE_OF_CONDUCT.md",
+    "bin/",
+    "contracts/",
+    "docs/",
+    "examples/",
+    "scripts/",
+    "templates/",
+    "CHANGELOG.md",
+    "DECISIONS.md",
+    "README.md",
+    "SKILL.md",
+    "SPEC.md",
+    "VERSION"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dex-agent/dex-memoria.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dex-agent/dex-memoria/issues"
+  },
+  "homepage": "https://github.com/dex-agent/dex-memoria#readme",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "check": "node scripts/validate-public.js",
+    "doctor": "node bin/dex-memoria.js doctor",
+    "pack:check": "npm pack --dry-run"
+  },
+  "keywords": [
+    "dex-agent",
+    "memory",
+    "skill",
+    "documentation",
+    "operational-memory"
+  ]
+}

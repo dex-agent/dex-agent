@@ -44,6 +44,56 @@ Memoria operacional nao e apenas anotacao. Ela precisa responder:
 - quando nao deve ser lembrada;
 - como sai do estado vivo.
 
+Quando o problema for recuperacao recorrente de conhecimento, aplique tambem a
+arquitetura:
+
+```text
+L1 lembranca -> L2 memoria -> L3 conhecimento
+```
+
+- `L1 lembranca`: gatilhos curtos, sem conteudo longo, apontando para L2.
+- `L2 memoria`: detalhe operacional com ancoras estaveis.
+- `L3 conhecimento`: documentacao, tutoriais, modelos e exemplos sob demanda.
+
+`lembranca.md`, `memoria.md` e `conhecimento/` sao nomes canonicos
+recomendados. O carregamento automatico e responsabilidade do ambiente
+consumidor.
+
+Regra de caminho:
+
+- global roteia com gatilhos e ponteiros curtos;
+- tema reutiliza conhecimento de dominio;
+- projeto opera estado vivo e retomada.
+
+Raiz canonica:
+
+- `DEX_MEMORIA_HOME` e a raiz de memoria cross-project;
+- se `$env:DEX_MEMORIA_HOME` existir, use esse caminho;
+- se nao existir, use `$HOME/.agents/memories`;
+- `global` grava em `<DEX_MEMORIA_HOME>/global`;
+- `tema` grava em `<DEX_MEMORIA_HOME>/temas/<tema>`;
+- `projeto` grava em `<WORKSPACE>/.agents`;
+- nao crie `<WORKSPACE>/global` nem `<WORKSPACE>/temas` para memoria global ou
+  de tema;
+- nao use `$HOME/.codex/memories` ou `%CODEX_HOME%/memories` como destino
+  padrao, salvo configuracao explicita em `DEX_MEMORIA_HOME`.
+
+Taxonomia de temas:
+
+- tema e dominio reutilizavel, nao apelido de projeto, conversa, sprint ou
+  combinacao projeto-ferramenta;
+- prefira tema raiz quando o dominio ja for claro, como `deepseek`, `delphi`,
+  `php` ou `codex`;
+- use `temas/<area>/<tema>` somente quando a area for uma familia real e
+  repetida;
+- se o conteudo mistura projeto e ferramenta, separe estado de projeto em
+  `<WORKSPACE>/.agents` e aprendizado reutilizavel em
+  `<DEX_MEMORIA_HOME>/temas/<dominio>`;
+- revise nomes compostos como `pythia-deepseek` antes de gravar.
+
+Nada entra em L2 sem gatilho L1 ou fonte viva equivalente. Nada entra em L3 sem
+ancora L2. Nada entra no global se so serve para um projeto.
+
 ## Precedencia Local Antes Da Global
 
 Antes de aplicar esta skill global, verifique se o repositorio da janela de contexto atual possui uma versao local de `dex-memoria`, nesta ordem:
@@ -82,6 +132,10 @@ como permissao do ambiente/ferramenta ativa, nao veto de `dex-memoria`, e
 entregue um candidato de memoria ou o patch operacional apropriado. Assim que
 houver caminho autorizado de escrita, grave o ponteiro global conciso.
 
+Antes de escrever qualquer L1/L2/L3, mostre o escopo, o `DEX_MEMORIA_HOME`
+resolvido quando aplicavel, o caminho absoluto de destino e o motivo do escopo.
+Bloqueie a escrita se `global` ou `tema` apontarem para dentro do workspace.
+
 ## Fonte Completa
 
 Leia primeiro:
@@ -95,6 +149,10 @@ Use os templates quando precisar criar ou fechar uma memoria:
 - `templates/memory-contract.md`
 - `templates/memory-resolution-checklist.md`
 - `templates/child-usage-prompt.md`
+- `templates/l1-lembranca.md`
+- `templates/l2-memoria.md`
+- `templates/l3-conhecimento-index.md`
+- `templates/layered-memory-checklist.md`
 
 Use os exemplos como referencia de formato:
 
@@ -102,6 +160,7 @@ Use os exemplos como referencia de formato:
 - `examples/resolved-operational-finding.md`
 - `examples/ledger-only-memory.md`
 - `examples/child-to-child-handoff.md`
+- `examples/layered-memory/`
 
 ## Prioridade Entre Fontes
 

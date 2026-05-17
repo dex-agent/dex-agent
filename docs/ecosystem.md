@@ -79,9 +79,9 @@ same operational contract:
 
 Use SemVer tags for public release anchors:
 
-- `dex-agent`: runtime/package releases, for example `v0.3.0`
+- `dex-agent`: runtime/package releases, for example `v0.3.1`
 - `auto-fluxo-flow`: workflow/plugin releases, for example `v0.1.0`
-- `dex-memoria`: memory-contract package releases, for example `v0.1.2`
+- `dex-memoria`: memory-contract package releases, for example `v0.1.5`
 
 Release notes should mention install/update commands, changed defaults,
 security-sensitive behavior, and rollback guidance when applicable.
